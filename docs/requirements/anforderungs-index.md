@@ -1,7 +1,7 @@
 # Anforderungsindex – wirksamer Praktikums-MVP
 
-**Stand:** 22.09.2026  
-**Status:** für Phase 6 konsolidiert; Code-/Testverweise entstehen mit der Implementierung.
+**Stand:** 30.09.2026\
+**Status:** für Architektur, Datenbank und API-Design konsolidiert; Code-/Testverweise entstehen mit der Implementierung.
 
 Traceability-Ziel:
 
@@ -21,6 +21,7 @@ Anforderung / Scope → Architekturentscheidung → Vertical Slice → Code → 
 | M5 Ersatz | BR-ER-00..07; BR-ER-10..11; FR-ER-00..04; FR-NOT-06; BR-ER-03 = pro Mitarbeiter und Ersatzdienst nur ein aktives Ersatzangebot; serverseitige Eligibility via Planning/Workforce | MUST | Modulgrenze freigegeben |
 | CR-01 | BR-ER-08 entfällt; quota-bezogener BR-ER-09 entfällt; AC-ER-04 entfällt | APPROVED CHANGE | FERTIG dokumentiert |
 | CR-02 | Company = Tenant; Account genau eine Company; Monate 4–6 Multi-Company/Productization; Billing bleibt out | APPROVED CHANGE | FERTIG dokumentiert |
+| CR-03 | BR-MP-04/06/07/08 und BR-NOT-04 gemäß Amendment; keine Re-Publish-Aktion nach Initial Publish | APPROVED CHANGE | FERTIG dokumentiert |
 | M6 Statistik | planbasierte Arbeitstage + TAG/NACHT | MUST | Read Capability aus Planning |
 | M7 Work Queue | offene Fälle + Deep Link / direkte Navigation | MUST | Read Capability aus Absage & Ersatz |
 | M8 Quality | Validation, Error Contract, Audit-Minimum, Tests, OpenAPI, CI, Cross-Tenant-Negativtests | MUST | Architektur/Planung |
@@ -64,6 +65,10 @@ Wirksamer Stand:
 - Monate 4–6: Multi-Company-Aktivierung + minimaler providerseitiger Platform/Tenant Admin
 - Billing/Subscription und vollständiges Self-Service-Onboarding bleiben WON'T NOW
 - Cross-Company Reads/Writes sind verboten und werden negativ getestet
+
+## CR-03 – wirksamer Monatsplan
+
+Initial Publish stellt den Plan bereit. Danach wird dieselbe stabile Ressource nach serverseitiger Revalidierung direkt geändert; kein paralleler Draft / Re-Publish. [Normative Quelle](cr-03-direct-published-plan-updates.md).
 
 ## Research-/Systemanalyse-Traceability
 

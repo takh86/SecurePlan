@@ -2,16 +2,18 @@
 
 **Backend Engineering Case Study · THM Praxisphase · B2B-SaaS Workforce Planning**
 
-![Status](https://img.shields.io/badge/Architecture-6.1--6.7%20Approved-success)
-![Next](https://img.shields.io/badge/Next-Phase%206.8-blue)
+![Status](https://img.shields.io/badge/Architecture-6.1--6.11%20Closed-success)
+![Next](https://img.shields.io/badge/Next-Phase%208.2-blue)
 ![Implementation](https://img.shields.io/badge/Production%20Code-Not%20Started-lightgrey)
 
 SecurePlan ist ein webbasiertes System zur strukturierten Personal- und Einsatzplanung für Sicherheitsunternehmen.  
 Das Projekt entsteht im Rahmen meiner **Praxisphase im B.Sc. Informatik an der Technischen Hochschule Mittelhessen (THM)**.
 
-> **Stand: 24.09.2026**  
-> **Architektur:** Phase 6.1–6.7 FINAL / APPROVED  
-> **Nächster Schritt:** Phase 6.8 → finales Architecture Gate → Human Approval → Implementierung  
+> **Stand: 30.09.2026**\
+> **Architektur:** Phase 6.1–6.11 FINAL / APPROVED / CLOSED gemäß Final-Gate 6.11.\
+> **Datenbankdesign:** Phase 7.1–7.3 FINAL / APPROVED / COMPLETE gemäß Final-Gate 7.3.\
+> **Aktuelle Arbeit:** Phase 8.1 Resource Analysis v0.1 – Working Draft.\
+> **Nächster Schritt:** Baseline-Abgleich von 8.1 → Phase 8.2 REST Endpoint Design.\
 > **Implementierung:** Noch kein nachgewiesener Produktions-Anwendungscode. Architektur-, UX- und Planungsartefakte sind nicht mit implementierter Produktfunktion gleichzusetzen.
 
 ---
@@ -28,8 +30,9 @@ Das Projekt entsteht im Rahmen meiner **Praxisphase im B.Sc. Informatik an der T
 | **Consistency** | Transactions · Optimistic Locking · Idempotency · Duplicate Protection |
 | **API** | REST · `/api/v1` · DTO Contracts · Validation · stabile Domain/Error Codes |
 | **Integration** | Outbox-orientierte Integration Events |
-| **Architekturfortschritt** | Phase 6.1–6.7 abgeschlossen und freigegeben |
-| **Nächster Gate** | Phase 6.8 und finales Architecture Review |
+| **Architekturfortschritt** | Phase 6.1–6.11 abgeschlossen; Final-Gate dokumentiert |
+| **Datenbankdesign** | Phase 7.1–7.3 abgeschlossen; öffentliche fachliche Übersicht |
+| **API-Design** | Phase 8.1 Working Draft; Phase 8.2 noch geplant |
 
 ---
 
@@ -130,51 +133,22 @@ REST-Endpunkte, Commands, DTOs, Validation sowie Domain- und Error-Codes werden 
 | **6.5** | Transactions, Concurrency & Consistency | ✅ FINAL / APPROVED |
 | **6.6** | Security Architecture & RBAC | ✅ FINAL / APPROVED |
 | **6.7** | API & Integration Architecture | ✅ FINAL / APPROVED |
-| **6.8** | nächster Architekturabschnitt | ⏭️ NEXT |
+| **6.8** | Deployment & Runtime Architecture | ✅ FINAL / APPROVED |
+| **6.9** | Observability & Operations | ✅ FINAL / APPROVED |
+| **6.10** | Architecture Risks, Trade-offs & ADRs | ✅ FINAL / APPROVED |
+| **6.11** | Architecture Review & Final Baseline | ✅ FINAL / APPROVED / CLOSED |
 
-### 6.5 – Transactions, Concurrency & Consistency
+Die fachlichen Modulgrenzen und die öffentlich dokumentierten Baselines sind über den [Architekturüberblick](docs/architektur/ueberblick.md) erreichbar. Detaillierte Security-, Transaktions-, Integrations- und Betriebsdokumente gehören nicht zu diesem öffentlichen Upload.
 
-Festgelegt wurden unter anderem:
+## Phase 7 – Datenbankdesignstatus
 
-- Transaction Boundaries
-- Commit/Rollback für kritische Workflows
-- Optimistic Locking
-- Idempotency
-- Duplicate Protection
-- Race-Condition-Behandlung
-- Audit-Verhalten innerhalb kritischer Transaktionen
-- Outbox-orientierte Integration Events
+Phase 7.1–7.3 ist gemäß den verfügbaren Designquellen abgeschlossen. Die öffentliche [Statusübersicht](docs/datenbank/README.md) dokumentiert den Handoff und einen allgemeinen fachlichen [Domain-Überblick](docs/datenbank/domain-overview.md).
 
-### 6.6 – Security Architecture & RBAC
+Technische Schema-, ERD-, Security- und Operations-Dokumente bleiben außerhalb dieser öffentlichen Auswahl. Ausführbare Migrationen und getesteter Anwendungscode liegen noch nicht vor.
 
-Security-Baseline:
+## Phase 8 – aktuelle API-Arbeit
 
-- serverseitige Session-basierte Authentifizierung
-- sichere HttpOnly-Cookies
-- rollen- und kontextbasierte Autorisierung
-- server-derived TenantContext
-- konsequente Tenant Isolation
-- Resource Ownership Checks
-- CSRF-Schutz
-- Password-Hashing-Strategie
-- Trennung von Business Audit, Security Events und technischen Logs
-- getrennte Sicherheitskontexte für Platform Admin und Company Admin
-
-### 6.7 – API & Integration Architecture
-
-API- und Integrationsbaseline:
-
-- REST als primäre externe API
-- versionierte API unter `/api/v1`
-- explizite Commands für fachliche Mutationen
-- serverseitige Validation
-- stabile DTO-Contracts
-- konsistente Domain- und Error-Codes
-- Trennung von Tenant Plane und Provider / Control Plane
-- Outbox-orientierte Integrationsereignisse
-- Security-, Contract- und Integration-Tests als Teil der späteren Implementierungsbaseline
-
----
+[Phase 8.1 Resource Analysis](docs/api/phase-8-1-resource-analysis-draft.md) ist ein **Working Draft**. Vor der Ableitung konkreter REST-Endpunkte in 8.2 müssen seine älteren Baseline-Verweise mit Phase 4 FINAL v1.2, CR-02/03 und den Final-Gates 6.11/7.3 abgeglichen werden. URLs, DTOs und OpenAPI-Verträge sind noch nicht final definiert.
 
 ## Backend Building Blocks
 
@@ -222,7 +196,7 @@ Cross-cutting:
 
 **Nicht Teil des verbindlichen 3-Monats-MVP:** Tagesplan, Lohnabrechnung und vollständige Notifications.
 
-→ [Effective MVP Baseline](docs/requirements/effective-mvp-baseline.md)
+→ [Öffentlicher MVP-Überblick](docs/requirements/public-mvp-baseline.md)
 
 ---
 
@@ -244,16 +218,21 @@ Cross-cutting:
 
 | Artefakt | Nachweis |
 |---|---|
-| [Effective MVP Baseline](docs/requirements/effective-mvp-baseline.md) | Requirements, Scope und MVP-Governance |
+| [Öffentlicher MVP-Überblick](docs/requirements/public-mvp-baseline.md) | Requirements, Scope und MVP-Governance |
 | [Systemanalyse](docs/systemanalyse/phase-4-final-v1.2.md) | Domain- und Systemanalyse |
 | [UX/UI Baseline](docs/ux-ui/phase-5-baseline.md) | Übergang von Anforderungen zu Interaction Design |
 | [Architekturüberblick](docs/architektur/ueberblick.md) | Repo-lokaler Architekturindex |
 | [Phase 6.3](docs/architektur/phase-6-3-backend-building-blocks.md) | Module, Ownership und Building Blocks |
 | [Phase 6.4](docs/architektur/phase-6-4-module-dependencies-public-contracts.md) | Dependencies und Public Contracts |
+| [Phase 6.11 Final Gate](docs/architektur/phase-6-11-final-baseline-gate.md) | Öffentlicher Phasenstatus und fachliche Baseline |
+| [Phase 7 – Designstatus](docs/datenbank/README.md) | Gate-Status und fachliche Übersicht |
+| [Phase 8.1 Draft](docs/api/phase-8-1-resource-analysis-draft.md) | API-Resource-Analyse und offene Baseline-Prüfung |
+| [CR-03](docs/requirements/cr-03-direct-published-plan-updates.md) | Direkte Änderungen nach der ersten Veröffentlichung |
+| [Technische Quellen](docs/sources/README.md) | Herunterladbare geprüfte Dokumente |
 | [Projektstatus](docs/project-status.md) | Repo-lokaler Gate- und Phasenstatus |
 | [Fortschrittsprotokoll](docs/planung/fortschrittsprotokoll.md) | Nachvollziehbarer Projektfortschritt |
 
-> **Repository-Sync-Hinweis:** Der freigegebene Arbeitsstand ist Phase 6.1–6.7. Die detaillierten repo-lokalen Architekturdokumente für Phase 6.5–6.7 sind noch nicht vollständig mit dem Dokumentationsindex synchronisiert. Bis zum nächsten vollständigen Repo Sync dokumentiert dieser README den aktuell freigegebenen Stand, ohne daraus Implementierungsclaims abzuleiten.
+> **Dokumentationsnachweis:** Die ausgewählten öffentlichen technischen Quelldokumente sind im [Quellenindex](docs/sources/README.md) verlinkt. Markdown-Fassungen ergänzen CR-03 und den API-Arbeitsstand; 6.11/7.3 veröffentlichen nur den Gate-Status. Detaillierte Architektur-, Security-, Datenbank- und ERD-Dokumente bleiben außerhalb des Uploads. Die Statusangaben belegen Design-Gates; sie sind keine nachgewiesenen Code-, Test- oder Deployment-Ergebnisse.
 
 ---
 
@@ -282,27 +261,11 @@ Mit Beginn der Implementierungsphase wird diese Evidenz um **ausführbaren Backe
 
 ## Nächste Schritte
 
-```text
-Phase 6.8
-   ↓
-verbleibende ADRs / Architecture Decisions
-   ↓
-Final Architecture Review
-   ↓
-Human Approval
-   ↓
-NestJS + PostgreSQL Foundation
-   ↓
-Authentication / RBAC / TenantContext
-   ↓
-MVP Modules
-   ↓
-Tests + OpenAPI + Docker + CI/CD
-   ↓
-Demo / Staging
-```
-
----
+1. Phase 8.1 gegen die wirksamen Baselines und das physische Datenmodell prüfen.
+2. Phase 8.2: REST-Endpunkte, DTOs, Authorization, Validation, Concurrency und Error Contracts definieren.
+3. API-Design vervollständigen und OpenAPI-Spezifikation erarbeiten.
+4. Verbleibende Design-/Human-Gates abschließen, bevor die Implementierung beginnt.
+5. Danach Foundation, Migrationen, Auth/RBAC, MVP-Module, Tests und Demo/Staging nachweisen.
 
 ## Engineering Principle
 

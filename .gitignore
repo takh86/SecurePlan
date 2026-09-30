@@ -1,0 +1,21 @@
+# Credentials and private runtime configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Private source material and real operational data
+/private/
+/data/private/
+*.dump
+*.backup
+*.sql.gz
+
+# Local editor/runtime outputs
+.DS_Store
+Thumbs.db
+~$*
+node_modules/

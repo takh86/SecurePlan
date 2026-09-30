@@ -1,8 +1,8 @@
 # 12-Wochen-Fahrplan – Implementation Baseline + aktueller Overlay
 
 **Originalbasis:** Phase 3 Scope & MVP v1.1  
-**Synchronisiert:** 22.09.2026  
-**Overlay:** CR-01 + CR-02 + Phase 4 FINAL v1.2
+**Synchronisiert:** 30.09.2026\
+**Overlay:** CR-01/02/03 + Phase 4 FINAL v1.2 + Final-Gates 6.11 / 7.3
 
 ## Wichtige Einordnung
 
@@ -12,8 +12,9 @@ Der folgende 12-Wochen-Plan bleibt die **Implementierungsbaseline des Praktikums
 
 ## Aktueller Overlay
 
-**Jetzt:** Phase 6 – Software Architecture & System Design  
-**Danach:** Implementierung entlang der Phase-3-Sequenz  
+**Jetzt:** Phase 8.1 API Resource Analysis als Working Draft; danach 8.2 REST Endpoint Design.\
+**Abgeschlossen laut Designquellen:** Phase 6.1–6.11 und 7.1–7.3.\
+**Danach:** vollständige API-Contracts / verbleibende Design- und Human-Gates; anschließend Implementierung entlang der Phase-3-Sequenz\
 **Noch nicht erlaubt:** UX-/Architekturdokumentation als implementiertes Feature zählen
 
 ## Implementierungsbaseline
@@ -53,7 +54,7 @@ Die historische Week-9-/M5-Regel „3er-Limit“ ist entfernt. Sie darf weder im
 - Tests, Authorization, Tenant Isolation und Datenintegrität werden bei Zeitdruck nicht gestrichen
 - ab Feature Freeze keine neue MUST-Funktionalität ohne Scope-Entscheidung
 
-## Architektur-Gate vor der Implementierung
+## Design-Gates vor der Implementierung
 
 Vor Start der Implementierungswoche 1 müssen die Phase-6-Ergebnisse freigegeben sein:
 - Module/Boundaries
@@ -62,3 +63,6 @@ Vor Start der Implementierungswoche 1 müssen die Phase-6-Ergebnisse freigegeben
 - Concurrency/Idempotenz
 - API-/Error-Contracts
 - ADR-Basis
+
+
+Phase 6 und 7 sind dokumentiert abgeschlossen. Phase 8 konkretisiert jetzt die Endpunkte, DTOs und OpenAPI-Verträge. Dieser Fahrplan ist keine Behauptung bereits verstrichener Implementierungswochen und setzt keine neue Praktikumsfrist fest.

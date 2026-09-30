@@ -1,5 +1,7 @@
 # Phase 6.3 – Backend Building Blocks
 
+> **Aktueller Baseline-Hinweis (30.09.2026):** [Final-Gate 6.11](phase-6-11-final-baseline-gate.md) und [CR-03](../requirements/cr-03-direct-published-plan-updates.md) haben bei älteren widersprechenden Formulierungen Vorrang. Nach Initial Publish kein paralleler Draft / Re-Publish. Vollständige technische Quelldokumente bleiben außerhalb dieser öffentlichen Auswahl.
+
 **Version:** v1.2.1  
 **Stand:** 22.09.2026  
 **Status:** FINAL / APPROVED – Review Patch  
@@ -43,8 +45,8 @@ Besitzt:
 Besitzt:
 - MonthlyPlan
 - Plan Entries
-- Draft / Published
-- Publish / Re-Publish
+- unveröffentlichter Plan bis Initial Publish
+- danach direkte autorisierte Planänderung nach Revalidierung / Commit (CR-03)
 - Plan Version / Optimistic Lock Boundary
 - Planmutationen
 

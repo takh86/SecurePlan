@@ -1,5 +1,7 @@
 # Phase 6.4 – Module Dependencies & Public Contracts
 
+> **Aktueller Baseline-Hinweis (30.09.2026):** [Final-Gate 6.11](phase-6-11-final-baseline-gate.md) und [CR-03](../requirements/cr-03-direct-published-plan-updates.md) haben bei älteren widersprechenden Formulierungen Vorrang. Nach Initial Publish kein paralleler Draft / Re-Publish. Vollständige technische Quelldokumente bleiben außerhalb dieser öffentlichen Auswahl.
+
 **Version:** v1.0.1  
 **Stand:** 22.09.2026  
 **Status:** FINAL / APPROVED – Review Patch – PASS FOR PHASE 6.5  
@@ -55,7 +57,7 @@ TenantContext ist kein Business-Modul.
 Workforce & Projects → Identity & Access: Zugriff deaktivieren / Sessions invalidieren. Keine Rückabhängigkeit von Identity auf Workforce-Repositories.
 
 ### Company Suspension
-Platform & Tenant Management besitzt Tenant-Status. Die Sperrmechanik darf **keine Identity & Access → Platform & Tenant Management-Abhängigkeit** erzeugen. Der konkrete Mechanismus wird in **Phase 6.5 bzw. SP-A06-05 (Security / RBAC / API Contracts)** festgelegt.
+Platform & Tenant Management besitzt Tenant-Status. Die Sperrmechanik darf **keine Identity & Access → Platform & Tenant Management-Abhängigkeit** erzeugen. Der Mechanismus wurde im späteren Design konkretisiert; detaillierte Transaction-/Security-Dokumente bleiben außerhalb der öffentlichen Auswahl. Die Regeln sind bei der Implementierung negativ zu testen.
 
 ## Explizit auf die nächsten Architekturentscheidungen verschoben
 
