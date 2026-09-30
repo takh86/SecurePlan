@@ -1,7 +1,7 @@
 # Anforderungsgrundlagen
 
-**Stand:** 22.09.2026  
-**Status:** konsolidierte Grundlage für Phase 6; Architekturarbeit ist nicht durch fehlende Phase-2/3-Dokumente blockiert.
+**Stand:** 30.09.2026\
+**Status:** konsolidierte Grundlage für Architektur, Datenbank und laufendes API-Design; technische Quellen sind im [Quellenindex](../sources/README.md) verfügbar.
 
 Die ursprüngliche Repository-Aussage „Phase 2 und Phase 3 fehlen“ war nur für den Stand vom 05.09.2026 korrekt. Die später freigegebenen Projektartefakte wurden inzwischen in eine repo-lokale wirksame Baseline übertragen.
 
@@ -14,10 +14,11 @@ Die ursprüngliche Repository-Aussage „Phase 2 und Phase 3 fehlen“ war nur f
 | Phase 3.5.3 – Requirements & Scope Impact Review v1.0 | FINAL / APPROVED | Research-Impact und Change-Control |
 | CR-01 / Baseline Amendment v1.2 | FINAL / APPROVED | 3er-Ersatzlimit entfernt |
 | CR-02 – B2B-SaaS-Tenant-Modell v1.1 | FINAL / APPROVED | Tenant-/Roadmap-Präzisierung |
+| CR-03 – direkte Published-Plan-Änderungen v1.0 | FINAL / APPROVED | Kein Draft/Re-Publish nach Initial Publish |
 | Phase 4 – Systemanalyse v1.2 | FINAL / APPROVED | Use Cases + Traceability-Clarifications |
 | Phase 5.10 + Phase-5.2-Amendment | PASS FOR PHASE 6 | UX-Handoff / Company-Kontext |
 
-Repo-lokale konsolidierte Fassung: [effective-mvp-baseline.md](effective-mvp-baseline.md)
+Öffentliche konsolidierte Fassung: [MVP-Überblick](public-mvp-baseline.md)
 
 ## Konfliktregel
 
@@ -49,6 +50,12 @@ Alle übrigen Eligibility-, Genehmigungs-, Transaktions-, Idempotenz- und Planre
 - Cross-Company Reads/Writes sind verboten.
 
 Details: [cr-02-b2b-saas-tenant-model.md](cr-02-b2b-saas-tenant-model.md)
+
+## CR-03 – verbindlich
+
+Nach der ersten Veröffentlichung existiert kein paralleler Monatsplan-Draft. Autorisierte Änderungen werden nach Revalidierung und erfolgreichem Commit unmittelbar wirksam; kein Re-Publish. Die ältere BR-MP-06-Re-Publish-Regel entfällt.
+
+Details: [CR-03](cr-03-direct-published-plan-updates.md).
 
 ## Traceability
 

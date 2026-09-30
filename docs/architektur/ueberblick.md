@@ -1,7 +1,7 @@
 # Architekturüberblick – Phase 6
 
-**Stand:** 22.09.2026  
-**Status:** Phase 6.1–6.4 FINAL / APPROVED; Phase 6.5 NEXT
+**Stand:** 30.09.2026\
+**Status:** Phase 6.1–6.11 FINAL / APPROVED / CLOSED gemäß [Final-Gate 6.11](phase-6-11-final-baseline-gate.md).
 
 ## Freigegebene Dokumente
 
@@ -11,6 +11,14 @@
 - [Phase 6.4 – Module Dependencies & Public Contracts](phase-6-4-module-dependencies-public-contracts.md)
 - [Backward Consistency Gate](backward-consistency-gate-2026-09-22.md)
 - [ADR-Vorlage](adr/0000-vorlage.md)
+
+- [Phase 6.5 – Transactions, Consistency & Concurrency](ueberblick.md)
+- [Phase 6.6 – Security Architecture & RBAC](ueberblick.md)
+- [Phase 6.7 – API & Integration Architecture](ueberblick.md)
+- [Phase 6.8 – Deployment & Runtime Architecture](ueberblick.md)
+- [Phase 6.9 – Observability & Operations Architecture](ueberblick.md)
+- [Phase 6.10 – Risks, Trade-offs & ADRs](ueberblick.md)
+- [Phase 6.11 – Architecture Review & Final Baseline](phase-6-11-final-baseline-gate.md)
 
 ## 1. Systemkontext
 
@@ -52,7 +60,7 @@ Cross-cutting:
 - Platform & Tenant Management besitzt Company/Tenant-Lifecycle.
 - Identity & Access besitzt Accounts, Credentials, Sessions und Rollen.
 - Workforce & Projects besitzt Employee, Project, MonthlyProjectAssignment, Shift Config und eligibility-relevante Stammdaten inkl. minimaler KRANK/URLAUB-Verfügbarkeit.
-- Planning besitzt MonthlyPlan, Draft/Published und Planmutationen.
+- Planning besitzt MonthlyPlan, Erstveröffentlichung und direkte wirksame Planmutationen. CR-03: danach kein paralleler Draft und kein Re-Publish.
 - Absage & Ersatz besitzt CancellationRequest, ReplacementNeed, ReplacementOffer und ReplacementDecision und bewertet Replacement Eligibility über Public Contracts.
 - Audit besitzt Audit Records, nicht Business Decisions.
 
@@ -74,17 +82,10 @@ Cross-cutting:
 - Employee Statistics → Planning (read only)
 - Admin Work Queue → Absage & Ersatz (read only)
 
-## 8. Nächster Abschnitt – Phase 6.5
+## 8. Handoff nach Architekturabschluss
 
-Zu entscheiden:
-- Transaction Boundaries
-- Commit/Rollback über Modulgrenzen
-- Optimistic Locking
-- Idempotency / Duplicate Protection
-- Mechanismus für GEGENSTANDSLOS ohne Dependency-Zyklus
-- Company-Suspension-Sperrmechanik ohne Identity → Platform-Zyklus
-- Audit innerhalb/außerhalb kritischer Transaktionen
+Phase 7 hat das Datenbankdesign konkretisiert und ist gemäß [Final-Gate 7.3](../datenbank/phase-7-3-operations-final-gate.md) abgeschlossen. Aktuelle Arbeit ist [API Resource Analysis 8.1](../api/phase-8-1-resource-analysis-draft.md) als Draft; danach folgt REST Endpoint Design 8.2.
 
-## 9. Stop Condition
+## 9. Production-Gates und Implementierungsnachweis
 
-Feature-Implementierung startet erst nach vollständigem Architekturreview und Human Approval.
+Production-Gates aus 6.11 bleiben offen. Architektur- und Datenbankdesign dokumentieren kein bereits laufendes Backend, keine ausführbaren Migrationen und keine erfolgreichen Feature-Tests. Implementierung folgt erst nach den verbleibenden Design-/Human-Gates.

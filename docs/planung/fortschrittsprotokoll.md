@@ -56,27 +56,23 @@ Diese Aussage ist **historisch**, nicht mehr der aktuelle Projektstatus.
 | Backward Consistency Gate | PASS |
 | Phase 6.4 Module Dependencies & Public Contracts v1.0 | FINAL / APPROVED |
 
-Wesentliche Entscheidungen:
-- B2B-SaaS; Company = Tenant
-- Account gehört genau einer Company
-- Platform Admin separat vom Company Admin
-- tenant-aware Modular Monolith
-- Shared DB + Shared Schema als Startstrategie
-- klare fachliche Module und Ownership
-- cross-module Zugriff ausschließlich über Public Contracts
-- keine zyklischen Dependencies
+Die fachlichen Scope- und Roadmap-Entscheidungen sind im [öffentlichen MVP-Überblick](../requirements/public-mvp-baseline.md) zusammengefasst. Detaillierte Sicherheits- und Zugriffskonzepte gehören nicht zu dieser öffentlichen Fortschrittsdarstellung.
+
+## 30.09.2026 – Dokumentationsabgleich
+
+| Artefakt | Dokumentierter Zustand | Nachweis |
+|---|---|---|
+| CR-03 v1.0 | FINAL / APPROVED seit 23.09.2026 | direkte Published-Plan-Mutation ohne Re-Publish |
+| Phase 6.1–6.11 | FINAL / APPROVED / CLOSED; Gate vom 24.09.2026 | Architecture Final Baseline 6.11 |
+| Phase 7.1–7.3 | FINAL / APPROVED / COMPLETE | Logical / Physical / Operations Design und Gate 7.3 |
+| ERD | vollständige technische Fassung und vereinfachte Reviewfassung | Draw.io + PDF |
+| Phase 8.1 | v0.1 Working Draft; Resource Identification Complete | API Resource Analysis |
+| Öffentliche technische Quellen | ausgewählt und auf sensible Daten geprüft | Quellenindex; fachliche DOCX-/PDF-Dokumente ohne eingebettete Zusatzdateien |
+
+Die vorhandenen Designquellen wurden in diesen Dokumentationsstand aufgenommen. Der Abgleich ist keine neue fachliche Freigabe, keine Betreuerabnahme und kein Implementierungsnachweis.
 
 ## Aktueller Arbeitsstand
 
-**Phase 6.5 – Transactions, Concurrency & Idempotency: NEXT**
+**Phase 8.1 Baseline-Abgleich → Phase 8.2 REST Endpoint Design.**
 
-Noch **nicht** als erledigt nachgewiesen:
-- Produktions-Frontend
-- Backend
-- Datenbankmigrationen
-- Authentifizierung
-- CI/CD
-- Staging/Deployment
-- Feature-Tests
-
-Der nächste Fortschrittseintrag wird angehängt; historische Einträge werden nicht überschrieben.
+Produktions-Frontend, Backend, ausgeführte Migrationen, Auth-Implementierung, CI/CD, Deployment und Feature-Tests sind weiterhin nicht nachgewiesen. Historische Fortschrittseinträge bleiben erhalten.

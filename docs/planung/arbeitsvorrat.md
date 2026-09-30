@@ -1,11 +1,11 @@
 # Arbeitsvorrat
 
-**Stand:** 22.09.2026  
-**Aktueller Fokus:** Phase 6 Architektur / nächster fachlicher Schritt 6.5.
+**Stand:** 30.09.2026\
+**Aktueller Fokus:** Phase 8.1 Working Draft abgleichen; danach 8.2 REST Endpoint Design.
 
 > Hinweis: Die dokumentierten Teilphasen 6.1–6.4 und die bestehenden Backlog-IDs SP-A06-* sind zwei Sichten auf denselben Architekturarbeitsraum und werden nicht 1:1 umnummeriert.
 
-## P0 — Phase 6 Architektur
+## Abgeschlossener Design-Arbeitsraum – Phase 6 / 7
 
 ### SP-A06-01 — Architekturziele und Qualitätsattribute
 **Status:** FERTIG / APPROVED  
@@ -24,22 +24,29 @@
 **Nachweis:** Phase 6.4 v1.0.1 – Review Patch.
 
 ### SP-A06-04 — Datenmodell-Invarianten
-**Status:** GEPLANT  
-**Ergebnis:** Company/Project/Month, Assignment, Plan, Published/Draft, Case/Offer, Audit-Grundlagen, Tenant-Ownership-Constraints.
+**Status:** FERTIG / DOCUMENTED\
+**Nachweis:** Phase 7.1–7.3 und ERD. Stabile Published-Plan-Ressource gemäß CR-03; kein Code-/Migrationsnachweis.
 
 ### SP-A06-05 — Security / RBAC / API Contracts
-**Status:** GEPLANT  
-**Ergebnis:** serverseitige Authorization, Tenant Isolation, Ressourcensichtbarkeit, Error-/Permission-Contract.
+**Status:** FERTIG / DOCUMENTED (Architektur)\
+**Nachweis:** Phase 6.6/6.7. Konkrete Endpoint-/DTO-Contracts folgen in Phase 8.
 
 ### SP-A06-06 — Transactions / Concurrency / Idempotency
-**Status:** NÄCHSTER SCHRITT  
-**Ergebnis:** atomare Ersatzübernahme, Optimistic Locking, Duplicate Protection, Race-Condition-Handling.
+**Status:** FERTIG / DOCUMENTED\
+**Nachweis:** Phase 6.5 und Datenbankdesign 7.2/7.3. Tests noch nicht ausgeführt.
 
 ### SP-A06-07 — ADR Pack + Architecture Review
-**Status:** GEPLANT  
-**Ergebnis:** ADR-Entwürfe mit Alternativen/Trade-offs; Human Gate vor Umsetzung.
+**Status:** FERTIG / DOCUMENTED\
+**Nachweis:** Phase 6.10/6.11; Production-Gates bleiben offen.
 
-## P1 — Implementierung nach Architektur-Gate
+## P0 – aktuelles API-Design
+
+- 8.1 Resource-Katalog gegen aktuelle Baseline prüfen.
+- 8.2 REST-Endpunkte und DTOs definieren.
+- Authorization, Tenant-Isolation, Concurrency und Error Contracts konkretisieren.
+- OpenAPI und Design-/Human-Gates vor Implementierung abschließen.
+
+## P1 — Implementierung nach Design-/Human-Gates
 
 1. Foundation
 2. Auth/RBAC
@@ -78,6 +85,7 @@
 
 - CR-01: kein 3er-Ersatzlimit
 - CR-02: Company = Tenant; Account genau eine Company
+- CR-03: direkte wirksame Änderungen nach Initial Publish, kein paralleler Draft / Re-Publish
 - kein Feature wird aus UX-Screens in den Scope „hineindesignt“
 - kein Implementierungsstatus ohne Code-/Testnachweis
 - Security, Authorization, Tenant Isolation und Datenintegrität werden nicht als Zeitpuffer verwendet
