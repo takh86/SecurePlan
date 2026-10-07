@@ -2,9 +2,9 @@
 
 B2B-SaaS für Personal- und Einsatzplanung in Sicherheitsunternehmen. Praxisphase im B.Sc. Informatik an der THM; Fokus auf Backend Engineering mit nachvollziehbaren Anforderungen, Architekturentscheidungen und Tests.
 
-**Stand: 07.10.2026 · Foundation in Arbeit · G0: NEEDS WORK**
+**Stand: 07.10.2026 · SP-01 Foundation VERIFIED · G0: NEEDS WORK**
 
-Der Repository-Stand enthält ein NestJS-Backend und ein React-Frontend. Die Benutzeroberfläche ist noch der Starter. Auth, Mitarbeiterverwaltung und Planung sind entworfen, aber noch nicht implementiert. Build- und Startertests belegen keine fertigen Produktfunktionen.
+Der Repository-Stand enthält ein NestJS-Backend und ein React-Frontend. Die lokale Foundation ist unter Windows und in Linux-CI reproduzierbar nachgewiesen. Die Benutzeroberfläche ist noch der Starter. Auth, Mitarbeiterverwaltung und Planung sind entworfen, aber noch nicht implementiert. Build- und Foundationtests belegen keine fertigen Produktfunktionen.
 
 ## Produkt und verbindlicher MVP
 
@@ -23,7 +23,7 @@ Excel-Import ist Stretch. Tagesplan, Lohnabrechnung und vollständige Notificati
 | --- | --- |
 | Backend | TypeScript, NestJS, Node.js 24, ESM |
 | Frontend | React, TypeScript, Vite |
-| Persistenz | PostgreSQL 17; `pg` als Foundation-Verbindung, kein ORM festgelegt |
+| Persistenz | PostgreSQL 17; `pg` als Foundation-Verbindung, SQL-first Migrationen |
 | Architekturziel | Tenant-aware Modular Monolith; fachliche Module noch aufzubauen |
 | Qualität | Oxlint, Backend Vitest/Supertest, TypeScript Builds, GitHub Actions |
 
@@ -61,7 +61,7 @@ Frontend: http://localhost:5173. Backend: http://127.0.0.1:3000.
 - `GET /api/v1/health/live` – Prozess erreichbar.
 - `GET /api/v1/health/ready` – Verbindung und Foundation-Migration vorhanden; sonst HTTP 503.
 
-Health-Endpunkte sind technische Betriebsendpunkte, zusätzlich zu den 47 entworfenen MVP-Endpunkten. Sie prüfen keine fertig implementierte Business-Domäne.
+Health-Endpunkte sind technische Betriebsendpunkte, zusätzlich zu den entworfenen MVP-Endpunkten. Sie prüfen keine fertig implementierte Business-Domäne.
 
 ```bash
 npm run lint
@@ -71,7 +71,7 @@ npm run test:e2e
 npm run start:backend
 ```
 
-`start:backend` benötigt einen vorherigen Build. Die E2E-Startertests ersetzen den DB-Provider durch einen Test-Double; echte PostgreSQL-Evidenz kommt separat aus `db:verify` und CI.
+`start:backend` benötigt einen vorherigen Build. Die E2E-Startertests ersetzen den DB-Provider durch einen Test-Double; echte PostgreSQL-Evidenz kommt separat aus `db:verify`, lokalem Runtime-Check und CI.
 
 ## Datenbank und Migrationen
 
@@ -90,7 +90,7 @@ Migrationen liegen in `apps/backend/migrations`. Der Runner serialisiert Aufrufe
 | `infra/docker` | Lokale PostgreSQL-Instanz |
 | `scripts` | Migration und DB-Verifikation |
 | `.github/workflows` | Build, Lint, Tests, PostgreSQL-Smoke-Checks |
-| `docs` | Anforderungen, Designquellen, Planung und Review-Nachweise |
+| `docs` | Anforderungen, öffentliche Designzusammenfassungen, Planung und Review-Nachweise |
 
 ## Dokumentation und nächste Schritte
 
@@ -98,11 +98,12 @@ Migrationen liegen in `apps/backend/migrations`. Der Runner serialisiert Aufrufe
 - [Wirksame MVP-Baseline](docs/requirements/effective-mvp-baseline.md)
 - [Architektur](docs/architektur/ueberblick.md)
 - [Aktueller Projektstatus](docs/project-status.md)
+- [SP-01 Setup-Evidenz](docs/reviews/setup-evidence.md)
 - [Öffentliche und interne Dokumentation](docs/public-documentation.md)
 - [Öffentliche Reviewübersicht](docs/reviews/g0-handoff.md)
 - [Aktueller Arbeitsabschnitt](docs/planung/aktuelle-woche.md)
 
-Nächster Slice: Foundation → Activation → Login/Logout/Session → Tenant/RBAC. Identity-Implementierung benötigt vorab einen überprüften technischen Handoff. E-Mail-Zustellung und Deployment sind noch nicht nachgewiesen. [Contribution Guide](CONTRIBUTING.md) beschreibt Branches und Review.
+Nächster Gate: G0 für den ersten Identity-Slice abschließen. Danach Activation → Login/Logout/Session → Tenant/RBAC. E-Mail-Zustellung und Deployment sind noch nicht nachgewiesen. [Contribution Guide](CONTRIBUTING.md) beschreibt Branches und Review.
 
 **Nachweisregel:** DOCUMENTED ≠ IMPLEMENTED ≠ VERIFIED ≠ PRODUCTION READY.
 
