@@ -1,3 +1,5 @@
+> **Aktualisierung 07.10.2026:** Die folgende Liste ist historisch vom 30.09. Aktueller APIstand: 8.11 FINAL; operative Tickets und CR-03-Korrekturen: [G0-Backlog](g0-backlog.md).
+
 # Arbeitsvorrat
 
 **Stand:** 30.09.2026\

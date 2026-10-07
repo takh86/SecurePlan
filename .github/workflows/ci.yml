@@ -1,0 +1,50 @@
+name: Foundation CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: secureplan
+          POSTGRES_PASSWORD: secureplan_local
+          POSTGRES_DB: secureplan
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U secureplan -d secureplan"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: cp .env.example .env
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
+      - run: npm run test:e2e
+      - run: npm run db:migrate
+      - run: npm run db:migrate
+      - run: npm run db:verify
+      - name: Backend runtime readiness
+        shell: bash
+        run: |
+          npm run start:backend > /tmp/secureplan-backend.log 2>&1 &
+          backend_pid=$!
+          trap 'kill "$backend_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/api/v1/health/ready; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/secureplan-backend.log
+          exit 1

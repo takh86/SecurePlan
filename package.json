@@ -2,12 +2,24 @@
   "name": "secureplan",
   "version": "1.0.0",
   "private": true,
-  "description": "Backend Engineering Case Study · THM Praxisphase · B2B-SaaS Workforce Planning",
+  "description": "Backend Engineering Case Study \u00b7 THM Praxisphase \u00b7 B2B-SaaS Workforce Planning",
   "workspaces": [
     "apps/*"
   ],
   "scripts": {
     "dev:backend": "npm run start:dev --workspace=backend",
-    "dev:frontend": "npm run dev --workspace=frontend"
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces",
+    "test": "npm run test --workspace=backend",
+    "test:e2e": "npm run test:e2e --workspace=backend",
+    "db:up": "docker compose -f infra/docker/compose.yaml up -d --wait",
+    "db:down": "docker compose -f infra/docker/compose.yaml down",
+    "db:migrate": "node --env-file=.env scripts/migrate.mjs",
+    "db:verify": "node --env-file=.env scripts/verify-db.mjs",
+    "start:backend": "node --env-file=.env apps/backend/dist/main.js"
+  },
+  "engines": {
+    "node": ">=24 <25"
   }
 }
