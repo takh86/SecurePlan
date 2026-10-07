@@ -13,6 +13,8 @@ Reviewdatum: 07.10.2026. Ausgangscommit main: `1fb8983f4579a45618e738d8a95a06066
 | Frontend dev start | PASS, HTTP 200 | Starter-HTML; kein UX-Abnahmetest |
 | /health/ready ohne DB | PASS, HTTP 503, neutrale Meldung | Echter negativer Runtimefall |
 | Lokales PostgreSQL / Compose | NOT_RUN | Docker und PostgreSQL hier nicht installiert |
-| Migrations-/DB-positive Runtime | CI PENDING | Workflow nutzt PostgreSQL 17; twice migrate + verify + readiness |
+| Migrations-/DB-positive Runtime | PASS in CI | PostgreSQL 17; first apply, second no-op, DB verification und HTTP 200 readiness |
 
-Ein Foundation-Probe-Table ersetzt kein reviewed Produktschema. SP-01/G0 nicht als vollständig DONE markieren, solange die positiven PostgreSQL-Checks nicht nachgewiesen sind. Nach CI-Auswertung ist deren URL/Status zu ergänzen; bis dahin kein grünes CI behaupten.
+Der Foundation-Setup-Pfad ist auf Linux/CI nachgewiesen. Ein Foundation-Probe-Table ersetzt kein reviewed Produktschema; G0 bleibt wegen Auth-Handoff/Delivery NEEDS WORK. Docker Compose und Windows wurden hier nicht lokal getestet.
+
+CI-Nachweis: [Foundation CI Run #2](https://github.com/takh86/SecurePlan/actions/runs/37601987531), SUCCESS. Head `61eeb941bd219fb671a12ae413e46174b61d653e`; getesteter PR-Merge-Commit `012cf4bd78f5bf18b39a27d6bf9eea7978422dc6`. Die nachfolgende Dokumentationsevidenz ändert den Anwendungscode nicht.

@@ -11,9 +11,9 @@ Stand: 07.10.2026.
 | Phase 10 | Restlaufzeitplan plus [CR-03-Korrektur](planung/g0-backlog.md) |
 | Backend/Frontend | NestJS/React-Starter; Build/Lint geprüft |
 | Foundation | PostgreSQL-Pool, readiness, Migrationsrunner und technische Probe hinzugefügt |
-| Tests | Starterunit und Health-E2E; DB im E2E gemockt, separater PostgreSQL-Smoke-Check |
+| Tests | Starterunit und Health-E2E PASS; realer PostgreSQL-Smoke-Check und readiness in CI PASS |
 | Produktfunktionen | Auth/Mitarbeiter/Planung/Ersatz noch nicht implementiert |
-| G0 | NEEDS WORK: Authhandoff/Delivery und relevante Laufnachweise |
+| G0 | NEEDS WORK: Authhandoff/Delivery und Detailreviews |
 | Deployment/Production | Nicht nachgewiesen; MFA/Operations/Usability-Gates weiter offen |
 
 [Review](reviews/g0-handoff.md), [Testevidenz](reviews/setup-evidence.md), [Arbeitsabschnitt](planung/aktuelle-woche.md). Designfreigaben sind keine Supervisorabnahme von Code.

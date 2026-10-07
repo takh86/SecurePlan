@@ -13,13 +13,13 @@ Repository enthielt NestJS/React-Starter, striktes TypeScript und Startertests, 
 | G0-R03 | Delivery/Views/operative Werte offen | [Security](../security/auth-handoff.md), [Views](../ux-ui/auth-views-handoff.md); NEEDS DECISION/REVIEW | Delivery + TTL/Abusewerte festlegen, UI/API-Testfälle; vor SP-04 |
 | G0-R04 | Idempotency DB ohne actor/state/hash | [Schemaabgleich](../datenbank/idempotency-handoff.md); REVIEW DRAFT | replay/race/crash/fencing; vor kritischem idempotentem POST |
 | G0-R05 | Enums und Schichthistorie uneinheitlich | [Mapping/Optionen](../datenbank/workflow-shift-handoff.md); REVIEW DRAFT | Persistenzoption/DST bestätigen, Tests; vor SP-08/16 |
-| G0-R06 | Setup nicht nachgewiesen | DB-Scripts/Health/CI ergänzt; siehe [Evidenz](setup-evidence.md) | clean install/build/start + PostgreSQL/migration repeat, vor G0 PASS |
+| G0-R06 | Setup nicht nachgewiesen | DB-Scripts/Health/CI geprüft; Linux/CI PASS, siehe [Evidenz](setup-evidence.md) | clean install/build/start + PostgreSQL/migration repeat, vor G0 PASS |
 
 Diese Handoffs sind konkrete Reviewartefakte. Vorschläge sind nicht heimlich zu früheren Ownerentscheidungen erklärt. Vor Auth muss der Junior die Account-/Session-/Token-Migration und die atomaren Abläufe erklären können.
 
 ## G0-Entscheidung
 
-**NEEDS WORK**: Auth-Migrationen und Delivery sind noch offen; PostgreSQL-Smoke-Checks benötigen Laufnachweis. Foundation kann weitergeführt werden. Business-Features und produktive Sicherheit sind nicht fertig. Framework-Startertests ersetzen keine Tenant-/Auth-Negativfälle.
+**NEEDS WORK**: Auth-Migrationen, Delivery und die als Reviewentwurf markierten Detailentscheidungen sind noch offen; PostgreSQL-Smoke-Checks sind in CI nachgewiesen. Foundation kann weitergeführt werden. Business-Features und produktive Sicherheit sind nicht fertig. Framework-Startertests ersetzen keine Tenant-/Auth-Negativfälle.
 
 ## Restforecast
 
