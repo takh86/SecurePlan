@@ -1,19 +1,13 @@
-# Phase 7 – öffentlicher Designstatus
+# Datenbankdesign und Implementierungshandoff
 
-**Stand:** 30.09.2026
+Stand: 07.10.2026. Phase 7.1–7.3 sind laut Quellgate Designfreigaben; [Physical DB 7.2](../design-sources/SecurePlan_Phase_7.2_PostgreSQL_Physical_Database_Design_v1.0.md) ist jetzt repo-lokal lesbar.
 
-Die verfügbaren Projektquellen führen Phase 7.1–7.3 als FINAL / APPROVED / COMPLETE. Der Handoff geht an Phase 8 – API Design. Dieses Verzeichnis veröffentlicht den Status und eine allgemeine fachliche Übersicht; die technischen Datenbankdokumente und das vollständige ERD bleiben außerhalb des öffentlichen Uploads.
+| Bereich | Status |
+| --- | --- |
+| Foundation-Migration | Runner + Probe unter apps/backend/migrations |
+| Account/Session/Token | [Auth-Persistenzentwurf](auth-persistence-handoff.md), Umsetzung/Review offen |
+| Idempotency | [8.7-Abgleich](idempotency-handoff.md), keine Businessmigration |
+| Workflow/Schichtzeiten | [Mapping und Optionen](workflow-shift-handoff.md), Reviewentscheidung offen |
+| Produkt-DB insgesamt | Nicht migriert / nicht als fertig geprüft |
 
-| Teilphase | Dokumentierter Stand | Öffentliche Einordnung |
-|---|---|---|
-| 7.1 Conceptual / Logical Design | FINAL / APPROVED gemäß Quelle | Technisches Dokument nicht veröffentlicht |
-| 7.2 PostgreSQL Physical Design | FINAL / APPROVED gemäß Quelle | Technisches Dokument nicht veröffentlicht |
-| 7.3 Final Gate | PHASE 7 COMPLETE / PASS FOR PHASE 8 | [Statuszusammenfassung](phase-7-3-operations-final-gate.md) |
-
-## Fachliche Übersicht
-
-[Domain-Überblick](domain-overview.md) zeigt die zentralen fachlichen Begriffe und deren Zusammenhang. Er enthält keine Tabellenfelder, Auth-Persistenz, SQL-Constraints, Indexdefinitionen oder operative Konfiguration.
-
-## Handoff
-
-Phase 8.1 Resource Analysis liegt als Working Draft vor. Vor REST Endpoint Design 8.2 muss der Resource-Katalog gegen die aktuelle fachliche Baseline geprüft werden. Designstatus belegt keine bereits ausgeführten Migrationen, implementierten Funktionen oder produktive Betriebsumgebung.
+Der Runner definiert noch kein ORM und keine vollständige operative Backup-/Restore-Strategie. [Laufnachweise](../reviews/setup-evidence.md) unterscheiden echte DB-Smoke-Checks und Test-Doubles.
