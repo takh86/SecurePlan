@@ -22,3 +22,8 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+# Internal design and operational material (keep outside this repository)
+/docs/private/
+/docs/design-sources/
+/internal/
+/secrets/

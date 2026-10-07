@@ -79,7 +79,7 @@ npm run start:backend
 
 Migrationen liegen in `apps/backend/migrations`. Der Runner serialisiert Aufrufe über einen Advisory Lock, prüft SHA-256-Prüfsummen und führt jede neue Datei samt Ledger-Eintrag atomar aus. Bereits angewendete Dateien nicht verändern; neue Änderungen erhalten eine neue Migration. Ein zweiter Lauf muss ohne erneuten Effekt funktionieren.
 
-`0001_foundation.sql` ist eine kleine Infrastrukturprobe. Produkt-, Account-, Session- und Workflowtabellen sind noch nicht migriert. Der [Auth-Persistenz-Handoff](docs/datenbank/auth-persistence-handoff.md) definiert die nächste Arbeit.
+`0001_foundation.sql` ist eine kleine Infrastrukturprobe. Produkt-, Account-, Session- und Workflowtabellen sind noch nicht migriert. Die nächste Arbeit betrifft Identity und die fachliche Persistenz; genaue interne Spezifikationen werden separat gepflegt.
 
 ## Repository-Struktur
 
@@ -98,10 +98,14 @@ Migrationen liegen in `apps/backend/migrations`. Der Runner serialisiert Aufrufe
 - [Wirksame MVP-Baseline](docs/requirements/effective-mvp-baseline.md)
 - [Architektur](docs/architektur/ueberblick.md)
 - [Aktueller Projektstatus](docs/project-status.md)
-- [Designquellen Phasen 7–9](docs/design-sources/README.md)
-- [G0-Handoff, Findings und Akzeptanzkriterien](docs/reviews/g0-handoff.md)
+- [Öffentliche und interne Dokumentation](docs/public-documentation.md)
+- [Öffentliche Reviewübersicht](docs/reviews/g0-handoff.md)
 - [Aktueller Arbeitsabschnitt](docs/planung/aktuelle-woche.md)
 
-Nächster Slice: Foundation → Activation → Login/Logout/Session → Tenant/RBAC. Auth benötigt zuerst reviewed Account-/Session-/Token-Migrationen sowie eine festgelegte Delivery-Konfiguration. E-Mail-Zustellung und Deployment sind noch nicht nachgewiesen. [Contribution Guide](CONTRIBUTING.md) beschreibt Branches und Review.
+Nächster Slice: Foundation → Activation → Login/Logout/Session → Tenant/RBAC. Identity-Implementierung benötigt vorab einen überprüften technischen Handoff. E-Mail-Zustellung und Deployment sind noch nicht nachgewiesen. [Contribution Guide](CONTRIBUTING.md) beschreibt Branches und Review.
 
 **Nachweisregel:** DOCUMENTED ≠ IMPLEMENTED ≠ VERIFIED ≠ PRODUCTION READY.
+
+## Veröffentlichungsumfang
+
+Dieses öffentliche Repository zeigt die Engineering-Case-Study und freigegebenen Code. Detaillierte interne Sicherheits-, Datenbank- und Vertragsspezifikationen werden separat gepflegt. Reale Zugangsdaten und Kundendaten werden nicht veröffentlicht. [Dokumentationsregeln](docs/public-documentation.md).

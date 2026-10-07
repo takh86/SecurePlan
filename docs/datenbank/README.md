@@ -1,13 +1,7 @@
-# Datenbankdesign und Implementierungshandoff
+# Datenbankdesign – öffentliche Übersicht
 
-Stand: 07.10.2026. Phase 7.1–7.3 sind laut Quellgate Designfreigaben; [Physical DB 7.2](../design-sources/SecurePlan_Phase_7.2_PostgreSQL_Physical_Database_Design_v1.0.md) ist jetzt repo-lokal lesbar.
+Stand: 07.10.2026. PostgreSQL ist der geplante Persistenzstack. Die öffentliche [Domainübersicht](domain-overview.md) erklärt zentrale fachliche Begriffe, ohne das interne Physical Schema zu veröffentlichen.
 
-| Bereich | Status |
-| --- | --- |
-| Foundation-Migration | Runner + Probe unter apps/backend/migrations |
-| Account/Session/Token | [Auth-Persistenzentwurf](auth-persistence-handoff.md), Umsetzung/Review offen |
-| Idempotency | [8.7-Abgleich](idempotency-handoff.md), keine Businessmigration |
-| Workflow/Schichtzeiten | [Mapping und Optionen](workflow-shift-handoff.md), Reviewentscheidung offen |
-| Produkt-DB insgesamt | Nicht migriert / nicht als fertig geprüft |
+Die Foundation enthält einen Migrationsrunner und eine kleine technische Probe. Produktmigrationen und Domain-Persistenz sind noch nicht implementiert. [Laufnachweise](../reviews/setup-evidence.md) unterscheiden Tests mit Test-Doubles und echte PostgreSQL-Smoke-Checks.
 
-Der Runner definiert noch kein ORM und keine vollständige operative Backup-/Restore-Strategie. [Laufnachweise](../reviews/setup-evidence.md) unterscheiden echte DB-Smoke-Checks und Test-Doubles.
+[Identity](auth-persistence-handoff.md), [Command-Zuverlässigkeit](idempotency-handoff.md) und [Workflow/Zeitmodell](workflow-shift-handoff.md) sind allgemeine öffentliche Zusammenfassungen. Detaillierte Schema-, Constraint-, Index- und Operationsunterlagen bleiben separat.

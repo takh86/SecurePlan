@@ -1,5 +1,3 @@
-> **Aktualisierung 07.10.2026:** Diese Originalauswahl und Veröffentlichungsbeschreibung ist historisch. Auf Nutzerauftrag wurden aktuelle technische Designverträge als Markdown ergänzt: [Designquellen](../design-sources/README.md). Keine Zugangsdaten oder realen Betriebsdatensätze wurden ergänzt. API 8.11 ersetzt den alten 8.1-Arbeitsstand.
-
 # Technische Quelldokumente
 
 **Stand:** 30.09.2026
