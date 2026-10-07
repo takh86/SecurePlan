@@ -2,7 +2,7 @@
 
 B2B-SaaS für Personal- und Einsatzplanung in Sicherheitsunternehmen. Praxisphase im B.Sc. Informatik an der THM; Fokus auf Backend Engineering mit nachvollziehbaren Anforderungen, Architekturentscheidungen und Tests.
 
-**Stand: 07.10.2026 · SP-01 Foundation VERIFIED · G0: NEEDS WORK**
+**Stand: 07.10.2026 · SP-01 Foundation VERIFIED · G0: DESIGN READY FOR FIRST IDENTITY SLICE**
 
 Der Repository-Stand enthält ein NestJS-Backend und ein React-Frontend. Die lokale Foundation ist unter Windows und in Linux-CI reproduzierbar nachgewiesen. Die Benutzeroberfläche ist noch der Starter. Auth, Mitarbeiterverwaltung und Planung sind entworfen, aber noch nicht implementiert. Build- und Foundationtests belegen keine fertigen Produktfunktionen.
 
@@ -103,7 +103,7 @@ Migrationen liegen in `apps/backend/migrations`. Der Runner serialisiert Aufrufe
 - [Öffentliche Reviewübersicht](docs/reviews/g0-handoff.md)
 - [Aktueller Arbeitsabschnitt](docs/planung/aktuelle-woche.md)
 
-Nächster Gate: G0 für den ersten Identity-Slice abschließen. Danach Activation → Login/Logout/Session → Tenant/RBAC. E-Mail-Zustellung und Deployment sind noch nicht nachgewiesen. [Contribution Guide](CONTRIBUTING.md) beschreibt Branches und Review.
+G0 ist als Design-/Handoff-Gate für den ersten Identity-Slice abgeschlossen. Nächster Schritt: Validation/Errorhandling, danach Activation/Reset → Login/Logout/Session → Tenant/RBAC implementieren und testen. E-Mail-Zustellung und Deployment sind noch nicht nachgewiesen. [Contribution Guide](CONTRIBUTING.md) beschreibt Branches und Review.
 
 **Nachweisregel:** DOCUMENTED ≠ IMPLEMENTED ≠ VERIFIED ≠ PRODUCTION READY.
 

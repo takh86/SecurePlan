@@ -71,8 +71,14 @@ Die fachlichen Scope- und Roadmap-Entscheidungen sind im [öffentlichen MVP-Übe
 
 Die vorhandenen Designquellen wurden in diesen Dokumentationsstand aufgenommen. Der Abgleich ist keine neue fachliche Freigabe, keine Betreuerabnahme und kein Implementierungsnachweis.
 
+## 07.10.2026 — Foundation und technischer Handoff
+
+SP-01 ist gemäß gemergter Windows-Evidenz und Linux-CI **PASS / CLOSED**. Backend-/Frontend-Starter, PostgreSQL, Migration mit Replay sowie Readiness sind nachgewiesen. Siehe [Setup-Evidenz](../reviews/setup-evidence.md).
+
+Der interne Identity-Handoff ergänzt den Abgleich der finalen API-/Securitybaseline, Umsetzungstickets, Testmatrix, Delivery-Entscheidung und Restforecast. G0 ist **PASS FOR FIRST IDENTITY SLICE (Design/Handoff)**. Historische Fortschrittseinträge bleiben als datierte Momentaufnahmen erhalten.
+
 ## Aktueller Arbeitsstand
 
-**Phase 8.1 Baseline-Abgleich → Phase 8.2 REST Endpoint Design.**
+**Foundation verifiziert; erster Identity-Slice bereit zur Implementierung.**
 
-Produktions-Frontend, Backend, ausgeführte Migrationen, Auth-Implementierung, CI/CD, Deployment und Feature-Tests sind weiterhin nicht nachgewiesen. Historische Fortschrittseinträge bleiben erhalten.
+Validation/Errorhandling → Activation/Reset → Login/Session → Tenant/RBAC. Auth- und Businessfunktionen, Produktmigrationen, deren Featuretests sowie Deployment sind noch nicht nachgewiesen. Designfreigabe ersetzt keine Implementierungs- oder Betreuerabnahme. Details bleiben im internen Handoff.

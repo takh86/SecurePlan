@@ -1,6 +1,6 @@
 # Architekturüberblick – Phase 6
 
-**Stand:** 30.09.2026\
+**Architekturbaseline:** 30.09.2026 · Fortschrittsabgleich: 07.10.2026\
 **Status:** Phase 6.1–6.11 FINAL / APPROVED / CLOSED gemäß [Final-Gate 6.11](phase-6-11-final-baseline-gate.md).
 
 ## Freigegebene Dokumente
@@ -84,8 +84,10 @@ Cross-cutting:
 
 ## 8. Handoff nach Architekturabschluss
 
-Phase 7 hat das Datenbankdesign konkretisiert und ist gemäß [Final-Gate 7.3](../datenbank/phase-7-3-operations-final-gate.md) abgeschlossen. Aktuelle Arbeit ist [API Resource Analysis 8.1](../api/phase-8-1-resource-analysis-draft.md) als Draft; danach folgt REST Endpoint Design 8.2.
+Phase 7 hat das Datenbankdesign konkretisiert und ist gemäß [Final-Gate 7.3](../datenbank/phase-7-3-operations-final-gate.md) abgeschlossen. Die nachfolgende finale API- und Security-Designbaseline wird intern geführt. Die öffentlichen Seiten unter [API](../api/phase-8-1-resource-analysis-draft.md) dienen als Zusammenfassung, nicht als aktueller Draft-Arbeitsauftrag.
+
+Der ergänzte Identity-Handoff ist bereit für den ersten Implementierungsslice. Siehe [aktuellen Projektstatus](../project-status.md) und [G0-Review](../reviews/g0-handoff.md).
 
 ## 9. Production-Gates und Implementierungsnachweis
 
-Production-Gates aus 6.11 bleiben offen. Architektur- und Datenbankdesign dokumentieren kein bereits laufendes Backend, keine ausführbaren Migrationen und keine erfolgreichen Feature-Tests. Implementierung folgt erst nach den verbleibenden Design-/Human-Gates.
+SP-01 Foundation ist mit lokalem Runtime-Nachweis und CI verifiziert: Starter, PostgreSQL, Foundation-Migration mit Replay und Readiness. Auth- und Businessfunktionen sowie Produktmigrationen und deren Featuretests sind noch nicht implementiert. Production-Gates aus 6.11 und Deployment bleiben offen; die Designfreigabe ist keine Produktionsabnahme.
