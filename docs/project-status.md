@@ -6,8 +6,8 @@ Stand: 07.10.2026.
 | --- | --- |
 | Scope und CRs | Praktikums-MVP mit CR-01/02/03 dokumentiert |
 | Phasen 4–7 | Design-Gates aus Quellen; technische Handoff-Gaps im G0-Review |
-| Phase 8 | 8.11 FINAL/API-Baseline, 47 entworfene MVP-Endpunkte; [Quellen](design-sources/README.md) |
-| Phase 9 | 9.1–9.4 v1.1 FINAL als Design; Auth nicht implementiert |
+| Phase 8 | Interne finale API-Designbaseline; öffentliche Zusammenfassung unter docs/api |
+| Phase 9 | Security-Design vorhanden; öffentliche Prinzipien, Auth nicht implementiert |
 | Phase 10 | Restlaufzeitplan plus [CR-03-Korrektur](planung/g0-backlog.md) |
 | Backend/Frontend | NestJS/React-Starter; Build/Lint geprüft |
 | Foundation | PostgreSQL-Pool, readiness, Migrationsrunner und technische Probe hinzugefügt |

@@ -10,9 +10,9 @@ Stand: 07.10.2026. Einstieg: [Projektstatus](project-status.md) und [G0-Review](
 | Architektur | [Überblick](architektur/ueberblick.md) |
 | Datenbank | [Design/Handoff](datenbank/README.md) |
 | API | [Finaler Designstand](api/README.md) |
-| Security | [Auth-Handoff](security/auth-handoff.md), [Designquellen](design-sources/README.md) |
+| Security | [Auth-Handoff](security/auth-handoff.md), [Veröffentlichungsregeln](public-documentation.md) |
 | Planung | [Aktuelle Woche](planung/aktuelle-woche.md), [Backlogkorrektur](planung/g0-backlog.md) |
-| Quellen | [Neue technische Baselines](design-sources/README.md), [historische Originalauswahl](sources/README.md) |
+| Quellen | [Veröffentlichungsregeln](public-documentation.md), [historische Originalauswahl](sources/README.md) |
 | Review / Nachweise | [G0](reviews/g0-handoff.md), [Setup](reviews/setup-evidence.md) |
 
 ## Source of Truth
