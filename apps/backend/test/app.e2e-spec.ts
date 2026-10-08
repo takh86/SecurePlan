@@ -4,6 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { DatabaseService } from '../src/database/database.service.js';
 import { AppModule } from './../src/app.module.js';
+import { configureApp } from '../src/configure-app.js';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -19,6 +20,7 @@ describe('AppController (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
+    configureApp(app);
     await app.init();
   });
 
