@@ -1,0 +1,31 @@
+.api-error-alert {
+  padding: 1rem;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+  text-align: start;
+}
+
+.api-error-alert__title {
+  font-size: 1.125rem;
+  margin: 0 0 0.5rem;
+}
+
+.api-error-alert p {
+  margin: 0.375rem 0;
+}
+
+.api-error-alert__reference {
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+}
+
+.api-error-alert button {
+  cursor: pointer;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.api-error-alert button:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 3px;
+}

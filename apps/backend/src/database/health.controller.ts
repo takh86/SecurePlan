@@ -13,7 +13,10 @@ export class HealthController {
   @Get('ready')
   async ready() {
     if (!(await this.database.isReady())) {
-      throw new ServiceUnavailableException('Service not ready');
+      throw new ServiceUnavailableException({
+        message: 'Service not ready',
+        code: 'SERVICE_UNAVAILABLE',
+      });
     }
     return { status: 'ok' };
   }

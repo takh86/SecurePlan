@@ -4,6 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { DatabaseService } from '../src/database/database.service.js';
 import { AppModule } from './../src/app.module.js';
+import { configureApp } from '../src/configure-app.js';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -19,6 +20,7 @@ describe('AppController (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
+    configureApp(app);
     await app.init();
   });
 
@@ -33,8 +35,17 @@ describe('AppController (e2e)', () => {
     database.isReady.mockResolvedValue(false);
     const response = await request(app.getHttpServer())
       .get('/api/v1/health/ready')
+      .expect('Content-Type', /application\/problem\+json/)
       .expect(503);
-    expect(response.body.message).toBe('Service not ready');
+    expect(response.body).toMatchObject({
+      type: '/problems/service-unavailable',
+      title: 'Service Unavailable',
+      status: 503,
+      instance: `/problems/occurrences/${response.body.correlationId}`,
+    });
+
+    expect(response.body.detail).toEqual(expect.any(String));
+    expect(response.body.code).toEqual(expect.any(String));
   });
 
   it('readiness returns 200 after a successful probe', async () => {
