@@ -35,8 +35,17 @@ describe('AppController (e2e)', () => {
     database.isReady.mockResolvedValue(false);
     const response = await request(app.getHttpServer())
       .get('/api/v1/health/ready')
+      .expect('Content-Type', /application\/problem\+json/)
       .expect(503);
-    expect(response.body.message).toBe('Service not ready');
+    expect(response.body).toMatchObject({
+      type: 'about:blank',
+      title: 'Service Unavailable',
+      status: 503,
+      instance: '/api/v1/health/ready',
+    });
+
+    expect(response.body.detail).toEqual(expect.any(String));
+    expect(response.body.code).toEqual(expect.any(String));
   });
 
   it('readiness returns 200 after a successful probe', async () => {
