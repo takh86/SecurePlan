@@ -1,5 +1,8 @@
 import {
   Body,
+  ForbiddenException,
+  HttpException,
+  UnauthorizedException,
   ConflictException,
   Controller,
   Get,
@@ -50,6 +53,31 @@ class ValidationTestController {
       code: 'SQL_CONSTRAINT_SECRET_FOR_TEST',
       message: 'FAKE_DATABASE_SECRET_FOR_TEST',
     });
+  }
+
+  @Get('unauthorized')
+  unauthorized(): never {
+    throw new UnauthorizedException();
+  }
+
+  @Get('session-expired')
+  sessionExpired(): never {
+    throw new UnauthorizedException({ code: 'SESSION_EXPIRED' });
+  }
+
+  @Get('forbidden')
+  forbidden(): never {
+    throw new ForbiddenException({ code: 'ACTION_FORBIDDEN' });
+  }
+
+  @Get('throttled')
+  throttled(): never {
+    throw new HttpException({ code: 'LOGIN_RATE_LIMITED' }, 429);
+  }
+
+  @Get('edit-lease-conflict')
+  editLeaseConflict(): never {
+    throw new ConflictException({ code: 'RESOURCE_EDIT_LOCKED' });
   }
 
   @Get('service-unavailable')
@@ -115,12 +143,12 @@ describe('Validation (e2e)', () => {
       .expect(400)
       .expect(({ body }) => {
         expect(body).toMatchObject({
-          type: 'about:blank',
+          type: '/problems/unknown-field',
           title: 'Bad Request',
           status: 400,
-          code: 'VALIDATION_FAILED',
-          instance: '/validation-test',
+          code: 'UNKNOWN_FIELD',
         });
+        expect(body.instance).toBe(`/problems/occurrences/${body.correlationId}`);
         expect(body).toHaveProperty('detail');
       });
   });
@@ -136,9 +164,7 @@ describe('Validation (e2e)', () => {
           status: 500,
           code: 'INTERNAL_ERROR',
         });
-        expect(JSON.stringify(body)).not.toContain(
-          'FAKE_DATABASE_SECRET_FOR_TEST',
-        );
+        expect(JSON.stringify(body)).not.toContain('FAKE_DATABASE_SECRET_FOR_TEST');
         expect(body.correlationId).toEqual(expect.any(String));
         expect(body.correlationId).toBe(headers['x-correlation-id']);
       });
@@ -155,9 +181,7 @@ describe('Validation (e2e)', () => {
 
     expect(firstResponse.body.correlationId).toEqual(expect.any(String));
     expect(secondResponse.body.correlationId).toEqual(expect.any(String));
-    expect(firstResponse.body.correlationId).not.toBe(
-      secondResponse.body.correlationId,
-    );
+    expect(firstResponse.body.correlationId).not.toBe(secondResponse.body.correlationId);
   });
 
   it('should attach a correlation ID to successful requests', async () => {
@@ -170,9 +194,7 @@ describe('Validation (e2e)', () => {
   });
 
   it('should log unexpected errors safely', async () => {
-    const logSpy = vi
-      .spyOn(Logger.prototype, 'error')
-      .mockImplementation(() => undefined);
+    const logSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
 
     try {
       const response = await request(app.getHttpServer())
@@ -191,9 +213,7 @@ describe('Validation (e2e)', () => {
   });
 
   it('should not log validation errors as server failures', async () => {
-    const logSpy = vi
-      .spyOn(Logger.prototype, 'error')
-      .mockImplementation(() => undefined);
+    const logSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
 
     try {
       await request(app.getHttpServer())
@@ -217,7 +237,7 @@ describe('Validation (e2e)', () => {
           title: 'Conflict',
           status: 409,
           code: 'PLAN_CONCURRENT_MODIFICATION',
-          instance: '/validation-test/conflict',
+          type: '/problems/plan-concurrent-modification',
         });
         expect(body.correlationId).toBe(headers['x-correlation-id']);
       });
@@ -233,25 +253,21 @@ describe('Validation (e2e)', () => {
           title: 'Not Found',
           status: 404,
           code: 'RESOURCE_NOT_FOUND',
-          instance: '/validation-test/not-a-real-route',
+          type: '/problems/resource-not-found',
         });
       });
   });
 
-  it('should not expose an unapproved internal conflict code', async () => {
+  it('should map an unclassified 409 to sanitized 500 rather than omit code', async () => {
     await request(app.getHttpServer())
       .get('/validation-test/unknown-conflict-code')
       .expect('Content-Type', /application\/problem\+json/)
-      .expect(409)
+      .expect(500)
       .expect(({ body }) => {
-        expect(body.status).toBe(409);
-        expect(body).not.toHaveProperty('code');
-        expect(JSON.stringify(body)).not.toContain(
-          'SQL_CONSTRAINT_SECRET_FOR_TEST',
-        );
-        expect(JSON.stringify(body)).not.toContain(
-          'FAKE_DATABASE_SECRET_FOR_TEST',
-        );
+        expect(body.status).toBe(500);
+        expect(body.code).toBe('INTERNAL_ERROR');
+        expect(JSON.stringify(body)).not.toContain('SQL_CONSTRAINT_SECRET_FOR_TEST');
+        expect(JSON.stringify(body)).not.toContain('FAKE_DATABASE_SECRET_FOR_TEST');
       });
   });
 
@@ -267,9 +283,106 @@ describe('Validation (e2e)', () => {
           code: 'SERVICE_UNAVAILABLE',
         });
         expect(body.correlationId).toBe(headers['x-correlation-id']);
-        expect(JSON.stringify(body)).not.toContain(
-          'FAKE_DATABASE_SECRET_FOR_TEST',
-        );
+        expect(JSON.stringify(body)).not.toContain('FAKE_DATABASE_SECRET_FOR_TEST');
       });
   });
+  it('returns required RFC 9457 type/instance/code on unexpected 500', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/validation-test/unexpected-error')
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(500);
+
+    expect(response.body).toMatchObject({
+      type: '/problems/internal-error',
+      status: 500,
+      code: 'INTERNAL_ERROR',
+      instance: `/problems/occurrences/${response.headers['x-correlation-id']}`,
+      correlationId: response.headers['x-correlation-id'],
+    });
+    expect(response.body).not.toHaveProperty('errors');
+  });
+
+  it('returns safe field validation pointers and stable subcodes', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/validation-test')
+      .send({ name: 99, count: '5' })
+      .expect(400);
+
+    expect(response.body.code).toBe('VALIDATION_FAILED');
+    expect(response.body.type).toBe('/problems/validation-failed');
+    expect(response.body.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ pointer: '#/name', code: 'INVALID_TYPE' }),
+      expect.objectContaining({ pointer: '#/count', code: 'INVALID_TYPE' }),
+    ]));
+    expect(JSON.stringify(response.body.errors)).not.toContain('rejectedValue');
+    expect(response.body.instance).toBe(`/problems/occurrences/${response.body.correlationId}`);
+  });
+
+  it('returns REQUIRED without exposing a missing field value', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/validation-test')
+      .send({ name: 'Test' })
+      .expect(400);
+
+    expect(response.body.code).toBe('VALIDATION_FAILED');
+    expect(response.body.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ pointer: '#/count', code: 'REQUIRED' }),
+    ]));
+  });
+
+  it('maps malformed JSON to approved INVALID_REQUEST_BODY', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/validation-test')
+      .set('Content-Type', 'application/json')
+      .send('{"name":')
+      .expect(400);
+    expect(response.body).toMatchObject({
+      type: '/problems/invalid-request-body',
+      status: 400,
+      code: 'INVALID_REQUEST_BODY',
+    });
+  });
+
+  it('maps code-less authentication to SESSION_REQUIRED', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/validation-test/unauthorized')
+      .expect(401);
+    expect(response.body).toMatchObject({
+      status: 401,
+      code: 'SESSION_REQUIRED',
+      type: '/problems/session-required',
+    });
+  });
+
+  it('preserves approved SESSION_EXPIRED, ACTION_FORBIDDEN and LOGIN_RATE_LIMITED', async () => {
+    const cases = [
+      ['session-expired', 401, 'SESSION_EXPIRED'],
+      ['forbidden', 403, 'ACTION_FORBIDDEN'],
+      ['throttled', 429, 'LOGIN_RATE_LIMITED'],
+    ] as const;
+    for (const [route, status, code] of cases) {
+      const response = await request(app.getHttpServer())
+        .get(`/validation-test/${route}`)
+        .expect(status);
+      expect(response.body.code).toBe(code);
+      expect(response.body.type).toBe(`/problems/${code.toLowerCase().replaceAll('_', '-')}`);
+    }
+  });
+
+  it('preserves Phase 8.7 edit-lease conflict code', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/validation-test/edit-lease-conflict')
+      .expect(409);
+    expect(response.body.code).toBe('RESOURCE_EDIT_LOCKED');
+    expect(response.body.type).toBe('/problems/resource-edit-locked');
+  });
+
+  it('never returns 422 for DTO validation', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/validation-test')
+      .send({ count: 'oops' })
+      .expect(400);
+    expect(response.body.code).toBe('VALIDATION_FAILED');
+  });
+
 });

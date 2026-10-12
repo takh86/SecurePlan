@@ -104,4 +104,34 @@ describe('RFC 9457 problem-details mapping', () => {
   it('does not render arbitrary exception messages', () => {
     expect(JSON.stringify(describeApiError(new Error('token=secret-123')))).not.toContain('secret-123');
   });
+
+  it('accepts the approved 401/403/429 machine codes', async () => {
+    for (const [status, code] of [
+      [401, 'SESSION_EXPIRED'],
+      [403, 'ACTION_FORBIDDEN'],
+      [429, 'LOGIN_RATE_LIMITED'],
+    ] as const) {
+      const error = await parseApiError(problemResponse(status, { code }));
+      expect(error.code).toBe(code);
+    }
+  });
+
+  it('maps 400 UNKNOWN_FIELD without displaying raw server messages', async () => {
+    const error = await parseApiError(problemResponse(400, {
+      code: 'UNKNOWN_FIELD',
+      detail: 'password=FAKE_SECRET_FOR_TEST',
+    }));
+    expect(error.code).toBe('UNKNOWN_FIELD');
+    expect(JSON.stringify(describeApiError(error))).not.toContain('FAKE_SECRET_FOR_TEST');
+  });
+
+  it('understands Phase 8.7 known conflict codes without parsing detail', async () => {
+    const error = await parseApiError(problemResponse(409, {
+      code: 'RESOURCE_EDIT_LOCKED',
+      detail: 'arbitrary text',
+    }));
+    expect(error.code).toBe('RESOURCE_EDIT_LOCKED');
+    expect(describeApiError(error).title).toBe('Konflikt');
+  });
+
 });

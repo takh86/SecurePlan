@@ -38,10 +38,10 @@ describe('AppController (e2e)', () => {
       .expect('Content-Type', /application\/problem\+json/)
       .expect(503);
     expect(response.body).toMatchObject({
-      type: 'about:blank',
+      type: '/problems/service-unavailable',
       title: 'Service Unavailable',
       status: 503,
-      instance: '/api/v1/health/ready',
+      instance: `/problems/occurrences/${response.body.correlationId}`,
     });
 
     expect(response.body.detail).toEqual(expect.any(String));

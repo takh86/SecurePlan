@@ -4,6 +4,19 @@
  */
 export type KnownErrorCode =
   | 'VALIDATION_FAILED'
+  | 'UNKNOWN_FIELD'
+  | 'INVALID_REQUEST_BODY'
+  | 'SESSION_REQUIRED'
+  | 'SESSION_EXPIRED'
+  | 'SESSION_REVOKED'
+  | 'INVALID_CREDENTIALS'
+  | 'ACTION_FORBIDDEN'
+  | 'CSRF_VALIDATION_FAILED'
+  | 'LOGIN_RATE_LIMITED'
+  | 'RATE_LIMITED'
+  | 'RESOURCE_EDIT_LOCKED'
+  | 'EDIT_LEASE_NOT_HELD'
+  | 'IDEMPOTENCY_REQUEST_IN_PROGRESS'
   | 'RESOURCE_NOT_FOUND'
   | 'PLAN_CONCURRENT_MODIFICATION'
   | 'INTERNAL_ERROR'
@@ -13,10 +26,23 @@ export type ApiErrorKind = 'http' | 'network' | 'invalid-response';
 
 const codeStatuses: Record<KnownErrorCode, number> = {
   VALIDATION_FAILED: 400,
+  UNKNOWN_FIELD: 400,
+  INVALID_REQUEST_BODY: 400,
+  SESSION_REQUIRED: 401,
+  SESSION_EXPIRED: 401,
+  SESSION_REVOKED: 401,
+  INVALID_CREDENTIALS: 401,
+  ACTION_FORBIDDEN: 403,
+  CSRF_VALIDATION_FAILED: 403,
+  LOGIN_RATE_LIMITED: 429,
+  RATE_LIMITED: 429,
+  RESOURCE_EDIT_LOCKED: 409,
+  EDIT_LEASE_NOT_HELD: 409,
+  IDEMPOTENCY_REQUEST_IN_PROGRESS: 409,
   RESOURCE_NOT_FOUND: 404,
   PLAN_CONCURRENT_MODIFICATION: 409,
   INTERNAL_ERROR: 500,
-  // Provisional until the complete approved API error catalogue is checked.
+  // Operational 503 extension is NOT in the approved 8.5 catalogue; decision pending.
   SERVICE_UNAVAILABLE: 503,
 };
 
@@ -51,7 +77,6 @@ export class ApiError extends Error {
     correlationId: string | null,
   ) {
     super('API request failed');
-
     this.name = 'ApiError';
     this.kind = kind;
     this.status = status;
