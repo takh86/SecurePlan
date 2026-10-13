@@ -31,6 +31,7 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
+      - run: npm run test --workspace=frontend
       - run: npm run test:e2e
       - run: npm run db:migrate
       - run: npm run db:migrate
