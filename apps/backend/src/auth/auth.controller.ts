@@ -1,4 +1,13 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+
+import { ThrottlerGuard } from '@nestjs/throttler';
+
 import { ActivateAccountDto } from './dto/activate-account.dto.js';
 import { AuthService } from './auth.service.js';
 
@@ -8,6 +17,7 @@ export class AuthController {
 
   @Post('activate')
   @HttpCode(200)
+  @UseGuards(ThrottlerGuard)
   activate(@Body() activateAccountDto: ActivateAccountDto) {
     return this.authService.activate(activateAccountDto);
   }

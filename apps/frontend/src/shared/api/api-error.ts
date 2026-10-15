@@ -20,7 +20,9 @@ export type KnownErrorCode =
   | 'RESOURCE_NOT_FOUND'
   | 'PLAN_CONCURRENT_MODIFICATION'
   | 'INTERNAL_ERROR'
-  | 'SERVICE_UNAVAILABLE';
+  | 'SERVICE_UNAVAILABLE'
+  | 'ACTIVATION_TOKEN_INVALID_OR_EXPIRED'
+  | 'PASSWORD_POLICY_VIOLATION';
 
 export type ApiErrorKind = 'http' | 'network' | 'invalid-response';
 
@@ -44,6 +46,8 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   INTERNAL_ERROR: 500,
   // Operational 503 extension is NOT in the approved 8.5 catalogue; decision pending.
   SERVICE_UNAVAILABLE: 503,
+  ACTIVATION_TOKEN_INVALID_OR_EXPIRED: 400,
+  PASSWORD_POLICY_VIOLATION: 400,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -153,7 +157,25 @@ export function describeApiError(error: unknown): UserFacingError {
       canRetry: false,
     };
   }
+  if (error.code === 'ACTIVATION_TOKEN_INVALID_OR_EXPIRED') {
+    return {
+      title: 'Aktivierungslink ungültig',
+      description:
+        'Dieser Aktivierungslink ist ungültig oder abgelaufen. Bitte wenden Sie sich an Ihre Administration.',
+      correlationId,
+      canRetry: false,
+    };
+  }
 
+  if (error.code === 'PASSWORD_POLICY_VIOLATION') {
+    return {
+      title: 'Passwort nicht zulässig',
+      description:
+        'Bitte wählen Sie ein anderes, sicheres Passwort.',
+      correlationId,
+      canRetry: false,
+    };
+  }
   switch (error.status) {
     case 400:
       return {

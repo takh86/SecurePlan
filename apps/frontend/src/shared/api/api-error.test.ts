@@ -14,6 +14,31 @@ function problemResponse(
 }
 
 describe('RFC 9457 problem-details mapping', () => {
+  it.each([
+    {
+      error: new ApiError('network', null, null, null),
+      title: 'Verbindung fehlgeschlagen',
+      description: 'Bitte pr\u00fcfen Sie Ihre Internetverbindung und versuchen Sie es erneut.',
+    },
+    {
+      error: new ApiError('http', 400, 'ACTIVATION_TOKEN_INVALID_OR_EXPIRED', null),
+      title: 'Aktivierungslink ung\u00fcltig',
+      description: 'Dieser Aktivierungslink ist ung\u00fcltig oder abgelaufen. Bitte wenden Sie sich an Ihre Administration.',
+    },
+    {
+      error: new ApiError('http', 400, 'PASSWORD_POLICY_VIOLATION', null),
+      title: 'Passwort nicht zul\u00e4ssig',
+      description: 'Bitte w\u00e4hlen Sie ein anderes, sicheres Passwort.',
+    },
+    {
+      error: new ApiError('http', 503, 'SERVICE_UNAVAILABLE', null),
+      title: 'Dienst vor\u00fcbergehend nicht verf\u00fcgbar',
+      description: 'Bitte versuchen Sie es sp\u00e4ter erneut.',
+    },
+  ])('preserves correct German copy: $title', ({ error, title, description }) => {
+    expect(describeApiError(error)).toMatchObject({ title, description });
+  });
+
   it('maps known 400 validation error', async () => {
     const error = await parseApiError(problemResponse(400, { code: 'VALIDATION_FAILED' }));
     expect(error).toMatchObject({ kind: 'http', status: 400, code: 'VALIDATION_FAILED' });

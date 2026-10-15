@@ -13,6 +13,7 @@
     "lint": "npm run lint --workspaces",
     "test": "npm run test --workspace=backend",
     "test:e2e": "npm run test:e2e --workspace=backend",
+    "test:scripts": "node --test scripts/activation-demo.test.mjs scripts/check-public.test.mjs",
     "db:up": "docker compose -f infra/docker/compose.yaml up -d --wait",
     "db:down": "docker compose -f infra/docker/compose.yaml down",
     "db:migrate": "node --env-file=.env scripts/migrate.mjs",
