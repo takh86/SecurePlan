@@ -6,4 +6,4 @@ Nicht zur Veröffentlichung vorgesehen: echte Kundendaten, personenbezogene Betr
 
 `.env.example` und lokale Compose-/CI-Werte sind absichtlich synthetisch. Öffentlicher Code und seine Entwicklungsbeispiele können von Besuchern gelesen werden; `.gitignore` ist kein Zugriffsschutz und entfernt keine bereits gespeicherten Commits. Vor einer Veröffentlichung müssen sensible Inhalte aus Code, Dateien, PRs, Issues und Artefakten geprüft werden.
 
-`npm run check:public` prüft den aktuellen getrackten Dateiinhalt auf bestimmte Credentialmuster und verbotene interne Pfade. Das ist eine zusätzliche Kontrolle, kein vollständiger Secret- oder Datenschutz-Audit und keine Bereinigung von Git-Historie.
+`npm run check:public` prüft getrackte und nicht ignorierte ungetrackte Dateien auf bestimmte Credentialmuster und verbotene interne Pfade. Das ist eine zusätzliche Kontrolle, kein vollständiger Secret- oder Datenschutz-Audit und keine Bereinigung von Git-Historie.

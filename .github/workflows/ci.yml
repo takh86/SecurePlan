@@ -28,14 +28,34 @@ jobs:
       - run: npm run check:public
       - run: npm ci
       - run: cp .env.example .env
+      - name: Provision password denylist (not published or cached)
+        shell: bash
+        env:
+          SECLISTS_REVISION: 997dd861b9fa2623f06f30d5f9085713ce830f0c
+        run: |
+          set -euo pipefail
+          export TMPDIR="$RUNNER_TEMP"
+          dir="$TMPDIR/secureplan-password-denylist"
+          mkdir -p "$dir"
+          base="https://raw.githubusercontent.com/danielmiessler/SecLists/${SECLISTS_REVISION}/Passwords/Common-Credentials"
+          for name in 100k-most-used-passwords-NCSC.txt Pwdb_top-100000.txt; do
+            curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+              --connect-timeout 10 --retry 3 --max-time 60 \
+              --output "$dir/$name" "$base/$name"
+          done
+          # The generator verifies the pinned source SHA-256 values; the backend loader
+          # re-verifies the output digest and entry count at startup (fail closed).
+          node scripts/build-password-denylist.mjs | grep -E '^(VERIFIED|ELIGIBLE_ENTRIES|UNIQUE_PASSWORDS|OUTPUT_SHA256|GENERATOR)'
+          echo "SECUREPLAN_PASSWORD_DENYLIST_PATH=$dir/secureplan-local-denylist.txt" >> "$GITHUB_ENV"
       - run: npm run lint
       - run: npm run build
       - run: npm test
       - run: npm run test --workspace=frontend
-      - run: npm run test:e2e
       - run: npm run db:migrate
       - run: npm run db:migrate
       - run: npm run db:verify
+      - run: npm run test:scripts
+      - run: npm run test:e2e
       - name: Backend runtime readiness
         shell: bash
         run: |

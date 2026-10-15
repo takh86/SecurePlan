@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 
-// This checks the current tracked tree, not historical commits or GitHub artifacts.
-const files = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean);
+// Include pending source files, but never ignored runtime configuration or outputs.
+// Historical commits and GitHub artifacts still need a separate review.
+const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean);
 const blocked = /^(?:docs\/(?:private|design-sources)\/|internal\/|secrets\/)|(?:^|\/)\.env(?:$|\.(?!example$))/;
 const credentialPatterns = [
   /gh[pousr]_[A-Za-z0-9]{20,}/,
@@ -24,5 +25,5 @@ if (failures.length) {
   console.error('Public publication check failed (values omitted):\n' + failures.join('\n'));
   process.exitCode = 1;
 } else {
-  console.log('Current tracked text passed the limited publication check.');
+  console.log('Current tracked and non-ignored untracked text passed the limited publication check.');
 }
