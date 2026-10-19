@@ -4,6 +4,7 @@ import { DatabaseService } from '../database/database.service.js';
 import { verifyPassword } from './password-hasher.js';
 import { SessionService } from './session.service.js';
 import type { LoginDto } from './dto/login.dto.js';
+import { isTenantRole, type TenantRole } from './authorization/tenant-context.js';
 
 // A synthetic Argon2id hash with the same parameters as real passwords.
 // Unknown users still incur password verification work; never log the password.
@@ -25,7 +26,7 @@ export type LoginResult = {
   accountId: string;
   companyId: string;
   email: string;
-  role: 'EMPLOYEE' | 'COMPANY_ADMIN';
+  role: TenantRole;
   /** Transport-only: the controller puts this into an HttpOnly cookie. */
   rawToken: string;
   csrfToken: string;
@@ -75,7 +76,7 @@ export class LoginService {
       account.status !== 'ACTIVE' ||
       account.company_status !== 'ACTIVE' ||
       account.company_id === null ||
-      (account.role !== 'EMPLOYEE' && account.role !== 'COMPANY_ADMIN') ||
+      !isTenantRole(account.role) ||
       account.password_hash === null
     ) {
       invalidCredentials();

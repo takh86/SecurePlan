@@ -10,16 +10,16 @@ import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/c
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service.js';
+import { isTenantRole, type TenantRole } from './authorization/tenant-context.js';
 
 const TOKEN_BYTES = 32;
 const TOKEN_FORMAT = /^[A-Za-z0-9_-]{43}$/;
 const HOUR_MS = 60 * 60 * 1000;
-const SESSION_POLICY = {
+const SESSION_POLICY: Readonly<Record<TenantRole, { idleMs: number; absoluteMs: number }>> = {
   COMPANY_ADMIN: { idleMs: 30 * 60 * 1000, absoluteMs: 12 * HOUR_MS },
   EMPLOYEE: { idleMs: 8 * HOUR_MS, absoluteMs: 7 * 24 * HOUR_MS },
-} as const;
+};
 
-type TenantRole = keyof typeof SESSION_POLICY;
 type SessionErrorCode = 'SESSION_REQUIRED' | 'SESSION_EXPIRED' | 'SESSION_REVOKED';
 
 type TrustedAccount = { role: string };
@@ -77,7 +77,7 @@ function tokenHash(rawToken: string): Buffer | null {
 }
 
 function trustedRole(value: string): TenantRole | null {
-  return value === 'COMPANY_ADMIN' || value === 'EMPLOYEE' ? value : null;
+  return isTenantRole(value) ? value : null;
 }
 
 /** No timing-dependent early equality comparison for CSRF secrets. */
