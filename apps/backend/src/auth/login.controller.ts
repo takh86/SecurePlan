@@ -4,6 +4,7 @@ import { LoginAbuseService, LoginRateLimitedError, type LoginAttemptReservation 
 import { LoginDto } from './dto/login.dto.js';
 import { LoginOriginGuard } from './login-origin.guard.js';
 import { LoginService, type LoginResult } from './login.service.js';
+import { Public } from './authorization/access-metadata.js';
 
 /** Login HTTP boundary: raw token goes into a Secure host-only cookie, never JSON. */
 @Controller('api/v1/auth')
@@ -15,6 +16,7 @@ export class LoginController {
 
   @Post('login')
   @HttpCode(200)
+  @Public()
   @UseGuards(LoginOriginGuard)
   async login(
     @Body() dto: LoginDto,

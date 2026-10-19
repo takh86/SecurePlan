@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
@@ -9,7 +10,7 @@ import { LoginController } from './auth/login.controller.js';
 import { LoginService } from './auth/login.service.js';
 import { LoginAbuseService } from './auth/login-abuse.service.js';
 import { SessionService } from './auth/session.service.js';
-import { SessionCookieGuard } from './auth/session-cookie.guard.js';
+import { AccessControlGuard } from './auth/authorization/access-control.guard.js';
 import { SessionController } from './auth/session.controller.js';
 import { PasswordPolicyService } from './auth/password-policy.service.js';
 
@@ -43,7 +44,8 @@ import { ThrottlerModule } from '@nestjs/throttler';
     DatabaseService,
     AuthService,
     SessionService,
-    SessionCookieGuard,
+    // SP-06: the ONLY global guard; fixed Origin -> session -> CSRF -> role order.
+    { provide: APP_GUARD, useClass: AccessControlGuard },
     LoginService,
     LoginAbuseService,
     PasswordPolicyService,

@@ -3,30 +3,29 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   HttpCode,
   Post,
-  Req,
   Res,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { SessionService, assertSessionCsrf } from './session.service.js';
-import { LoginOriginGuard } from './login-origin.guard.js';
-import { SessionCookieGuard, type AuthenticatedSessionRequest } from './session-cookie.guard.js';
+import { SessionService, type ValidatedSession } from './session.service.js';
+import { SESSION_COOKIE_NAME } from './session-cookie.js';
+import { RequireRoles } from './authorization/access-metadata.js';
+import { CurrentSession, CurrentSessionToken } from './authorization/current-tenant.decorator.js';
 
-const COOKIE_NAME = '__Host-secureplan_session';
-
-/** Authenticated identity endpoints: only authoritative DB session context is returned. */
+/**
+ * Authenticated identity endpoints: only authoritative DB session context is returned.
+ * Origin (unsafe methods), session, CSRF (unsafe methods) and role are enforced
+ * by the global AccessControlGuard before these handlers run.
+ */
 @Controller('api/v1')
 export class SessionController {
   constructor(private readonly sessions: SessionService) {}
 
   @Get('me')
-  @UseGuards(SessionCookieGuard)
-  me(@Req() request: AuthenticatedSessionRequest, @Res({ passthrough: true }) response: Response) {
-    const session = request.validatedSession!; // Populated by SessionCookieGuard.
+  @RequireRoles('EMPLOYEE', 'COMPANY_ADMIN')
+  me(@CurrentSession() session: ValidatedSession, @Res({ passthrough: true }) response: Response) {
     response.setHeader('X-CSRF-Token', session.csrfToken);
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('Pragma', 'no-cache');
@@ -40,10 +39,9 @@ export class SessionController {
 
   @Post('auth/logout')
   @HttpCode(204)
-  @UseGuards(LoginOriginGuard, SessionCookieGuard)
+  @RequireRoles('EMPLOYEE', 'COMPANY_ADMIN')
   async logout(
-    @Req() request: AuthenticatedSessionRequest,
-    @Headers('x-csrf-token') suppliedCsrf: string | undefined,
+    @CurrentSessionToken() rawSessionToken: string,
     @Body() body: unknown,
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
@@ -56,12 +54,10 @@ export class SessionController {
     )) {
       throw new BadRequestException({ code: 'INVALID_REQUEST_BODY' });
     }
-    const session = request.validatedSession!;
-    assertSessionCsrf(suppliedCsrf, session.csrfToken);
-    const revoked = await this.sessions.revoke(request.rawSessionToken!);
+    const revoked = await this.sessions.revoke(rawSessionToken);
     if (!revoked) throw new UnauthorizedException({ code: 'SESSION_REVOKED' });
 
-    response.setHeader('Set-Cookie', `${COOKIE_NAME}=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; HttpOnly; SameSite=Lax`);
+    response.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; HttpOnly; SameSite=Lax`);
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('Pragma', 'no-cache');
   }
