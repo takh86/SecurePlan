@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { ApiError, parseApiError } from './shared/api/api-error';
 import { ApiErrorAlert } from './shared/ui/ApiErrorAlert';
+import { LoginScreen } from './features/auth/LoginScreen';
 import './App.css';
 
 type ScreenState = 'ready' | 'submitting' | 'success' | 'invalid' | 'error';
@@ -136,9 +137,9 @@ function ActivationScreen() {
           <div role="status">
             <h1 id="activation-title">Konto aktiviert</h1>
             <p>
-              Ihr Passwort wurde eingerichtet. Sie können sich anmelden,
-              sobald die Anmeldung verfügbar ist.
+              Ihr Passwort wurde eingerichtet. Sie können sich jetzt anmelden.
             </p>
+            <a href="/">Zur Anmeldung</a>
           </div>
         ) : state === 'invalid' ? (
           <div role="alert">
@@ -219,13 +220,5 @@ export default function App() {
     return <ActivationScreen />;
   }
 
-  return (
-    <main className="activation">
-      <section className="activation__card">
-        <p className="activation__brand">SECUREPLAN</p>
-        <h1>Willkommen bei SecurePlan</h1>
-        <p>Die Anmeldung wird in einem späteren Schritt bereitgestellt.</p>
-      </section>
-    </main>
-  );
+  return <LoginScreen />;
 }

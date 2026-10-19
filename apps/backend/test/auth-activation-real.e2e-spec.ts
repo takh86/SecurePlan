@@ -14,6 +14,7 @@ import type { PoolClient } from 'pg';
 import { vi } from 'vitest';
 import { PasswordPolicyService } from '../src/auth/password-policy.service.js';
 import { ServiceUnavailableException } from '@nestjs/common';
+import { PASSWORD_DENYLIST } from '../src/auth/local-password-denylist.js';
 
 const PASSWORD = 'SecurePlan Strong Test Passphrase 2026!';
 
@@ -386,6 +387,8 @@ describe('SP-04 — Real account activation integration', () => {
     const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
     })
+      .overrideProvider(PASSWORD_DENYLIST)
+      .useValue(new Set<string>())
       .overrideProvider(PasswordPolicyService)
       .useValue(passwordPolicy)
       .compile();

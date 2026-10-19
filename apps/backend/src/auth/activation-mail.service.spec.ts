@@ -47,6 +47,23 @@ describe('Local activation mail safety', () => {
     expect(message.text).toContain('Er ist 24 Stunden g\u00fcltig.');
   });
 
+  it('sends the activation link to the configured local HTTPS origin', async () => {
+    const sendMail = configure();
+    vi.stubEnv('APP_ORIGIN', 'https://localhost:8443');
+    const { rawToken } = generateAccountToken();
+
+    await new ActivationMailService().sendActivationEmail(
+      'sp04-synthetic@secureplan.test',
+      rawToken,
+    );
+
+    expect(sendMail).toHaveBeenCalledTimes(1);
+    const message = sendMail.mock.calls[0][0] as { text: string };
+    expect(message.text).toContain(
+      `https://localhost:8443/activate#token=${rawToken}`,
+    );
+  });
+
   it.each([
     { name: 'NODE_ENV', value: 'production' },
     { name: 'APP_ORIGIN', value: 'https://example.invalid' },

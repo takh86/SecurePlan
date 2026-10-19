@@ -28,6 +28,10 @@ jobs:
       - run: npm run check:public
       - run: npm ci
       - run: cp .env.example .env
+      - name: Provision ephemeral login-abuse HMAC key (CI-only)
+        shell: bash
+        run: |
+          echo "SECUREPLAN_LOGIN_HMAC_KEY=$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')" >> "$GITHUB_ENV"
       - name: Provision password denylist (not published or cached)
         shell: bash
         env:
