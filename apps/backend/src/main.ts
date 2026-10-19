@@ -1,8 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 import { configureApp } from './configure-app.js';
+import { assertLoginAbuseConfig } from './auth/login-abuse.service.js';
 
 async function bootstrap() {
+  assertLoginAbuseConfig();
   const app = await NestFactory.create(AppModule);
   configureApp(app);
   app.enableShutdownHooks();

@@ -5,6 +5,7 @@ import { App } from 'supertest/types.js';
 import { DatabaseService } from '../src/database/database.service.js';
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from '../src/configure-app.js';
+import { PASSWORD_DENYLIST } from '../src/auth/local-password-denylist.js';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -17,6 +18,8 @@ describe('AppController (e2e)', () => {
     })
       .overrideProvider(DatabaseService)
       .useValue(database)
+      .overrideProvider(PASSWORD_DENYLIST)
+      .useValue(new Set<string>())
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -61,6 +64,6 @@ describe('AppController (e2e)', () => {
   });
 
   afterEach(async () => {
-    await app.close();
+    if (app) await app.close();
   });
 });

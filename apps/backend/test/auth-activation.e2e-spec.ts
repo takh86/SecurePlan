@@ -9,6 +9,7 @@ import { AuthService } from '../src/auth/auth.service.js';
 import { ActivateAccountDto } from '../src/auth/dto/activate-account.dto.js';
 import { configureApp } from '../src/configure-app.js';
 import { DatabaseService } from '../src/database/database.service.js';
+import { PASSWORD_DENYLIST } from '../src/auth/local-password-denylist.js';
 
 describe('Auth Activation — HTTP wiring', () => {
   let app: INestApplication<App>;
@@ -32,6 +33,8 @@ describe('Auth Activation — HTTP wiring', () => {
       .useValue({ isReady: vi.fn().mockResolvedValue(true) })
       .overrideProvider(AuthService)
       .useValue(authServiceMock)
+      .overrideProvider(PASSWORD_DENYLIST)
+      .useValue(new Set<string>())
       .compile();
 
     app = moduleFixture.createNestApplication();

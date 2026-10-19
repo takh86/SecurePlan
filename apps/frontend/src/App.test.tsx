@@ -113,7 +113,7 @@ describe("SP-04 — React Account Activation", () => {
 
     expect(success.textContent).toContain("Konto aktiviert");
     expect(success.textContent?.replace(/\s+/g, " ")).toContain(
-      "Ihr Passwort wurde eingerichtet. Sie k\u00f6nnen sich anmelden, sobald die Anmeldung verf\u00fcgbar ist.",
+      "Ihr Passwort wurde eingerichtet. Sie k\u00f6nnen sich jetzt anmelden.",
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);

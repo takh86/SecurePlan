@@ -5,6 +5,12 @@ import { AppService } from './app.service.js';
 
 import { AuthController } from './auth/auth.controller.js';
 import { AuthService } from './auth/auth.service.js';
+import { LoginController } from './auth/login.controller.js';
+import { LoginService } from './auth/login.service.js';
+import { LoginAbuseService } from './auth/login-abuse.service.js';
+import { SessionService } from './auth/session.service.js';
+import { SessionCookieGuard } from './auth/session-cookie.guard.js';
+import { SessionController } from './auth/session.controller.js';
 import { PasswordPolicyService } from './auth/password-policy.service.js';
 
 import {
@@ -29,11 +35,17 @@ import { ThrottlerModule } from '@nestjs/throttler';
     AppController,
     HealthController,
     AuthController,
+    LoginController,
+    SessionController,
   ],
   providers: [
     AppService,
     DatabaseService,
     AuthService,
+    SessionService,
+    SessionCookieGuard,
+    LoginService,
+    LoginAbuseService,
     PasswordPolicyService,
     {
       provide: PASSWORD_DENYLIST,
