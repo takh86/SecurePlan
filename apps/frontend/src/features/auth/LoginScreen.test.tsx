@@ -3,7 +3,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { LoginScreen } from './LoginScreen';
+import { ApiErrorAlert } from '../../shared/ui/ApiErrorAlert';
+import { LoginScreen, type AuthenticatedSession } from './LoginScreen';
+
+// Minimal stand-in for the protected UI, so these tests stay focused on the session boundary.
+function AuthenticatedStub({ identity, logout, logoutPending, logoutError }: AuthenticatedSession) {
+  return (
+    <div>
+      <h1>Angemeldet</h1>
+      <p>{identity.email}</p>
+      <ApiErrorAlert error={logoutError} />
+      <button type="button" onClick={logout} disabled={logoutPending}>Abmelden</button>
+    </div>
+  );
+}
 
 const csrf = 'c'.repeat(43);
 const identity = {
@@ -47,7 +60,7 @@ describe('SP-05 — React Login and session UX', () => {
   it('checks /me on first render, showing login when there is no session', async () => {
     const fetchMock = vi.fn().mockResolvedValue(unauthorized());
     vi.stubGlobal('fetch', fetchMock);
-    render(<LoginScreen />);
+    render(<LoginScreen authenticatedView={AuthenticatedStub} />);
 
     expect(await screen.findByRole('heading', { name: 'Anmelden' })).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -61,7 +74,7 @@ describe('SP-05 — React Login and session UX', () => {
       .mockResolvedValueOnce(unauthorized())
       .mockResolvedValueOnce(authorized());
     vi.stubGlobal('fetch', fetchMock);
-    render(<LoginScreen />);
+    render(<LoginScreen authenticatedView={AuthenticatedStub} />);
 
     await screen.findByRole('heading', { name: 'Anmelden' });
     const user = await fillCredentials();
@@ -83,7 +96,7 @@ describe('SP-05 — React Login and session UX', () => {
   it('restores a valid session via GET /me without login POST', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(authorized());
     vi.stubGlobal('fetch', fetchMock);
-    render(<LoginScreen />);
+    render(<LoginScreen authenticatedView={AuthenticatedStub} />);
 
     expect(await screen.findByRole('heading', { name: 'Angemeldet' })).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -102,7 +115,7 @@ describe('SP-05 — React Login and session UX', () => {
         headers: { 'content-type': 'application/problem+json' },
       }));
     vi.stubGlobal('fetch', fetchMock);
-    render(<LoginScreen />);
+    render(<LoginScreen authenticatedView={AuthenticatedStub} />);
     await screen.findByRole('heading', { name: 'Anmelden' });
     const user = await fillCredentials();
     await user.click(screen.getByRole('button', { name: 'Anmelden' }));
@@ -118,7 +131,7 @@ describe('SP-05 — React Login and session UX', () => {
       .mockResolvedValueOnce(authorized())
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
-    render(<LoginScreen />);
+    render(<LoginScreen authenticatedView={AuthenticatedStub} />);
     await screen.findByRole('heading', { name: 'Angemeldet' });
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Abmelden' }));
@@ -139,7 +152,7 @@ describe('SP-05 — React Login and session UX', () => {
         headers: { 'content-type': 'application/problem+json' },
       }));
     vi.stubGlobal('fetch', fetchMock);
-    render(<LoginScreen />);
+    render(<LoginScreen authenticatedView={AuthenticatedStub} />);
     await screen.findByRole('heading', { name: 'Angemeldet' });
     await userEvent.setup().click(screen.getByRole('button', { name: 'Abmelden' }));
 
@@ -155,7 +168,7 @@ describe('SP-05 — React Login and session UX', () => {
         headers: { 'content-type': 'application/json' },
       }));
     vi.stubGlobal('fetch', fetchMock);
-    render(<LoginScreen />);
+    render(<LoginScreen authenticatedView={AuthenticatedStub} />);
     await screen.findByRole('heading', { name: 'Anmelden' });
     const user = await fillCredentials();
     await user.click(screen.getByRole('button', { name: 'Anmelden' }));
@@ -168,7 +181,7 @@ describe('SP-05 — React Login and session UX', () => {
   it('lets the user attempt login if the initial session check hits a network error', async () => {
     const fetchMock = vi.fn().mockRejectedValueOnce(new Error('private network diagnostic'));
     vi.stubGlobal('fetch', fetchMock);
-    render(<LoginScreen />);
+    render(<LoginScreen authenticatedView={AuthenticatedStub} />);
     expect(await screen.findByRole('heading', { name: 'Anmelden' })).toBeTruthy();
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('Verbindung fehlgeschlagen');
