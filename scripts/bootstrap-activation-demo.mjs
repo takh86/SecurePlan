@@ -8,9 +8,19 @@ import {
   isMainModule,
 } from './activation-demo-environment.mjs';
 
+// Tenant roles the local demo may create. PLATFORM_ADMIN is deliberately excluded.
+export const DEMO_ROLES = Object.freeze(['EMPLOYEE', 'COMPANY_ADMIN']);
+
 // Internal development tool only. Never use with production data.
-export async function bootstrapActivationDemo(database, mailer) {
+// Usage: node --env-file=.env scripts/bootstrap-activation-demo.mjs
+//   optional SP04_DEMO_ROLE=EMPLOYEE (default) | COMPANY_ADMIN; anything else is rejected.
+// Writes one new company, one PENDING_ACTIVATION account and one activation token.
+// If local mail delivery fails, only that new token is revoked; nothing else is changed.
+export async function bootstrapActivationDemo(database, mailer, role = 'EMPLOYEE') {
   assertLocalDemoEnvironment();
+  if (!DEMO_ROLES.includes(role)) {
+    throw new Error('Unsupported demo role');
+  }
 
   const companyId = randomUUID();
   const accountId = randomUUID();
@@ -31,8 +41,8 @@ export async function bootstrapActivationDemo(database, mailer) {
       `INSERT INTO accounts
          (id, company_id, email, account_scope, role, status)
        VALUES
-         ($1, $2, $3, 'TENANT', 'EMPLOYEE', 'PENDING_ACTIVATION')`,
-      [accountId, companyId, email],
+         ($1, $2, $3, 'TENANT', $4, 'PENDING_ACTIVATION')`,
+      [accountId, companyId, email, role],
     );
 
     await client.query(
@@ -75,11 +85,13 @@ if (isMainModule(import.meta.url)) {
     assertLocalDemoEnvironment();
     const mailer = new ActivationMailService();
     database = new DatabaseService();
-    const result = await bootstrapActivationDemo(database, mailer);
+    const role = process.env.SP04_DEMO_ROLE ?? 'EMPLOYEE';
+    const result = await bootstrapActivationDemo(database, mailer, role);
     console.log('BOOTSTRAP=PASS');
     console.log('ACTIVATION_EMAIL=PASS');
     console.log(`TEST_EMAIL=${result.email}`);
     console.log(`TEST_COMPANY_ID=${result.companyId}`);
+    console.log(`TEST_ROLE=${role}`);
   } catch {
     // Never print raw tokens, URLs or sensitive SMTP details.
     console.error('BOOTSTRAP=FAILED');
