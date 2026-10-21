@@ -1,0 +1,29 @@
+/* SecurePlan design tokens, derived from the existing login/activation palette. */
+:root {
+  --sp-color-brand: #125a85;
+  --sp-color-brand-strong: #0d4566;
+  --sp-color-ink: #10283f;
+  --sp-color-text: #23354a;
+  --sp-color-muted: #526579;
+  --sp-color-canvas: #f3f6fa;
+  --sp-color-surface: #ffffff;
+  --sp-color-border: #e0e7ef;
+  --sp-color-border-strong: #b9c7d6;
+  --sp-color-focus: #3b82f6;
+  --sp-color-danger: #ad2929;
+
+  /* Status tones: always combined with text and an icon, never color alone. */
+  --sp-tone-info-bg: #e8f1f8;
+  --sp-tone-info-fg: #0d4566;
+  --sp-tone-attention-bg: #fdf3e1;
+  --sp-tone-attention-fg: #7a4b00;
+  --sp-tone-success-bg: #e6f4ea;
+  --sp-tone-success-fg: #1d5c2e;
+  --sp-tone-neutral-bg: #eef1f5;
+  --sp-tone-neutral-fg: #36495e;
+
+  --sp-font: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --sp-radius: 10px;
+  --sp-radius-small: 6px;
+  --sp-shadow: 0 12px 35px rgb(25 47 72 / 7%);
+}
