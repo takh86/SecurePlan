@@ -31,7 +31,10 @@ jobs:
       - name: Provision ephemeral login-abuse HMAC key (CI-only)
         shell: bash
         run: |
-          echo "SECUREPLAN_LOGIN_HMAC_KEY=$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')" >> "$GITHUB_ENV"
+          key="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')"
+          echo "::add-mask::$key"
+          echo "SECUREPLAN_LOGIN_HMAC_KEY=$key" >> "$GITHUB_ENV"
+          unset key
       - name: Provision password denylist (not published or cached)
         shell: bash
         env:
