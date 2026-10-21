@@ -1,0 +1,65 @@
+.view-state {
+  padding: 20px;
+  border: 1px solid var(--sp-color-border);
+  border-radius: var(--sp-radius);
+  background: var(--sp-color-surface);
+  color: var(--sp-color-text);
+}
+
+.view-state--loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.view-state__spinner {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 3px solid var(--sp-color-border);
+  border-top-color: var(--sp-color-brand);
+  border-radius: 50%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .view-state__spinner {
+    animation: view-state-spin 0.9s linear infinite;
+  }
+}
+
+@keyframes view-state-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.view-state--empty {
+  border-style: dashed;
+}
+
+.view-state__title {
+  margin-bottom: 4px;
+  color: var(--sp-color-ink);
+  font-weight: 600;
+}
+
+.view-state--error {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--sp-color-danger);
+}
+
+.view-state--error .api-error-alert {
+  background: var(--sp-color-surface);
+}
+
+.view-state--error .api-error-alert button {
+  min-height: 44px;
+  border: 1px solid currentColor;
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-color-surface);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+}

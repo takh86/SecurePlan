@@ -1,7 +1,8 @@
 import { useRef, useState, type FormEvent } from 'react';
+import { BrowserRouter } from 'react-router';
 import { ApiError, parseApiError } from './shared/api/api-error';
 import { ApiErrorAlert } from './shared/ui/ApiErrorAlert';
-import { LoginScreen } from './features/auth/LoginScreen';
+import { SessionRoot } from './app/SessionRoot';
 import './App.css';
 
 type ScreenState = 'ready' | 'submitting' | 'success' | 'invalid' | 'error';
@@ -220,5 +221,9 @@ export default function App() {
     return <ActivationScreen />;
   }
 
-  return <LoginScreen />;
+  return (
+    <BrowserRouter>
+      <SessionRoot />
+    </BrowserRouter>
+  );
 }
