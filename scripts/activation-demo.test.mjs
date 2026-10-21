@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { DatabaseService } from '../apps/backend/dist/database/database.service.js';
 import { hashAccountToken } from '../apps/backend/dist/auth/account-token.js';
-import { bootstrapActivationDemo } from './bootstrap-activation-demo.mjs';
+import { bootstrapActivationDemo, DEMO_ROLES } from './bootstrap-activation-demo.mjs';
 import { reissueActivationDemo } from './reissue-activation-demo.mjs';
 import { assertLocalDemoEnvironment } from './activation-demo-environment.mjs';
 
@@ -39,7 +39,7 @@ after(async () => {
 async function state(email) {
   return database.withTransaction(async (client) => {
     const account = await client.query(
-      'SELECT id, company_id, status, password_hash FROM accounts WHERE email = $1',
+      'SELECT id, company_id, account_scope, role, status, password_hash FROM accounts WHERE email = $1',
       [email],
     );
     const tokens = await client.query(
@@ -81,6 +81,7 @@ test('bootstrap stores only a token digest and sends a synthetic recipient', asy
   });
   companies.push(result.companyId);
   const stored = await state(result.email);
+  assert.equal(stored.account.role, 'EMPLOYEE');
   assert.equal(stored.account.status, 'PENDING_ACTIVATION');
   assert.equal(stored.account.password_hash, null);
   assert.equal(stored.tokens.length, 1);
@@ -268,6 +269,131 @@ test('environment guard rejects nonlocal and connection-parameter overrides befo
   } finally {
     Object.assign(process.env, original);
   }
+});
+
+/** In-memory stand-in that records the SQL a bootstrap would run, without any database. */
+function recordingDatabase() {
+  const queries = [];
+  return {
+    queries,
+    withTransaction: async (work) =>
+      work({
+        query: async (sql, params) => {
+          queries.push({ sql, params });
+          return { rows: [], rowCount: 1 };
+        },
+      }),
+  };
+}
+
+test('demo role (no database): only EMPLOYEE and COMPANY_ADMIN are supported', () => {
+  assert.deepEqual([...DEMO_ROLES], ['EMPLOYEE', 'COMPANY_ADMIN']);
+  assert.equal(Object.isFrozen(DEMO_ROLES), true);
+});
+
+test('demo role (no database): unsupported roles are rejected before any database access or delivery', async () => {
+  const databaseStub = {
+    withTransaction: () => {
+      assert.fail('Unexpected database access');
+    },
+  };
+  const mailer = {
+    sendActivationEmail: () => {
+      assert.fail('Unexpected delivery');
+    },
+  };
+  for (const role of ['PLATFORM_ADMIN', 'ADMIN', 'company_admin', ' COMPANY_ADMIN', '', null, 42, ['COMPANY_ADMIN']]) {
+    await assert.rejects(bootstrapActivationDemo(databaseStub, mailer, role), {
+      message: 'Unsupported demo role',
+    });
+  }
+  // The local-environment guard still runs first, also for COMPANY_ADMIN.
+  const original = { NODE_ENV: process.env.NODE_ENV, DATABASE_URL: process.env.DATABASE_URL };
+  try {
+    process.env.DATABASE_URL = 'postgresql://secureplan@database.example.invalid:5432/secureplan';
+    await assert.rejects(bootstrapActivationDemo(databaseStub, mailer, 'COMPANY_ADMIN'), {
+      message: 'Local SecurePlan database required',
+    });
+    process.env.DATABASE_URL = original.DATABASE_URL;
+    process.env.NODE_ENV = 'production';
+    await assert.rejects(bootstrapActivationDemo(databaseStub, mailer, 'COMPANY_ADMIN'), {
+      message: 'Development mode required',
+    });
+  } finally {
+    Object.assign(process.env, original);
+  }
+});
+
+test('demo role (no database): default EMPLOYEE and explicit COMPANY_ADMIN are bound as a query parameter', async () => {
+  for (const [args, expectedRole] of [
+    [[], 'EMPLOYEE'],
+    [['EMPLOYEE'], 'EMPLOYEE'],
+    [['COMPANY_ADMIN'], 'COMPANY_ADMIN'],
+  ]) {
+    const fake = recordingDatabase();
+    let delivered;
+    const result = await bootstrapActivationDemo(
+      fake,
+      {
+        sendActivationEmail: async (email) => {
+          delivered = email;
+        },
+      },
+      ...args,
+    );
+    // Exactly one company, one account and one token insert; nothing else.
+    assert.deepEqual(
+      fake.queries.map(({ sql }) => sql.match(/INSERT INTO (\w+)/)?.[1]),
+      ['companies', 'accounts', 'account_tokens'],
+    );
+    const accountInsert = fake.queries[1];
+    assert.match(accountInsert.sql, /'TENANT', \$4, 'PENDING_ACTIVATION'/);
+    assert.doesNotMatch(accountInsert.sql, /EMPLOYEE|COMPANY_ADMIN|PLATFORM_ADMIN/);
+    assert.equal(accountInsert.params[3], expectedRole);
+    assert.equal(delivered, result.email);
+    assert.deepEqual(Object.keys(result).sort(), ['companyId', 'email']);
+  }
+});
+
+test('demo role (no database): CLI rejects an unsupported SP04_DEMO_ROLE with only the sanitized marker', () => {
+  for (const role of ['PLATFORM_ADMIN', 'admin', '']) {
+    const result = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL('bootstrap-activation-demo.mjs', import.meta.url))],
+      {
+        env: { ...process.env, SP04_DEMO_ROLE: role },
+        encoding: 'utf8',
+        timeout: 10_000,
+      },
+    );
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr.trim(), 'BOOTSTRAP=FAILED');
+  }
+});
+
+test('demo role (real database): bootstrap creates a pending COMPANY_ADMIN tenant account with a digest-only token', async () => {
+  let delivery;
+  const result = await bootstrapActivationDemo(
+    database,
+    {
+      sendActivationEmail: async (email, token) => {
+        delivery = { email, token };
+      },
+    },
+    'COMPANY_ADMIN',
+  );
+  companies.push(result.companyId);
+  const stored = await state(result.email);
+  assert.equal(stored.account.role, 'COMPANY_ADMIN');
+  assert.equal(stored.account.account_scope, 'TENANT');
+  assert.equal(stored.account.status, 'PENDING_ACTIVATION');
+  assert.equal(stored.account.password_hash, null);
+  assert.equal(stored.account.company_id, result.companyId);
+  assert.equal(stored.tokens.length, 1);
+  assert.equal(stored.tokens[0].token_hash.equals(hashAccountToken(delivery.token)), true);
+  assert.equal(stored.tokens[0].revoked_at, null);
+  assert.match(delivery.email, /^sp04-[0-9a-f-]+@secureplan\.test$/);
 });
 
 test('CLI configuration failures print only sanitized failure markers', () => {
