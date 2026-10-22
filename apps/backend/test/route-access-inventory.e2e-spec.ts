@@ -161,6 +161,19 @@ describe('SP-06 — runtime route access inventory', () => {
       // Protected identity routes are open to both tenant roles; never PLATFORM_ADMIN.
       expect(byKey.get('GET /api/v1/me')?.roles).toEqual(['EMPLOYEE', 'COMPANY_ADMIN']);
       expect(byKey.get('POST /api/v1/auth/logout')?.roles).toEqual(['EMPLOYEE', 'COMPANY_ADMIN']);
+
+      // SP-07: employee administration is COMPANY_ADMIN-only, on every route.
+      const employeeRoutes = handlers.filter((h) => h.key.includes(' /api/v1/employees'));
+      expect(employeeRoutes.map((h) => h.key)).toEqual([
+        'GET /api/v1/employees',
+        'GET /api/v1/employees/:employeeId',
+        'PATCH /api/v1/employees/:employeeId',
+        'POST /api/v1/employees',
+        'POST /api/v1/employees/:employeeId/deactivate',
+      ]);
+      for (const route of employeeRoutes) {
+        expect({ route: route.key, roles: route.roles }).toEqual({ route: route.key, roles: ['COMPANY_ADMIN'] });
+      }
       for (const handler of handlers) {
         expect(handler.roles ?? []).not.toContain('PLATFORM_ADMIN');
       }

@@ -22,9 +22,31 @@ export type KnownErrorCode =
   | 'INTERNAL_ERROR'
   | 'SERVICE_UNAVAILABLE'
   | 'ACTIVATION_TOKEN_INVALID_OR_EXPIRED'
-  | 'PASSWORD_POLICY_VIOLATION';
+  | 'PASSWORD_POLICY_VIOLATION'
+  // SP-07 employee administration (all already in the approved backend catalogue).
+  | 'EMPTY_PATCH'
+  | 'EMPLOYMENT_DATE_CONFLICT'
+  | 'EMPLOYEE_CODE_ALREADY_EXISTS'
+  | 'EMAIL_ALREADY_IN_USE'
+  | 'EMPLOYEE_INACTIVE'
+  | 'EMPLOYEE_HAS_FUTURE_ASSIGNMENTS';
 
 export type ApiErrorKind = 'http' | 'network' | 'invalid-response';
+
+/** Field-level validation subcodes the backend may send in `errors[]`. */
+export const FIELD_ERROR_CODES = [
+  'REQUIRED',
+  'INVALID_TYPE',
+  'INVALID_FORMAT',
+  'INVALID_UUID',
+  'INVALID_ENUM',
+  'TOO_SHORT',
+  'TOO_LONG',
+  'OUT_OF_RANGE',
+  'DUPLICATE_ITEM',
+] as const;
+export type FieldErrorCode = (typeof FIELD_ERROR_CODES)[number];
+export type FieldError = Readonly<{ pointer: string; code: FieldErrorCode }>;
 
 const codeStatuses: Record<KnownErrorCode, number> = {
   VALIDATION_FAILED: 400,
@@ -48,7 +70,35 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   SERVICE_UNAVAILABLE: 503,
   ACTIVATION_TOKEN_INVALID_OR_EXPIRED: 400,
   PASSWORD_POLICY_VIOLATION: 400,
+  EMPTY_PATCH: 400,
+  EMPLOYMENT_DATE_CONFLICT: 400,
+  EMPLOYEE_CODE_ALREADY_EXISTS: 409,
+  EMAIL_ALREADY_IN_USE: 409,
+  EMPLOYEE_INACTIVE: 409,
+  EMPLOYEE_HAS_FUTURE_ASSIGNMENTS: 409,
 };
+
+const POINTER_PATTERN = /^#(?:\/(?:[A-Za-z0-9_-]|~[01])+)+$/;
+
+/** Keeps only well-formed pointer/subcode pairs; server `detail` text is never used. */
+function safeFieldErrors(value: unknown): FieldError[] {
+  if (!Array.isArray(value)) return [];
+  const result: FieldError[] = [];
+  for (const item of value.slice(0, 25)) {
+    if (!isRecord(item)) continue;
+    const { pointer, code } = item;
+    if (
+      typeof pointer === 'string' &&
+      pointer.length <= 192 &&
+      POINTER_PATTERN.test(pointer) &&
+      typeof code === 'string' &&
+      (FIELD_ERROR_CODES as readonly string[]).includes(code)
+    ) {
+      result.push({ pointer, code: code as FieldErrorCode });
+    }
+  }
+  return result;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -73,12 +123,15 @@ export class ApiError extends Error {
   readonly status: number | null;
   readonly code: KnownErrorCode | null;
   readonly correlationId: string | null;
+  /** Only for 400 VALIDATION_FAILED: which fields failed, as safe subcodes. */
+  readonly fieldErrors: readonly FieldError[];
 
   constructor(
     kind: ApiErrorKind,
     status: number | null,
     code: KnownErrorCode | null,
     correlationId: string | null,
+    fieldErrors: readonly FieldError[] = [],
   ) {
     super('API request failed');
     this.name = 'ApiError';
@@ -86,6 +139,7 @@ export class ApiError extends Error {
     this.status = status;
     this.code = code;
     this.correlationId = correlationId;
+    this.fieldErrors = fieldErrors;
   }
 }
 
@@ -108,7 +162,8 @@ export async function parseApiError(response: Response): Promise<ApiError> {
     safeCorrelationId(response.headers.get('x-correlation-id')) ??
     safeCorrelationId(details?.correlationId);
 
-  return new ApiError('http', response.status, code, correlationId);
+  const fieldErrors = code === 'VALIDATION_FAILED' ? safeFieldErrors(details?.errors) : [];
+  return new ApiError('http', response.status, code, correlationId, fieldErrors);
 }
 
 export interface UserFacingError {
@@ -117,6 +172,38 @@ export interface UserFacingError {
   correlationId: string | null;
   canRetry: boolean;
 }
+
+/**
+ * SP-07 texts. EMAIL_ALREADY_IN_USE is deliberately neutral: e-mail addresses
+ * are unique across ALL companies, so the UI must not say where an address is
+ * already registered.
+ */
+const EMPLOYEE_ERROR_TEXT: Partial<Record<string, { title: string; description: string }>> = {
+  EMPLOYEE_CODE_ALREADY_EXISTS: {
+    title: 'Mitarbeiter-ID bereits vergeben',
+    description: 'Diese Mitarbeiter-ID wird in Ihrem Unternehmen bereits verwendet. Bitte wählen Sie eine andere.',
+  },
+  EMAIL_ALREADY_IN_USE: {
+    title: 'E-Mail-Adresse nicht verwendbar',
+    description: 'Mit dieser E-Mail-Adresse kann kein neues Konto angelegt werden. Bitte verwenden Sie eine andere Adresse.',
+  },
+  EMPLOYEE_INACTIVE: {
+    title: 'Bereits deaktiviert',
+    description: 'Diese Person ist bereits deaktiviert. Bitte laden Sie die Ansicht neu.',
+  },
+  EMPLOYEE_HAS_FUTURE_ASSIGNMENTS: {
+    title: 'Deaktivierung nicht möglich',
+    description: 'Für diese Person bestehen noch zukünftige Einsätze. Bitte klären Sie diese zuerst.',
+  },
+  EMPTY_PATCH: {
+    title: 'Keine Änderungen',
+    description: 'Es wurden keine Änderungen übermittelt.',
+  },
+  EMPLOYMENT_DATE_CONFLICT: {
+    title: 'Beschäftigungszeitraum prüfen',
+    description: 'Das Beschäftigungsende darf nicht vor dem Beschäftigungsbeginn liegen.',
+  },
+};
 
 /** German, user-facing text based on status + approved codes, not raw server strings. */
 export function describeApiError(error: unknown): UserFacingError {
@@ -176,6 +263,8 @@ export function describeApiError(error: unknown): UserFacingError {
       canRetry: false,
     };
   }
+  const employeeError = EMPLOYEE_ERROR_TEXT[error.code ?? ''];
+  if (employeeError) return { ...employeeError, correlationId, canRetry: false };
   switch (error.status) {
     case 400:
       return {

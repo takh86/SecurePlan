@@ -23,12 +23,17 @@ export interface AppRoute {
   role: TenantRole;
   title: string;
   lead?: string;
-  /** `preview`: read-only UI preview with synthetic data. `planned`: placeholder, no data. */
-  availability: 'preview' | 'planned';
+  /**
+   * `available`: real, contract-backed API. `preview`: read-only UI preview
+   * with synthetic data. `planned`: placeholder, no data.
+   */
+  availability: 'available' | 'preview' | 'planned';
   /** Shown on the placeholder page of a planned route. */
   plannedScope?: string;
   /** Route additionally accepts an optional `/:month` (`YYYY-MM`) segment. */
   acceptsMonth?: boolean;
+  /** Route owns nested sub-pages below its path (e.g. list, create, detail). */
+  nested?: boolean;
 }
 
 export const APP_ROUTES: readonly AppRoute[] = [
@@ -45,8 +50,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: '/mitarbeitende',
     role: 'COMPANY_ADMIN',
     title: 'Mitarbeitende',
-    availability: 'planned',
-    plannedScope: 'Mitarbeitende anlegen, bearbeiten und deaktivieren.',
+    lead: 'Mitarbeitende anlegen, bearbeiten und deaktivieren.',
+    availability: 'available',
+    nested: true,
   },
   {
     id: 'projects',

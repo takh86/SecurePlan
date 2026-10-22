@@ -23,6 +23,15 @@ import { DatabaseService } from './database/database.service.js';
 import { HealthController } from './database/health.controller.js';
 import { ThrottlerModule } from '@nestjs/throttler';
 
+import { BusinessAuditService } from './modules/audit/business-audit.service.js';
+import { AccountLifecycleService } from './modules/identity/account-lifecycle.service.js';
+import {
+  ACTIVATION_DELIVERY,
+  createActivationDelivery,
+} from './modules/identity/activation-delivery.js';
+import { EmployeesController } from './modules/workforce/employees/employees.controller.js';
+import { EmployeesService } from './modules/workforce/employees/employees.service.js';
+
 @Module({
   imports: [
     ThrottlerModule.forRoot([
@@ -38,6 +47,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
     AuthController,
     LoginController,
     SessionController,
+    EmployeesController,
   ],
   providers: [
     AppService,
@@ -56,6 +66,11 @@ import { ThrottlerModule } from '@nestjs/throttler';
           process.env.SECUREPLAN_PASSWORD_DENYLIST_PATH ?? '',
         ),
     },
+    // SP-07: Identity public contract, Audit and Workforce.
+    AccountLifecycleService,
+    { provide: ACTIVATION_DELIVERY, useFactory: createActivationDelivery },
+    BusinessAuditService,
+    EmployeesService,
   ],
 })
 export class AppModule {}

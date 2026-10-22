@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router';
 import { ApiError } from '../shared/api/api-error';
 import type { IdentityContext } from '../features/auth/auth-api';
+import { fakeSessionApi, page, type RecordedRequest } from '../features/employees/employees.test-support';
 import { AuthenticatedApp } from './AuthenticatedApp';
 import { APP_ROUTES, type TenantRole } from './routes';
 
@@ -26,12 +27,18 @@ function LocationProbe() {
   return <output data-testid="location">{useLocation().pathname}</output>;
 }
 
+let apiRequests: RecordedRequest[] = [];
+
 function renderApp(role: TenantRole, path: string, overrides: { logoutPending?: boolean; logoutError?: Error | null } = {}) {
   const logout = vi.fn();
+  // SP-07: the employees area reads through the session-bound API (empty company here).
+  const { api, requests } = fakeSessionApi(() => page([]));
+  apiRequests = requests;
   render(
     <MemoryRouter initialEntries={[path]}>
       <AuthenticatedApp
         identity={identityFor(role)}
+        api={api}
         logout={logout}
         logoutPending={overrides.logoutPending ?? false}
         logoutError={overrides.logoutError ?? null}
@@ -77,6 +84,8 @@ describe('F1 — role-based routes (UI gating only; the server authorizes every 
         for (const fragment of [...ADMIN_PREVIEW_TEXT, ...EMPLOYEE_PREVIEW_TEXT, 'Demodaten']) {
           expect(text).not.toContain(fragment);
         }
+        // The access-denied page never requests data of another role's area.
+        expect(apiRequests).toEqual([]);
       }
       expect(currentPath()).toBe(path);
     });
@@ -103,7 +112,7 @@ describe('F1 — role-based routes (UI gating only; the server authorizes every 
     const links = within(nav).getAllByRole('link');
     expect(links.map((link) => link.textContent)).toEqual([
       'Arbeitsübersicht',
-      'Mitarbeitende folgt',
+      'Mitarbeitende',
       'Projekte & Zuordnungen folgt',
       'Monatsplanung folgt',
     ]);
