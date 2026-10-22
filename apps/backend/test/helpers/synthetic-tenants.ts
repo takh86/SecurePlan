@@ -108,6 +108,44 @@ export async function createSyntheticTenant(pool: TestPool, label: string): Prom
   return tenant;
 }
 
+/** Additional ACTIVE account inside an existing synthetic tenant (committed). */
+export async function createSyntheticAccount(
+  pool: TestPool,
+  companyId: string,
+  role: TenantRole,
+): Promise<SyntheticAccount> {
+  const member = account(companyId, role);
+  await pool.query(
+    `INSERT INTO accounts
+       (id, company_id, email, account_scope, role, status, password_hash)
+     VALUES ($1, $2, $3, 'TENANT', $4, 'ACTIVE', $5)`,
+    [member.accountId, companyId, member.email, role, SYNTHETIC_PASSWORD_HASH],
+  );
+  return member;
+}
+
+export type SyntheticEmployee = {
+  employeeId: string;
+  employeeNumber: string;
+  account: SyntheticAccount;
+};
+
+/** SP-07: employee master record for an existing synthetic EMPLOYEE account (committed). */
+export async function createSyntheticEmployee(
+  pool: TestPool,
+  account: SyntheticAccount,
+  employeeNumber = `SYN-${randomUUID().slice(0, 8)}`,
+): Promise<SyntheticEmployee> {
+  const employeeId = randomUUID();
+  await pool.query(
+    `INSERT INTO employees
+       (id, company_id, account_id, employee_number, first_name, last_name, shift_eligibility)
+     VALUES ($1, $2, $3, $4, 'Synthetic', 'Employee', 'BOTH')`,
+    [employeeId, account.companyId, account.accountId, employeeNumber],
+  );
+  return { employeeId, employeeNumber, account };
+}
+
 export async function createSyntheticSession(
   sessions: SessionService,
   member: SyntheticAccount,
@@ -131,7 +169,8 @@ export async function removeSyntheticTenants(pool: TestPool, companyIds: string[
     // Fail visibly (lock_not_available) instead of hanging into a hook timeout
     // if a leaked test transaction still holds a fixture row lock.
     await client.query("SET LOCAL lock_timeout = '5s'");
-    for (const table of ['sessions', 'account_tokens', 'audit_event', 'accounts']) {
+    // employees before accounts (composite FK ON DELETE RESTRICT, SP-07).
+    for (const table of ['sessions', 'account_tokens', 'audit_event', 'employees', 'accounts']) {
       await client.query(`DELETE FROM ${table} WHERE company_id = ANY($1::uuid[])`, [companyIds]);
     }
     await client.query('DELETE FROM companies WHERE id = ANY($1::uuid[])', [companyIds]);

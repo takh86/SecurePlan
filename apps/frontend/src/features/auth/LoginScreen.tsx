@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState, type ComponentType, type FormEvent } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type ComponentType, type FormEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { ApiError } from '../../shared/api/api-error';
 import { ApiErrorAlert } from '../../shared/ui/ApiErrorAlert';
@@ -10,13 +10,18 @@ import {
   type AuthenticatedContext,
   type IdentityContext,
 } from './auth-api';
+import { createSessionApi, type SessionApi } from './session-api';
 import './LoginScreen.css';
 
 type ViewState = 'checking' | 'logged-out' | 'submitting' | 'authenticated' | 'logging-out';
 
-/** What the protected UI receives. The CSRF token deliberately stays inside LoginScreen. */
+/**
+ * What the protected UI receives. The CSRF token deliberately stays inside
+ * LoginScreen; `api` is bound to it without exposing it (SP-07).
+ */
 export type AuthenticatedSession = {
   identity: IdentityContext;
+  api: SessionApi;
   logout: () => void;
   logoutPending: boolean;
   logoutError: Error | null;
@@ -39,6 +44,19 @@ export function LoginScreen({ authenticatedView: AuthenticatedView, onSignedOut 
   const inFlight = useRef(false);
   const showsProtectedUi = auth !== null && (state === 'authenticated' || state === 'logging-out');
   useDocumentTitle(showsProtectedUi ? null : 'Anmelden');
+
+  // One stable API object per validated session. A 401 from any business call
+  // means the server session is gone: show the login in place (same URL) with
+  // the reason, so the user can continue after signing in again.
+  const api = useMemo(
+    () => auth && createSessionApi(auth.csrfToken, (cause) => {
+      setAuth(null);
+      setPassword('');
+      setError(cause);
+      setState('logged-out');
+    }),
+    [auth],
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -150,10 +168,11 @@ export function LoginScreen({ authenticatedView: AuthenticatedView, onSignedOut 
     }
   }
 
-  if (showsProtectedUi) {
+  if (showsProtectedUi && api) {
     return (
       <AuthenticatedView
         identity={auth.identity}
+        api={api}
         logout={() => { void onLogout(); }}
         logoutPending={state === 'logging-out'}
         logoutError={error}
