@@ -324,6 +324,32 @@ describe('SP-09 PATCH — historical corrections (D1/D2)', () => {
     expect((await auditFor(ok.headers['x-correlation-id']))[0].new_values).toMatchObject({ scope: 'HISTORICAL' });
   });
 
+  it('employment boundaries (inclusive) across month changes: end on the 1st counts, end the day before does not', async () => {
+    const id = await seed(mira, north, '2026-10-01');
+    // Employed until exactly 1 Nov: overlaps November, so October -> November with jonas works.
+    await setEmployment(jonas, '2020-01-01', '2026-11-01');
+    const ok = await patch(id, { employeeId: jonas.employeeId, monthStart: '2026-11-01' }).expect(200);
+    expect(ok.body).toMatchObject({ employeeId: jonas.employeeId, monthStart: '2026-11-01' });
+    // The evidence is checked for the TARGET month: ended 31 Oct -> November has no evidence.
+    const other = await seed(mira, south, '2026-09-01');
+    await setEmployment(jonas, '2020-01-01', '2026-10-31');
+    expect((await patch(other, { employeeId: jonas.employeeId, monthStart: '2026-11-01' }).expect(409)).body.code)
+      .toBe('PROJECT_ASSIGNMENT_CORRECTION_CONFLICT');
+    // The refused correction changed nothing.
+    expect(await row(other)).toMatchObject({ employee_id: mira.employeeId, month: '2026-09-01' });
+  });
+
+  it('an ARCHIVED project already referenced stays correctable in history; a future correction is refused', async () => {
+    const past = await seed(mira, north, '2026-10-01');
+    const future = await seed(jonas, north, '2027-02-01');
+    await db().query("UPDATE projects SET status = 'ARCHIVED' WHERE id = $1", [north.projectId]);
+    expect((await patch(past, { monthStart: '2026-09-01' }).expect(200)).body.monthStart).toBe('2026-09-01');
+    expect((await patch(future, { monthStart: '2027-03-01' }).expect(409)).body.code).toBe('PROJECT_INACTIVE');
+    // Moving an assignment ONTO the archived project is invisible: 404, not 409.
+    const elsewhere = await seed(mira, south, '2027-05-01');
+    expect((await patch(elsewhere, { projectId: north.projectId }).expect(404)).body.code).toBe('RESOURCE_NOT_FOUND');
+  });
+
   it('moving a past record into the future is a historical correction (old month counts)', async () => {
     const id = await seed(mira, north, '2026-10-01');
     const response = await patch(id, { monthStart: '2027-01-01' }).expect(200);
