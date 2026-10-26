@@ -1,6 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import nodemailer from 'nodemailer';
 
+/**
+ * Local development SMTP (Mailpit). Explicit timeouts, because the activation mail is sent
+ * synchronously after the employee commit and must never hang the HTTP request:
+ * - connectionTimeout: time to establish the TCP connection;
+ * - greetingTimeout: time to wait for the server greeting after connecting;
+ * - socketTimeout: inactivity on an open socket.
+ * nodemailer does not retry a failed sendMail (no pool), so a timeout is one attempt.
+ */
+export const LOCAL_SMTP_OPTIONS = {
+  host: '127.0.0.1',
+  port: 1025,
+  secure: false,
+  connectionTimeout: 5_000,
+  greetingTimeout: 5_000,
+  socketTimeout: 10_000,
+} as const;
+
 @Injectable()
 export class ActivationMailService {
   private readonly transport;
@@ -35,11 +52,7 @@ export class ActivationMailService {
 
     this.appOrigin = origin;
 
-    this.transport = nodemailer.createTransport({
-      host: '127.0.0.1',
-      port: 1025,
-      secure: false,
-    });
+    this.transport = nodemailer.createTransport({ ...LOCAL_SMTP_OPTIONS });
   }
 
   async sendActivationEmail(email: string, rawToken: string): Promise<void> {

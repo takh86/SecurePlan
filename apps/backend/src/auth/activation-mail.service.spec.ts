@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import nodemailer from 'nodemailer';
-import { ActivationMailService } from './activation-mail.service.js';
+import { ActivationMailService, LOCAL_SMTP_OPTIONS } from './activation-mail.service.js';
 import { generateAccountToken } from './account-token.js';
 
 vi.mock('nodemailer', () => ({ default: { createTransport: vi.fn() } }));
@@ -33,7 +33,11 @@ describe('Local activation mail safety', () => {
       host: '127.0.0.1',
       port: 1025,
       secure: false,
+      connectionTimeout: 5_000,
+      greetingTimeout: 5_000,
+      socketTimeout: 10_000,
     });
+    expect(LOCAL_SMTP_OPTIONS.port).toBe(1025);
     expect(sendMail).toHaveBeenCalledTimes(1);
     const message = sendMail.mock.calls[0][0] as { text: string; to: string };
     const link = new URL(
