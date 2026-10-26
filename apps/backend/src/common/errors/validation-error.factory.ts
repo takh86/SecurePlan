@@ -11,7 +11,8 @@ function mapConstraint(constraints: Record<string, string>): ValidationSubcode |
   const names = Object.keys(constraints);
   if (names.includes('isDefined') || names.includes('isNotEmpty')) return 'REQUIRED';
   if (names.some((name) => ['isString', 'isInt', 'isNumber', 'isBoolean', 'isArray', 'isObject'].includes(name))) return 'INVALID_TYPE';
-  if (names.includes('isUUID')) return 'INVALID_UUID';
+  // class-validator reports @IsUUID() under the constraint key 'isUuid'.
+  if (names.includes('isUuid')) return 'INVALID_UUID';
   if (names.includes('isEnum')) return 'INVALID_ENUM';
   if (names.some((name) => ['isEmail', 'isDateString', 'isISO8601', 'matches', 'isUrl'].includes(name))) return 'INVALID_FORMAT';
   if (names.some((name) => ['minLength', 'arrayMinSize'].includes(name))) return 'TOO_SHORT';
