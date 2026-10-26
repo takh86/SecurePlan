@@ -77,3 +77,38 @@ Keine Schwächung. Tenant-Kontext bleibt ausschließlich serverseitig, alle Abfr
 - [x] Die Entscheidung ist ohne dieses Dokument erklärbar (Schema = Schreibpfad des freigegebenen Vertrags).
 - [x] Die verworfenen Alternativen B, C und D sind mit Begründung benannt.
 - [x] Der erkaufte Nachteil (fehlende Adresse, eindeutige Namen) ist bekannt.
+
+## Nachtrag vom 26.10.2026 (Review-Gate, vor dem ersten Merge)
+
+Dieser Nachtrag ändert die Entscheidung nicht. Er macht zwei Folgen ausdrücklich, die im Review aufgefallen sind (Findings F-4 und F-3).
+
+### Geänderte Eindeutigkeitsregel für Projektnamen (F-4)
+
+- **Abweichung:** Das physische DB-Design schließt ein `UNIQUE(name)` ausdrücklich aus. Diese Entscheidung führt stattdessen `UNIQUE (company_id, name)` ein (Constraint `uq_projects__company_name`). Das ist eine bewusste Abweichung vom DB-Design.
+- **Grundlage:** Validierungs-, Fehler- und Testvertrag der API verlangen einen je Unternehmen eindeutigen Namen (`409 PROJECT_NAME_ALREADY_EXISTS`). Ohne Adresse ist der Name zudem das einzige fachliche Unterscheidungsmerkmal eines Projekts.
+- **Vergleichsregel:** exakt nach dem Trimmen, ohne Groß-/Kleinschreibungs- oder Unicode-Normalisierung. „Objekt Nord“ und „objekt nord“ sind also zwei zulässige Namen. Eine Normalisierung wäre eine neue fachliche Entscheidung.
+- **Geltungsbereich:** Die Eindeutigkeit gilt je Unternehmen. In verschiedenen Unternehmen darf derselbe Name vorkommen.
+
+### ARCHIVED als gespeicherter, aber nicht exponierter Status (F-3)
+
+- **Ist-Verhalten:** Kein API-v1-Pfad schreibt `ARCHIVED`. Eine trotzdem gespeicherte Zeile, etwa durch manuelles SQL, eine Migration oder ein späteres Feature, wird als Serverdefekt behandelt und schlägt geschlossen fehl (500 ohne Details).
+- **Wirkungsradius:** Betroffen sind nicht nur Detail und Änderung dieses einen Projekts.
+  - Die Projektliste schlägt für jede Seite fehl, die die Zeile enthält. Ohne Statusfilter ist das die Standardansicht.
+  - Das Zuordnungs-Panel lädt alle Projekte des Unternehmens. Eine einzige archivierte Zeile macht die Monatszuordnung daher für **alle** Projekte des Unternehmens unbenutzbar.
+  - Ein Anlegen von Zuordnungen auf ein archiviertes Projekt wird mit `409 PROJECT_INACTIVE` abgewiesen.
+  - Vertraulichkeit und Integrität sind nicht betroffen, wohl aber die Verfügbarkeit innerhalb des Tenants.
+- **Status:** **Offene Owner-Entscheidung.** Bis zur Freigabe bleibt das Verhalten wie oben beschrieben (keine stille Änderung des Statusvertrags). Die Entscheidungsvorlage mit Optionen und Empfehlung liegt dem Review-Bericht vom 26.10.2026 bei.
+
+### Formell fortzuschreibende interne Baselines
+
+Die internen, nicht öffentlichen Baselines müssen diese Entscheidung nachziehen:
+
+1. **Physisches DB-Design, Tabelle `projects`:**
+   - Spalten Adresse, interne Kennung und Notiz sind im MVP nicht angelegt.
+   - `UNIQUE (company_id, name)` ersetzt „kein UNIQUE(name)“.
+   - `ARCHIVED` ist erlaubt, im MVP aber nicht erreichbar.
+2. **Physisches DB-Design, Invarianten-Übersicht:** Projektname je Unternehmen eindeutig (DB-Constraint).
+3. **DB-Operations-Gate:** Projekt-Lebenszyklus im MVP ist nur `ACTIVE`/`INACTIVE`.
+4. **UX (Projekt anlegen, Stammdaten, Lebenszyklus-Zustände):** Pflichtfeld Adresse und Feld interne Kennung entfallen im MVP; der Zustand „Archiviert“ ist nicht erreichbar.
+5. **API-Validierungsvertrag (Projektname):** Hinweis auf den exakten Vergleich ohne Normalisierung.
+6. **Nach der F-3-Entscheidung:** je nach gewählter Option API-Vertrag, Fehlervertrag und DB-Design.
