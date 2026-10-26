@@ -11,6 +11,7 @@ import {
   type IdentityContext,
 } from './auth-api';
 import { createSessionApi, type SessionApi } from './session-api';
+import { openSessionChannel, type OpenSessionChannel, type SessionChannel, type SessionSignal } from './session-channel';
 import './LoginScreen.css';
 
 type ViewState = 'checking' | 'logged-out' | 'submitting' | 'authenticated' | 'logging-out';
@@ -30,12 +31,18 @@ export type AuthenticatedSession = {
 type LoginScreenProps = {
   /** Protected UI; rendered only with an identity validated by login or GET /me. */
   authenticatedView: ComponentType<AuthenticatedSession>;
-  /** Called once the server session is gone (logout 204 or 401). */
+  /** Called once the server session is gone (logout 204 or 401, also in another tab). */
   onSignedOut?: () => void;
+  /** Cross-tab session signals; replaceable in tests. */
+  openChannel?: OpenSessionChannel;
 };
 
 /** Session boundary: restores/creates the session and shows the login form until one is valid. */
-export function LoginScreen({ authenticatedView: AuthenticatedView, onSignedOut }: LoginScreenProps) {
+export function LoginScreen({
+  authenticatedView: AuthenticatedView,
+  onSignedOut,
+  openChannel = openSessionChannel,
+}: LoginScreenProps) {
   const [state, setState] = useState<ViewState>('checking');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -46,8 +53,14 @@ export function LoginScreen({ authenticatedView: AuthenticatedView, onSignedOut 
   // The session the UI belongs to right now; lets a late response for an
   // earlier session be recognised as stale.
   const currentAuth = useRef<AuthenticatedContext | null>(null);
+  const channel = useRef<SessionChannel | null>(null);
   const showsProtectedUi = auth !== null && (state === 'authenticated' || state === 'logging-out');
   useDocumentTitle(showsProtectedUi ? null : 'Anmelden');
+
+  /** Tells the other tabs of this browser that the shared session changed. */
+  function broadcast(signal: SessionSignal) {
+    channel.current?.post(signal);
+  }
 
   // Adopts a validated session (or none) together with its own API object.
   // A 401 from any business call means the server session is gone: show the
@@ -64,6 +77,7 @@ export function LoginScreen({ authenticatedView: AuthenticatedView, onSignedOut 
       setPassword('');
       setError(cause);
       setState('logged-out');
+      broadcast('signed-out');
     }));
   }
 
@@ -89,38 +103,44 @@ export function LoginScreen({ authenticatedView: AuthenticatedView, onSignedOut 
   }, []);
 
   // Stable across re-renders: a parent re-render (e.g. a location change) must not
-  // restart the effect below and orphan a pending session check.
+  // restart the effects below and orphan a pending session check.
   const signedOut = useEffectEvent(() => onSignedOut?.());
+
+  // Hides protected content until GET /me confirms the session again. Used after
+  // a back/forward-cache restore and after a new login in another tab.
+  // Single-flight: shares the login/logout guard, so overlapping checks cannot
+  // race and an obsolete response cannot override a newer outcome.
+  const recheckSession = useEffectEvent((isCurrent: () => boolean) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    flushSync(() => setState('checking'));
+    void currentSession().then(
+      (restored) => {
+        if (!isCurrent()) return;
+        setAuth(restored);
+        setState('authenticated');
+      },
+      (cause: unknown) => {
+        if (!isCurrent()) return;
+        const unauthorized = cause instanceof ApiError && cause.status === 401;
+        if (!unauthorized) {
+          setError(cause instanceof Error ? cause : new Error('Session check failed'));
+        }
+        setAuth(null);
+        setState('logged-out');
+        signedOut();
+        if (unauthorized) broadcast('signed-out');
+      },
+    ).finally(() => {
+      inFlight.current = false;
+    });
+  });
 
   useEffect(() => {
     if (!auth) return;
     let mounted = true;
     function onPageShow(event: PageTransitionEvent) {
-      // Single-flight: shares the login/logout guard, so overlapping restores
-      // cannot race and an obsolete response cannot override a newer outcome.
-      if (!event.persisted || inFlight.current) return;
-      inFlight.current = true;
-      // Restored from the back/forward cache: hide protected content until
-      // GET /me confirms the session again.
-      flushSync(() => setState('checking'));
-      void currentSession().then(
-        (restored) => {
-          if (!mounted) return;
-          setAuth(restored);
-          setState('authenticated');
-        },
-        (cause: unknown) => {
-          if (!mounted) return;
-          if (!(cause instanceof ApiError && cause.status === 401)) {
-            setError(cause instanceof Error ? cause : new Error('Session check failed'));
-          }
-          setAuth(null);
-          setState('logged-out');
-          signedOut();
-        },
-      ).finally(() => {
-        inFlight.current = false;
-      });
+      if (event.persisted) recheckSession(() => mounted);
     }
     window.addEventListener('pageshow', onPageShow);
     return () => {
@@ -128,6 +148,35 @@ export function LoginScreen({ authenticatedView: AuthenticatedView, onSignedOut 
       window.removeEventListener('pageshow', onPageShow);
     };
   }, [auth]);
+
+  // Another tab changed the shared session. Only a tab that shows protected
+  // content reacts; a login form stays as it is (no automatic sign-in).
+  const onSessionSignal = useEffectEvent((signal: SessionSignal, isCurrent: () => boolean) => {
+    if (currentAuth.current === null || inFlight.current) return;
+    if (signal === 'signed-out') {
+      // The shared session is gone: hide protected content at once, without a request.
+      setAuth(null);
+      setPassword('');
+      setError(null);
+      setState('logged-out');
+      signedOut();
+      return;
+    }
+    // The browser cookie now belongs to a newer session, so this tab's identity
+    // and CSRF token are stale: confirm the session like a restore does.
+    recheckSession(isCurrent);
+  });
+
+  useEffect(() => {
+    let open = true;
+    const opened = openChannel((signal) => onSessionSignal(signal, () => open));
+    channel.current = opened;
+    return () => {
+      open = false;
+      opened.close();
+      if (channel.current === opened) channel.current = null;
+    };
+  }, [openChannel]);
 
   async function onLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -141,6 +190,7 @@ export function LoginScreen({ authenticatedView: AuthenticatedView, onSignedOut 
       setAuth(next);
       setPassword('');
       setState('authenticated');
+      broadcast('signed-in');
     } catch (cause) {
       setError(cause instanceof Error ? cause : new Error('Login failed'));
       setState('logged-out');
@@ -160,6 +210,7 @@ export function LoginScreen({ authenticatedView: AuthenticatedView, onSignedOut 
       setPassword('');
       setState('logged-out');
       onSignedOut?.();
+      broadcast('signed-out');
     } catch (cause) {
       const failure = cause instanceof Error ? cause : new Error('Logout failed');
       setError(failure);
@@ -169,6 +220,7 @@ export function LoginScreen({ authenticatedView: AuthenticatedView, onSignedOut 
         setAuth(null);
         setState('logged-out');
         onSignedOut?.();
+        broadcast('signed-out');
       } else {
         setState('authenticated');
       }
