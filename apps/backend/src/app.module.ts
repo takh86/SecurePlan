@@ -24,6 +24,7 @@ import { HealthController } from './database/health.controller.js';
 import { ThrottlerModule } from '@nestjs/throttler';
 
 import { BusinessAuditService } from './modules/audit/business-audit.service.js';
+import { WALL_CLOCK, systemWallClock } from './common/time/wall-clock.js';
 import { AccountLifecycleService } from './modules/identity/account-lifecycle.service.js';
 import {
   ACTIVATION_DELIVERY,
@@ -81,6 +82,8 @@ import { ProjectsService } from './modules/workforce/projects/projects.service.j
     ProjectsService,
     // SP-09: month-scoped project assignments (create/read slice).
     ProjectAssignmentsService,
+    // Business "current month" rules read the time here (company time zone, never UTC).
+    { provide: WALL_CLOCK, useValue: systemWallClock },
   ],
 })
 export class AppModule {}

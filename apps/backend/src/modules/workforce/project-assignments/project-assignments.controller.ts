@@ -1,14 +1,19 @@
-import { Body, Controller, Get, Header, HttpCode, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequireRoles } from '../../../auth/authorization/access-metadata.js';
 import { CurrentTenant } from '../../../auth/authorization/current-tenant.decorator.js';
 import type { TenantContext } from '../../../auth/authorization/tenant-context.js';
 import { CorrelationId } from '../../../common/http/correlation-id.decorator.js';
-import { CreateProjectAssignmentDto, ListProjectAssignmentsQueryDto } from './dto/project-assignment.dto.js';
+import { ResourceIdPipe } from '../../../common/http/resource-id.pipe.js';
+import {
+  CreateProjectAssignmentDto,
+  ListProjectAssignmentsQueryDto,
+  UpdateProjectAssignmentDto,
+} from './dto/project-assignment.dto.js';
 import { ProjectAssignmentsService } from './project-assignments.service.js';
 
 /**
- * SP-09 month-scoped project assignments (create/read slice; the correction
- * PATCH is not implemented yet, and there is deliberately no DELETE).
+ * SP-09 month-scoped project assignments: create, read and correction PATCH;
+ * there is deliberately no DELETE (history stays).
  * COMPANY_ADMIN of the session's own company only. Origin, session, CSRF
  * (unsafe methods) and the live role are enforced by the global
  * AccessControlGuard; tenant scope and 404 concealment in the service SQL.
@@ -34,5 +39,17 @@ export class ProjectAssignmentsController {
     @Body() dto: CreateProjectAssignmentDto,
   ) {
     return this.assignments.create(tenant, dto, correlationId);
+  }
+
+  @Patch(':assignmentId')
+  @RequireRoles('COMPANY_ADMIN')
+  @Header('Cache-Control', 'no-store')
+  correct(
+    @CurrentTenant() tenant: TenantContext,
+    @CorrelationId() correlationId: string,
+    @Param('assignmentId', ResourceIdPipe) assignmentId: string,
+    @Body() dto: UpdateProjectAssignmentDto,
+  ) {
+    return this.assignments.correct(tenant, assignmentId, dto, correlationId);
   }
 }

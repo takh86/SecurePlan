@@ -7,6 +7,7 @@
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types.js';
+import { WALL_CLOCK, type WallClock } from '../../src/common/time/wall-clock.js';
 import { AppModule } from '../../src/app.module.js';
 import { configureApp } from '../../src/configure-app.js';
 import { PASSWORD_DENYLIST } from '../../src/auth/local-password-denylist.js';
@@ -54,7 +55,7 @@ export class FailingAudit extends BusinessAuditService {
   }
 }
 
-export type EmployeesAppOptions = { audit?: BusinessAuditService };
+export type EmployeesAppOptions = { audit?: BusinessAuditService; clock?: WallClock };
 
 export async function bootEmployeesApp(
   delivery: RecordingDelivery,
@@ -70,6 +71,9 @@ export async function bootEmployeesApp(
     .useValue(delivery);
   if (options.audit) {
     builder = builder.overrideProvider(BusinessAuditService).useValue(options.audit);
+  }
+  if (options.clock) {
+    builder = builder.overrideProvider(WALL_CLOCK).useValue(options.clock);
   }
   const moduleFixture = await builder.compile();
   const app = moduleFixture.createNestApplication<INestApplication<App>>();

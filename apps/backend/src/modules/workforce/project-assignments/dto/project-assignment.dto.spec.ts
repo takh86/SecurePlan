@@ -2,7 +2,11 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { CreateProjectAssignmentDto, ListProjectAssignmentsQueryDto } from './project-assignment.dto.js';
+import {
+  CreateProjectAssignmentDto,
+  ListProjectAssignmentsQueryDto,
+  UpdateProjectAssignmentDto,
+} from './project-assignment.dto.js';
 
 async function failedProperties<T extends object>(type: new () => T, plain: Record<string, unknown>) {
   const errors = await validate(plainToInstance(type, plain), { whitelist: true, forbidNonWhitelisted: true });
@@ -51,5 +55,23 @@ describe('SP-09 — ListProjectAssignmentsQueryDto', () => {
     expect(await failedProperties(ListProjectAssignmentsQueryDto, { monthStart: '2027-01-01', pageSize: '101' })).toEqual(['pageSize']);
     expect(await failedProperties(ListProjectAssignmentsQueryDto, { monthStart: ['2027-01-01', '2027-02-01'] })).toEqual(['monthStart']);
     expect(await failedProperties(ListProjectAssignmentsQueryDto, { monthStart: '2027-01-01', sortBy: 'name' })).toEqual(['sortBy']);
+  });
+});
+
+describe('SP-09 — UpdateProjectAssignmentDto (correction only)', () => {
+  it('validates only sent fields; every field is optional here (EMPTY_PATCH is a service rule)', async () => {
+    expect(await failedProperties(UpdateProjectAssignmentDto, {})).toEqual([]);
+    expect(await failedProperties(UpdateProjectAssignmentDto, { projectId: PROJECT })).toEqual([]);
+    expect(await failedProperties(UpdateProjectAssignmentDto, { employeeId: EMPLOYEE, projectId: PROJECT, monthStart: '2027-01-01' })).toEqual([]);
+  });
+
+  it('rejects null, malformed ids/dates and any foreign field', async () => {
+    expect(await failedProperties(UpdateProjectAssignmentDto, { employeeId: null, projectId: null, monthStart: null }))
+      .toEqual(['employeeId', 'monthStart', 'projectId']);
+    expect(await failedProperties(UpdateProjectAssignmentDto, { employeeId: 'x' })).toEqual(['employeeId']);
+    expect(await failedProperties(UpdateProjectAssignmentDto, { monthStart: '2027-13-01' })).toEqual(['monthStart']);
+    for (const field of ['companyId', 'id', 'status', 'accountId']) {
+      expect(await failedProperties(UpdateProjectAssignmentDto, { [field]: 'x' })).toEqual([field]);
+    }
   });
 });

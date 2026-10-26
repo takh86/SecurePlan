@@ -21,7 +21,9 @@ export type BusinessAuditAction =
   | 'ACCOUNT_ACTIVATION_REISSUED'
   | 'PROJECT_CREATED'
   | 'PROJECT_UPDATED'
-  | 'PROJECT_ASSIGNMENT_CREATED';
+  | 'PROJECT_ASSIGNMENT_CREATED'
+  /** Provisional MVP name (owner 26.10.2026): correction of an existing assignment; old/new IDs and month only. */
+  | 'PROJECT_ASSIGNMENT_CORRECTED';
 
 export type BusinessAuditEntry = {
   companyId: string;

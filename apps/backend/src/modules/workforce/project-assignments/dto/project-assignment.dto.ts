@@ -16,6 +16,7 @@ import {
   Matches,
   Max,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { CALENDAR_DATE_PATTERN } from '../../employees/dto/employee.dto.js';
 
@@ -64,4 +65,23 @@ export class ListProjectAssignmentsQueryDto {
   @Min(1)
   @Max(100)
   pageSize?: number;
+}
+
+/** PATCH (correction only): every field optional, at least one required (checked in the service). */
+const sent = (_object: object, value: unknown): boolean => value !== undefined;
+
+export class UpdateProjectAssignmentDto {
+  @ValidateIf(sent)
+  @IsUUID('all')
+  employeeId?: string;
+
+  @ValidateIf(sent)
+  @IsUUID('all')
+  projectId?: string;
+
+  @ValidateIf(sent)
+  @IsString()
+  @Matches(CALENDAR_DATE_PATTERN)
+  @IsISO8601({ strict: true })
+  monthStart?: string;
 }
