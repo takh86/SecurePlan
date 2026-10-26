@@ -284,6 +284,27 @@ describe('SP-08 — create', () => {
     await write('post', BASE, adminA, { name: 'objekt a' }).expect(201);
   });
 
+  it('an ARCHIVED project keeps its name reserved; the 409 is identical to a visible clash and does not reveal it', async () => {
+    await createSyntheticProject(db(), tenantA.companyId, 'Reserviert', 'ARCHIVED');
+    const before = await tenantState(tenantA.companyId);
+    const hidden = await write('post', BASE, adminA, { name: 'Reserviert' }).expect(409);
+    const visible = await write('post', BASE, adminA, { name: 'Objekt A' }).expect(409);
+    const shape = (body: Record<string, unknown>) => {
+      const { correlationId, instance, ...rest } = body;
+      expect([typeof correlationId, typeof instance]).toEqual(['string', 'string']);
+      return rest;
+    };
+    expect(hidden.body.code).toBe('PROJECT_NAME_ALREADY_EXISTS');
+    expect(shape(hidden.body)).toEqual(shape(visible.body));
+    expect(JSON.stringify(hidden.body).toLowerCase()).not.toContain('archiv');
+    // Renaming a visible project onto the reserved name is the same neutral 409.
+    const rename = await write('patch', `${BASE}/${projectA.projectId}`, adminA, { name: 'Reserviert' }).expect(409);
+    expect(shape(rename.body)).toEqual(shape(visible.body));
+    // Another tenant may use the name (uniqueness is per company).
+    await write('post', BASE, adminB, { name: 'Reserviert' }).expect(201);
+    expect(await tenantState(tenantA.companyId)).toEqual(before);
+  });
+
   it('invalid create input: 400 VALIDATION_FAILED with safe pointers and nothing persisted', async () => {
     const before = await tenantState(tenantA.companyId);
     const cases: [Record<string, unknown>, string][] = [
