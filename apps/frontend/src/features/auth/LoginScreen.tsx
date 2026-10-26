@@ -10,13 +10,18 @@ import {
   type AuthenticatedContext,
   type IdentityContext,
 } from './auth-api';
+import { createSessionApi, type SessionApi } from './session-api';
 import './LoginScreen.css';
 
 type ViewState = 'checking' | 'logged-out' | 'submitting' | 'authenticated' | 'logging-out';
 
-/** What the protected UI receives. The CSRF token deliberately stays inside LoginScreen. */
+/**
+ * What the protected UI receives. The CSRF token deliberately stays inside
+ * LoginScreen; `api` is bound to it without exposing it (SP-07).
+ */
 export type AuthenticatedSession = {
   identity: IdentityContext;
+  api: SessionApi;
   logout: () => void;
   logoutPending: boolean;
   logoutError: Error | null;
@@ -34,11 +39,33 @@ export function LoginScreen({ authenticatedView: AuthenticatedView, onSignedOut 
   const [state, setState] = useState<ViewState>('checking');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [auth, setAuth] = useState<AuthenticatedContext | null>(null);
+  const [auth, setAuthState] = useState<AuthenticatedContext | null>(null);
+  const [api, setApi] = useState<SessionApi | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const inFlight = useRef(false);
+  // The session the UI belongs to right now; lets a late response for an
+  // earlier session be recognised as stale.
+  const currentAuth = useRef<AuthenticatedContext | null>(null);
   const showsProtectedUi = auth !== null && (state === 'authenticated' || state === 'logging-out');
   useDocumentTitle(showsProtectedUi ? null : 'Anmelden');
+
+  // Adopts a validated session (or none) together with its own API object.
+  // A 401 from any business call means the server session is gone: show the
+  // login in place (same URL) with the reason, so the user can continue after
+  // signing in again. A late 401 for an earlier session (a write still in flight
+  // across logout or re-login) is ignored: it must neither end the current
+  // session nor touch the login form.
+  function setAuth(next: AuthenticatedContext | null) {
+    currentAuth.current = next;
+    setAuthState(next);
+    setApi(next && createSessionApi(next.csrfToken, (cause) => {
+      if (currentAuth.current !== next) return;
+      setAuth(null);
+      setPassword('');
+      setError(cause);
+      setState('logged-out');
+    }));
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -150,10 +177,11 @@ export function LoginScreen({ authenticatedView: AuthenticatedView, onSignedOut 
     }
   }
 
-  if (showsProtectedUi) {
+  if (showsProtectedUi && api) {
     return (
       <AuthenticatedView
         identity={auth.identity}
+        api={api}
         logout={() => { void onLogout(); }}
         logoutPending={state === 'logging-out'}
         logoutError={error}

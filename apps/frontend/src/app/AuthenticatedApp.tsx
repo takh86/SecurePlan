@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes } from 'react-router';
 import { WorkQueuePage } from '../features/cancellation-replacement/work-queue/WorkQueuePage';
 import type { AuthenticatedSession } from '../features/auth/LoginScreen';
+import type { SessionApi } from '../features/auth/session-api';
+import { EmployeesSection } from '../features/employees/EmployeesSection';
 import { MyMonthPlanPage } from '../features/planning/my-month-plan/MyMonthPlanPage';
 import { AppShell } from './AppShell';
 import { AccessDeniedPage, NotFoundPage, PlannedFeaturePage } from './FallbackPages';
@@ -17,8 +19,8 @@ export function AuthenticatedApp(session: AuthenticatedSession) {
         {APP_ROUTES.map((route) => (
           <Route
             key={route.id}
-            path={route.acceptsMonth ? `${route.path}/:month?` : route.path}
-            element={<RouteView route={route} role={role} />}
+            path={routePattern(route)}
+            element={<RouteView route={route} role={role} api={session.api} />}
           />
         ))}
         <Route path="*" element={<NotFoundPage role={role} />} />
@@ -27,11 +29,19 @@ export function AuthenticatedApp(session: AuthenticatedSession) {
   );
 }
 
+function routePattern(route: AppRoute): string {
+  if (route.acceptsMonth) return `${route.path}/:month?`;
+  if (route.nested) return `${route.path}/*`;
+  return route.path;
+}
+
 // Role check is UX only; the server authorizes every API request on its own.
-function RouteView({ route, role }: { route: AppRoute; role: TenantRole }) {
+function RouteView({ route, role, api }: { route: AppRoute; role: TenantRole; api: SessionApi }) {
   if (route.role !== role) return <AccessDeniedPage role={role} />;
   if (route.availability === 'planned') return <PlannedFeaturePage route={route} />;
   switch (route.id) {
+    case 'employees':
+      return <EmployeesSection route={route} api={api} />;
     case 'work-queue':
       return (
         <PageFrame title={route.title} lead={route.lead}>

@@ -62,6 +62,13 @@ function problem(status: number, code: string): Responder {
 
 const unauthorized = problem(401, 'SESSION_REQUIRED');
 const noContent: Responder = () => new Response(null, { status: 204 });
+const EMPLOYEES = '/api/v1/employees';
+const json = (status: number, body: unknown): Responder => () => new Response(JSON.stringify(body), {
+  status,
+  headers: { 'content-type': 'application/json' },
+});
+// SP-07: an empty company for the real employee list.
+const emptyEmployees = json(200, { items: [], pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 } });
 
 function deferred() {
   let resolve!: (response: Response) => void;
@@ -229,6 +236,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
     async function signInAndLogout() {
       enqueue(queues, '/api/v1/me', authorized(role));
       enqueue(queues, '/api/v1/auth/logout', noContent);
+      if (role === 'COMPANY_ADMIN') enqueue(queues, EMPLOYEES, emptyEmployees);
       const fetchMock = stubApi(queues);
       renderAt(journey.landing);
       await expectShell(journey.landingTitle);
@@ -427,6 +435,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
     ] as const)('does not strand the check when Back is used while it is pending — session %s', async (_label, status) => {
       const pending = deferred();
       enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'), pending.handler);
+      enqueue(queues, EMPLOYEES, emptyEmployees);
       const fetchMock = stubApi(queues);
       renderAt('/arbeitsuebersicht');
       await expectShell('Arbeitsübersicht');
@@ -521,5 +530,121 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       '/api/v1/auth/login',
       '/api/v1/auth/logout',
     ]);
+  });
+
+  it('SP-07: an employee write carries the in-memory CSRF token, which never reaches DOM, URL or storage', async () => {
+    const created = {
+      id: '6f1ad9a6-3a0c-4b7c-9c5e-0d4f2a1e8b11',
+      employeeCode: 'A-100',
+      firstName: 'Mira',
+      lastName: 'Beispiel',
+      employmentStart: null,
+      employmentEnd: null,
+      shiftEligibility: 'DAY',
+      status: 'ACTIVE',
+      email: 'mira@secureplan.test',
+      accountStatus: 'PENDING_ACTIVATION',
+    };
+    enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+    enqueue(queues, EMPLOYEES, json(201, created));
+    enqueue(queues, `${EMPLOYEES}/${created.id}`, json(200, created));
+    const fetchMock = stubApi(queues);
+    renderAt('/mitarbeitende/neu');
+    await expectShell('Mitarbeiter:in anlegen');
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('Mitarbeiter-ID'), 'A-100');
+    await user.type(screen.getByLabelText('Vorname'), 'Mira');
+    await user.type(screen.getByLabelText('Nachname'), 'Beispiel');
+    await user.type(screen.getByLabelText('E-Mail-Adresse'), 'mira@secureplan.test');
+    await user.click(screen.getByRole('radio', { name: 'Tag' }));
+    await user.click(screen.getByRole('button', { name: 'Mitarbeiter:in anlegen' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Mira Beispiel' })).toBeTruthy();
+    expect(window.location.pathname).toBe(`/mitarbeitende/${created.id}`);
+    const post = fetchMock.mock.calls.find(([url, init]) => url === EMPLOYEES && init?.method === 'POST');
+    const headers = new Headers(post?.[1]?.headers);
+    expect(headers.get('x-csrf-token')).toBe(CSRF);
+    expect(post?.[1]?.credentials).toBe('same-origin');
+    // The client never sends tenant or role; the server derives them from the session.
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      employeeCode: 'A-100',
+      firstName: 'Mira',
+      lastName: 'Beispiel',
+      email: 'mira@secureplan.test',
+      shiftEligibility: 'DAY',
+    });
+    // Reads never carry the CSRF token.
+    for (const [, init] of fetchMock.mock.calls.filter(([, init]) => (init?.method ?? 'GET') === 'GET')) {
+      expect(new Headers(init?.headers).get('x-csrf-token')).toBeNull();
+    }
+    expect(document.body.innerHTML).not.toContain(CSRF);
+    expect(window.location.href).not.toContain(CSRF);
+    expect(setItemSpy).not.toHaveBeenCalled();
+  });
+
+  it('SP-07: a 401 from an employee request shows the login in place with the reason', async () => {
+    enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+    enqueue(queues, EMPLOYEES, problem(401, 'SESSION_REVOKED'));
+    stubApi(queues);
+    renderAt('/mitarbeitende');
+
+    expect(await screen.findByRole('heading', { name: 'Anmelden' })).toBeTruthy();
+    expectNoProtectedContent('COMPANY_ADMIN');
+    expect(screen.getByRole('alert').textContent).toContain('Anmeldung erforderlich');
+    // The deep link is kept, so work can continue after signing in again.
+    expect(window.location.pathname).toBe('/mitarbeitende');
+  });
+
+  describe('SP-07 — a late 401 from an earlier session is ignored', () => {
+    /** Submits a create that stays pending, then signs out; returns the pending response. */
+    async function submitCreateThenLogout() {
+      const pendingCreate = deferred();
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+      enqueue(queues, EMPLOYEES, pendingCreate.handler);
+      enqueue(queues, '/api/v1/auth/logout', noContent);
+      enqueue(queues, '/api/v1/auth/login', authorized('COMPANY_ADMIN'));
+      const fetchMock = stubApi(queues);
+      renderAt('/mitarbeitende/neu');
+      await expectShell('Mitarbeiter:in anlegen');
+
+      const user = userEvent.setup();
+      await user.type(screen.getByLabelText('Mitarbeiter-ID'), 'A-100');
+      await user.type(screen.getByLabelText('Vorname'), 'Mira');
+      await user.type(screen.getByLabelText('Nachname'), 'Beispiel');
+      await user.type(screen.getByLabelText('E-Mail-Adresse'), 'mira@secureplan.test');
+      await user.click(screen.getByRole('radio', { name: 'Tag' }));
+      await user.click(screen.getByRole('button', { name: 'Mitarbeiter:in anlegen' }));
+      await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => url === EMPLOYEES && init?.method === 'POST')).toBe(true));
+
+      // The write is still pending when the user signs out.
+      await user.click(screen.getByRole('button', { name: 'Abmelden' }));
+      expect(await screen.findByRole('heading', { name: 'Anmelden' })).toBeTruthy();
+      return { pendingCreate, user };
+    }
+
+    it('does not end a newer session established after re-login', async () => {
+      const { pendingCreate, user } = await submitCreateThenLogout();
+      await user.type(screen.getByLabelText('E-Mail-Adresse'), 'admin@secureplan.test');
+      await user.type(screen.getByLabelText('Passwort'), 'Local Password 2026!');
+      await user.click(screen.getByRole('button', { name: 'Anmelden' }));
+      await expectShell('Arbeitsübersicht');
+
+      await act(async () => pendingCreate.resolve(problem(401, 'SESSION_REVOKED')()));
+      await act(async () => { await Promise.resolve(); });
+      expect(screen.getByRole('navigation', { name: 'Hauptnavigation' })).toBeTruthy();
+      expect(screen.queryByRole('heading', { name: 'Anmelden' })).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(window.location.pathname).toBe('/arbeitsuebersicht');
+    });
+
+    it('does not put a session error on the login form after a deliberate logout', async () => {
+      const { pendingCreate } = await submitCreateThenLogout();
+
+      await act(async () => pendingCreate.resolve(problem(401, 'SESSION_REVOKED')()));
+      await act(async () => { await Promise.resolve(); });
+      expectNoProtectedContent('COMPANY_ADMIN');
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
   });
 });
