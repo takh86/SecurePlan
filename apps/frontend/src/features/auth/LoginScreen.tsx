@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type ComponentType, type FormEvent } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type ComponentType, type FormEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { ApiError } from '../../shared/api/api-error';
 import { ApiErrorAlert } from '../../shared/ui/ApiErrorAlert';
@@ -39,24 +39,33 @@ export function LoginScreen({ authenticatedView: AuthenticatedView, onSignedOut 
   const [state, setState] = useState<ViewState>('checking');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [auth, setAuth] = useState<AuthenticatedContext | null>(null);
+  const [auth, setAuthState] = useState<AuthenticatedContext | null>(null);
+  const [api, setApi] = useState<SessionApi | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const inFlight = useRef(false);
+  // The session the UI belongs to right now; lets a late response for an
+  // earlier session be recognised as stale.
+  const currentAuth = useRef<AuthenticatedContext | null>(null);
   const showsProtectedUi = auth !== null && (state === 'authenticated' || state === 'logging-out');
   useDocumentTitle(showsProtectedUi ? null : 'Anmelden');
 
-  // One stable API object per validated session. A 401 from any business call
-  // means the server session is gone: show the login in place (same URL) with
-  // the reason, so the user can continue after signing in again.
-  const api = useMemo(
-    () => auth && createSessionApi(auth.csrfToken, (cause) => {
+  // Adopts a validated session (or none) together with its own API object.
+  // A 401 from any business call means the server session is gone: show the
+  // login in place (same URL) with the reason, so the user can continue after
+  // signing in again. A late 401 for an earlier session (a write still in flight
+  // across logout or re-login) is ignored: it must neither end the current
+  // session nor touch the login form.
+  function setAuth(next: AuthenticatedContext | null) {
+    currentAuth.current = next;
+    setAuthState(next);
+    setApi(next && createSessionApi(next.csrfToken, (cause) => {
+      if (currentAuth.current !== next) return;
       setAuth(null);
       setPassword('');
       setError(cause);
       setState('logged-out');
-    }),
-    [auth],
-  );
+    }));
+  }
 
   useEffect(() => {
     let mounted = true;

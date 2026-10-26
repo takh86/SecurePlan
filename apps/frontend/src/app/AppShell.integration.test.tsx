@@ -595,4 +595,56 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
     // The deep link is kept, so work can continue after signing in again.
     expect(window.location.pathname).toBe('/mitarbeitende');
   });
+
+  describe('SP-07 — a late 401 from an earlier session is ignored', () => {
+    /** Submits a create that stays pending, then signs out; returns the pending response. */
+    async function submitCreateThenLogout() {
+      const pendingCreate = deferred();
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+      enqueue(queues, EMPLOYEES, pendingCreate.handler);
+      enqueue(queues, '/api/v1/auth/logout', noContent);
+      enqueue(queues, '/api/v1/auth/login', authorized('COMPANY_ADMIN'));
+      const fetchMock = stubApi(queues);
+      renderAt('/mitarbeitende/neu');
+      await expectShell('Mitarbeiter:in anlegen');
+
+      const user = userEvent.setup();
+      await user.type(screen.getByLabelText('Mitarbeiter-ID'), 'A-100');
+      await user.type(screen.getByLabelText('Vorname'), 'Mira');
+      await user.type(screen.getByLabelText('Nachname'), 'Beispiel');
+      await user.type(screen.getByLabelText('E-Mail-Adresse'), 'mira@secureplan.test');
+      await user.click(screen.getByRole('radio', { name: 'Tag' }));
+      await user.click(screen.getByRole('button', { name: 'Mitarbeiter:in anlegen' }));
+      await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => url === EMPLOYEES && init?.method === 'POST')).toBe(true));
+
+      // The write is still pending when the user signs out.
+      await user.click(screen.getByRole('button', { name: 'Abmelden' }));
+      expect(await screen.findByRole('heading', { name: 'Anmelden' })).toBeTruthy();
+      return { pendingCreate, user };
+    }
+
+    it('does not end a newer session established after re-login', async () => {
+      const { pendingCreate, user } = await submitCreateThenLogout();
+      await user.type(screen.getByLabelText('E-Mail-Adresse'), 'admin@secureplan.test');
+      await user.type(screen.getByLabelText('Passwort'), 'Local Password 2026!');
+      await user.click(screen.getByRole('button', { name: 'Anmelden' }));
+      await expectShell('Arbeitsübersicht');
+
+      await act(async () => pendingCreate.resolve(problem(401, 'SESSION_REVOKED')()));
+      await act(async () => { await Promise.resolve(); });
+      expect(screen.getByRole('navigation', { name: 'Hauptnavigation' })).toBeTruthy();
+      expect(screen.queryByRole('heading', { name: 'Anmelden' })).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(window.location.pathname).toBe('/arbeitsuebersicht');
+    });
+
+    it('does not put a session error on the login form after a deliberate logout', async () => {
+      const { pendingCreate } = await submitCreateThenLogout();
+
+      await act(async () => pendingCreate.resolve(problem(401, 'SESSION_REVOKED')()));
+      await act(async () => { await Promise.resolve(); });
+      expectNoProtectedContent('COMPANY_ADMIN');
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+  });
 });

@@ -82,10 +82,12 @@ describe('SP-07 — employee detail', () => {
     expect(requests.filter((request) => request.method !== 'GET')).toEqual([]);
   });
 
-  it('cancelling the edit returns focus to the edit button', async () => {
+  it('opening the edit moves focus into the form; cancelling returns it to the edit button', async () => {
     const user = userEvent.setup();
     renderEmployees(PATH, server(employee()));
     await user.click(await screen.findByRole('button', { name: 'Stammdaten bearbeiten' }));
+    // The edit button unmounts; focus must not fall back to <body>.
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Mitarbeiter-ID')));
     await user.click(screen.getByRole('button', { name: 'Abbrechen' }));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Stammdaten bearbeiten' })));
   });

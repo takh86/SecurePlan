@@ -96,11 +96,15 @@ type DetailsProps = {
 function EmployeeDetails({ employee, employees, onChanged, onStale }: DetailsProps) {
   const [editing, setEditing] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
+  const dataSection = useRef<HTMLElement>(null);
   const returnFocusToEdit = useRef(false);
   const status = EMPLOYEE_STATUS[employee.status];
 
   useEffect(() => {
-    if (!editing && returnFocusToEdit.current) {
+    if (editing) {
+      // The edit button unmounts: continue in the first field instead of <body>.
+      dataSection.current?.querySelector<HTMLElement>('input')?.focus();
+    } else if (returnFocusToEdit.current) {
       returnFocusToEdit.current = false;
       editButton.current?.focus();
     }
@@ -144,7 +148,7 @@ function EmployeeDetails({ employee, employees, onChanged, onStale }: DetailsPro
         )}
       </section>
 
-      <section className="employees-card" aria-labelledby="employee-data-title">
+      <section ref={dataSection} className="employees-card" aria-labelledby="employee-data-title">
         <h2 id="employee-data-title">Stammdaten</h2>
         {editing ? (
           <EmployeeForm
