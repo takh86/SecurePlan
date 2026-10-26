@@ -27,7 +27,7 @@ import {
 } from '../employee.types.js';
 
 /** Business text is trimmed before validation; secrets are never trimmed. */
-function trimString({ value }: TransformFnParams): unknown {
+export function trimString({ value }: TransformFnParams): unknown {
   return typeof value === 'string' ? value.trim() : value;
 }
 

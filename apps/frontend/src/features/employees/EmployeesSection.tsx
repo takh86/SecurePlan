@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { Navigate, Route, Routes, useLocation, useNavigationType, useParams } from 'react-router';
+import { useMemo } from 'react';
+import { Navigate, Route, Routes, useParams } from 'react-router';
 import type { AppRoute } from '../../app/routes';
+import { useFocusHeadingOnSubpageChange } from '../../app/use-focus-heading-on-subpage-change';
 import type { SessionApi } from '../auth/session-api';
 import { EmployeeCreatePage } from './EmployeeCreatePage';
 import { EmployeeDetailPage } from './EmployeeDetailPage';
@@ -29,17 +30,4 @@ function DetailRoute({ basePath, employees }: { basePath: string; employees: Emp
   const { employeeId = '' } = useParams();
   // A new id is a new page: no state carries over from the previous record.
   return <EmployeeDetailPage key={employeeId} employeeId={employeeId} basePath={basePath} employees={employees} />;
-}
-
-/** The shell moves focus only between areas; within this area the sub-page heading gets it. */
-function useFocusHeadingOnSubpageChange() {
-  const { pathname } = useLocation();
-  const navigationType = useNavigationType();
-  const previous = useRef<string | null>(null);
-  useEffect(() => {
-    const last = previous.current;
-    previous.current = pathname;
-    if (last === null || last === pathname || navigationType === 'REPLACE') return;
-    document.getElementById('page-title')?.focus();
-  }, [pathname, navigationType]);
 }

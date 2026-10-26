@@ -32,7 +32,7 @@ describe('F1 — route table', () => {
     ]);
   });
 
-  it('makes each landing route a preview of its own role; only SP-07 employees uses the real API', () => {
+  it('makes each landing route a preview of its own role; only SP-07 employees and SP-08 projects use the real API', () => {
     for (const role of ['COMPANY_ADMIN', 'EMPLOYEE'] as const) {
       const landing = APP_ROUTES.find((route) => route.path === landingPathFor(role));
       expect(landing?.role).toBe(role);
@@ -41,10 +41,10 @@ describe('F1 — route table', () => {
     const available = APP_ROUTES.filter((route) => route.availability === 'available');
     expect(available.map((route) => [route.id, route.role, route.nested])).toEqual([
       ['employees', 'COMPANY_ADMIN', true],
+      ['projects', 'COMPANY_ADMIN', true],
     ]);
     const planned = APP_ROUTES.filter((route) => route.availability === 'planned');
     expect(planned.map((route) => route.id)).toEqual([
-      'projects',
       'monthly-planning',
       'cancellations',
       'my-statistics',

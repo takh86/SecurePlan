@@ -31,6 +31,8 @@ import {
 } from './modules/identity/activation-delivery.js';
 import { EmployeesController } from './modules/workforce/employees/employees.controller.js';
 import { EmployeesService } from './modules/workforce/employees/employees.service.js';
+import { ProjectsController } from './modules/workforce/projects/projects.controller.js';
+import { ProjectsService } from './modules/workforce/projects/projects.service.js';
 
 @Module({
   imports: [
@@ -48,6 +50,7 @@ import { EmployeesService } from './modules/workforce/employees/employees.servic
     LoginController,
     SessionController,
     EmployeesController,
+    ProjectsController,
   ],
   providers: [
     AppService,
@@ -71,6 +74,8 @@ import { EmployeesService } from './modules/workforce/employees/employees.servic
     { provide: ACTIVATION_DELIVERY, useFactory: createActivationDelivery },
     BusinessAuditService,
     EmployeesService,
+    // SP-08: projects (minimal slice, no shift configuration yet).
+    ProjectsService,
   ],
 })
 export class AppModule {}
