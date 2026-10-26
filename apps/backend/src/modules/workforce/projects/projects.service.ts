@@ -52,7 +52,8 @@ export class ProjectsService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? DEFAULT_PAGE_SIZE;
     const params: unknown[] = [tenant.companyId];
-    const where = ['company_id = $1'];
+    // ARCHIVED rows are not visible through API v1 (ADR-0002 addendum, option B).
+    const where = ['company_id = $1', "status IN ('ACTIVE', 'INACTIVE')"];
     if (query.status !== undefined) {
       params.push(query.status);
       where.push(`status = $${params.length}`);
@@ -94,7 +95,7 @@ export class ProjectsService {
     return this.database.withTransaction(async (client) => {
       const row = requireRow(
         await client.query<ProjectRow>(
-          `SELECT ${PROJECT_COLUMNS} FROM projects WHERE company_id = $1 AND id = $2`,
+          `SELECT ${PROJECT_COLUMNS} FROM projects WHERE company_id = $1 AND id = $2 AND status IN ('ACTIVE', 'INACTIVE')`,
           [tenant.companyId, projectId],
         ),
       );
@@ -139,7 +140,7 @@ export class ProjectsService {
     });
   }
 
-  /** Rename and/or ACTIVE <-> INACTIVE. ARCHIVED rows are read-only (not reachable via API v1). */
+  /** Rename and/or ACTIVE <-> INACTIVE. ARCHIVED rows are invisible (404). */
   async update(
     tenant: TenantContext,
     projectId: string,
@@ -157,12 +158,12 @@ export class ProjectsService {
       const current = requireRow(
         await client.query<ProjectRow>(
           `SELECT ${PROJECT_COLUMNS} FROM projects
-           WHERE company_id = $1 AND id = $2
+           WHERE company_id = $1 AND id = $2 AND status IN ('ACTIVE', 'INACTIVE')
            FOR NO KEY UPDATE`,
           [tenant.companyId, projectId],
         ),
       );
-      // ARCHIVED is not writable through API v1: a stored value fails closed (500).
+      // Only ACTIVE/INACTIVE rows are locked above, so the mapper never sees ARCHIVED.
       projectStatusFromDb(current.status);
 
       const nextName = dto.name ?? current.name;

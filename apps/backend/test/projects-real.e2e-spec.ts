@@ -392,15 +392,25 @@ describe('SP-08 — update', () => {
     expect(await tenantState(tenantA.companyId)).toEqual(before);
   });
 
-  it('a stored ARCHIVED row (not writable via API v1) fails closed and is not modified', async () => {
+  it('a stored ARCHIVED row is invisible (404 like unknown), hidden from the list, kept in the database and untouched', async () => {
     const archived = await createSyntheticProject(db(), tenantA.companyId, 'Archiv', 'ARCHIVED');
     const before = await tenantState(tenantA.companyId);
-    expect((await read(`${BASE}/${archived.projectId}`, adminA).expect(500)).body.code).toBe('INTERNAL_ERROR');
-    expect((await write('patch', `${BASE}/${archived.projectId}`, adminA, { status: 'ACTIVE' }).expect(500)).body.code)
-      .toBe('INTERNAL_ERROR');
+    const unknown = await read(`${BASE}/${randomUUID()}`, adminA).expect(404);
+    const got = await read(`${BASE}/${archived.projectId}`, adminA).expect(404);
+    expect(got.body.code).toBe('RESOURCE_NOT_FOUND');
+    expect(got.body.title).toBe(unknown.body.title);
+    for (const body of [{ status: 'ACTIVE' }, { name: 'Neu benannt' }]) {
+      expect((await write('patch', `${BASE}/${archived.projectId}`, adminA, body).expect(404)).body.code)
+        .toBe('RESOURCE_NOT_FOUND');
+    }
+    // The list neither fails nor shows it: one archived row must not take the whole list down.
+    const list = await read(BASE, adminA).expect(200);
+    expect(list.body.items.map((item: { id: string }) => item.id)).toEqual([projectA.projectId]);
+    expect(list.body.pagination.totalItems).toBe(1);
+    expect((await read(`${BASE}?status=INACTIVE`, adminA).expect(200)).body.items).toEqual([]);
     expect(await tenantState(tenantA.companyId)).toEqual(before);
+    expect((await db().query('SELECT status FROM projects WHERE id = $1', [archived.projectId])).rows[0].status).toBe('ARCHIVED');
   });
-
   it('an audit failure rolls the update back', async () => {
     await bootApp(new FailingAudit('PROJECT_UPDATED'));
     await write('patch', `${BASE}/${projectA.projectId}`, adminA, { status: 'INACTIVE' }).expect(500);

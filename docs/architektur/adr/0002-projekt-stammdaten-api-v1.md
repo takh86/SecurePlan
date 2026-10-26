@@ -89,15 +89,12 @@ Dieser Nachtrag ändert die Entscheidung nicht. Er macht zwei Folgen ausdrückli
 - **Vergleichsregel:** exakt nach dem Trimmen, ohne Groß-/Kleinschreibungs- oder Unicode-Normalisierung. „Objekt Nord“ und „objekt nord“ sind also zwei zulässige Namen. Eine Normalisierung wäre eine neue fachliche Entscheidung.
 - **Geltungsbereich:** Die Eindeutigkeit gilt je Unternehmen. In verschiedenen Unternehmen darf derselbe Name vorkommen.
 
-### ARCHIVED als gespeicherter, aber nicht exponierter Status (F-3)
+### ARCHIVED: gespeichert, aber in API v1 nicht sichtbar (F-3, Owner-Entscheidung Option B vom 26.10.2026)
 
-- **Ist-Verhalten:** Kein API-v1-Pfad schreibt `ARCHIVED`. Eine trotzdem gespeicherte Zeile, etwa durch manuelles SQL, eine Migration oder ein späteres Feature, wird als Serverdefekt behandelt und schlägt geschlossen fehl (500 ohne Details).
-- **Wirkungsradius:** Betroffen sind nicht nur Detail und Änderung dieses einen Projekts.
-  - Die Projektliste schlägt für jede Seite fehl, die die Zeile enthält. Ohne Statusfilter ist das die Standardansicht.
-  - Das Zuordnungs-Panel lädt alle Projekte des Unternehmens. Eine einzige archivierte Zeile macht die Monatszuordnung daher für **alle** Projekte des Unternehmens unbenutzbar.
-  - Ein Anlegen von Zuordnungen auf ein archiviertes Projekt wird mit `409 PROJECT_INACTIVE` abgewiesen.
-  - Vertraulichkeit und Integrität sind nicht betroffen, wohl aber die Verfügbarkeit innerhalb des Tenants.
-- **Status:** **Offene Owner-Entscheidung.** Bis zur Freigabe bleibt das Verhalten wie oben beschrieben (keine stille Änderung des Statusvertrags). Die Entscheidungsvorlage mit Optionen und Empfehlung liegt dem Review-Bericht vom 26.10.2026 bei.
+- **Entscheidung:** Ein gespeichertes `ARCHIVED` bleibt in PostgreSQL erhalten, ist über API v1 aber unsichtbar. Es gibt keine neue Archivierungsfunktion und keinen neuen Statuswert.
+- **Begründung (Risiko der ursprünglichen Fail-closed-Variante, 500):** Eine einzige archivierte Zeile ließ die Projektliste jeder Seite mit dieser Zeile und das Zuordnungs-Panel aller Projekte des Unternehmens ausfallen. Vertraulichkeit und Integrität waren nicht betroffen, wohl aber die Verfügbarkeit innerhalb des Tenants.
+- **Umsetzung:** Liste, Detail, Änderung und Zuordnen filtern auf `status IN ('ACTIVE','INACTIVE')`. Bereits angelegte Zuordnungen auf ein archiviertes Projekt bleiben in der Zuordnungsliste lesbar (Historie).
+- **Restwirkung:** Die DB-Eindeutigkeit des Namens gilt auch für unsichtbare archivierte Zeilen. Ein neuer Name, der mit einem archivierten Projekt kollidiert, ergibt `409 PROJECT_NAME_ALREADY_EXISTS`, obwohl das Projekt nicht sichtbar ist. Das ist ein bekannter Seiteneffekt; eine Archivierungsfunktion müsste ihn fachlich lösen.
 
 ### Formell fortzuschreibende interne Baselines
 
@@ -111,4 +108,4 @@ Die internen, nicht öffentlichen Baselines müssen diese Entscheidung nachziehe
 3. **DB-Operations-Gate:** Projekt-Lebenszyklus im MVP ist nur `ACTIVE`/`INACTIVE`.
 4. **UX (Projekt anlegen, Stammdaten, Lebenszyklus-Zustände):** Pflichtfeld Adresse und Feld interne Kennung entfallen im MVP; der Zustand „Archiviert“ ist nicht erreichbar.
 5. **API-Validierungsvertrag (Projektname):** Hinweis auf den exakten Vergleich ohne Normalisierung.
-6. **Nach der F-3-Entscheidung:** je nach gewählter Option API-Vertrag, Fehlervertrag und DB-Design.
+6. **API-Vertrag (Phase 8.2/8.3/8.11), F-3:** formell festschreiben, dass archivierte Projekte in `GET /projects` nicht erscheinen und `GET`/`PATCH /projects/{id}` für sie `404 RESOURCE_NOT_FOUND` liefern; ebenso `404` beim Zuordnen zu einem archivierten Projekt (statt `PROJECT_INACTIVE`). Der Statusvertrag `ACTIVE`/`INACTIVE` bleibt unverändert.
