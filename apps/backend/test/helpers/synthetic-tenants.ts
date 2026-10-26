@@ -190,9 +190,12 @@ export async function removeSyntheticTenants(pool: TestPool, companyIds: string[
     // Fail visibly (lock_not_available) instead of hanging into a hook timeout
     // if a leaked test transaction still holds a fixture row lock.
     await client.query("SET LOCAL lock_timeout = '5s'");
-    // employees before accounts (composite FK ON DELETE RESTRICT, SP-07);
-    // projects reference only companies (SP-08).
-    for (const table of ['sessions', 'account_tokens', 'audit_event', 'projects', 'employees', 'accounts']) {
+    // Children before parents (composite FKs ON DELETE RESTRICT): project
+    // assignments (SP-09) before projects (SP-08) and employees (SP-07),
+    // employees before accounts.
+    for (const table of [
+      'sessions', 'account_tokens', 'audit_event', 'project_assignments', 'projects', 'employees', 'accounts',
+    ]) {
       await client.query(`DELETE FROM ${table} WHERE company_id = ANY($1::uuid[])`, [companyIds]);
     }
     await client.query('DELETE FROM companies WHERE id = ANY($1::uuid[])', [companyIds]);

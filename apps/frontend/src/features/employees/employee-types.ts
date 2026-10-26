@@ -27,6 +27,8 @@ export type EmployeeListQuery = {
   q?: string;
   status?: EmployeeStatus;
   page?: number;
+  /** Not taken from the page URL; used by selection lists that load all pages (SP-09). */
+  pageSize?: number;
 };
 
 export type CreateEmployeeInput = {

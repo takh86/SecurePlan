@@ -5,7 +5,8 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '../../shared/api/api-error';
 import { deferred, httpError } from '../employees/employees.test-support';
-import { PROJECT_ID, project, projectPage, renderProjects } from './projects.test-support';
+import { renderProjects } from './projects-render.test-support';
+import { PROJECT_ID, fakeCompany, project, projectPage } from './projects.test-support';
 
 afterEach(() => cleanup());
 
@@ -77,12 +78,13 @@ describe('SP-08 — create project', () => {
   });
 
   it('sends only the trimmed name and opens the created project with a notice', async () => {
-    const { requests, location } = renderProjects('/projekte/neu', (request) => (request.method === 'POST' ? hafen : hafen));
+    const company = fakeCompany({ projects: [] });
+    const { requests, location } = renderProjects('/projekte/neu', company.handler);
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('Projektname'), '  Demo-Objekt Hafen ');
     await user.click(screen.getByRole('button', { name: 'Projekt anlegen' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Demo-Objekt Hafen' })).toBeTruthy();
-    expect(location()).toBe(`/projekte/${PROJECT_ID}`);
+    expect(location()).toBe(`/projekte/${company.state.projects[0].id}`);
     expect(screen.getByText('Projekt wurde angelegt.')).toBeTruthy();
     expect(requests[0]).toEqual({ path: '/api/v1/projects', method: 'POST', body: { name: 'Demo-Objekt Hafen' } });
   });
@@ -116,8 +118,7 @@ describe('SP-08 — project detail', () => {
   const PATH = `/projekte/${PROJECT_ID}`;
 
   it('renames the project; focus moves into the form and back to the notice', async () => {
-    const { requests } = renderProjects(PATH, (request) =>
-      request.method === 'PATCH' ? project({ name: 'Demo-Objekt Hafen Süd' }) : hafen);
+    const { requests } = renderProjects(PATH, fakeCompany().handler);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Namen bearbeiten' }));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Projektname')));
@@ -134,10 +135,7 @@ describe('SP-08 — project detail', () => {
   });
 
   it('sets the project inactive only after confirmation and can reactivate it', async () => {
-    const { requests } = renderProjects(PATH, (request) => {
-      if (request.method !== 'PATCH') return hafen;
-      return project({ status: (request.body as { status: 'ACTIVE' | 'INACTIVE' }).status });
-    });
+    const { requests } = renderProjects(PATH, fakeCompany().handler);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Projekt auf inaktiv setzen …' }));
     const confirm = screen.getByRole('group', { name: 'Demo-Objekt Hafen wirklich auf inaktiv setzen?' });

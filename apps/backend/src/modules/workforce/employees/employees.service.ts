@@ -319,8 +319,9 @@ export class EmployeesService {
    * Deactivates the employee and its account; all sessions and unused tokens
    * are revoked in the same transaction. The employee row is kept (history).
    *
-   * EMPLOYEE_HAS_FUTURE_ASSIGNMENTS is not checked: no planning/assignment
-   * tables exist yet (SP-09/SP-11 must add that check before they ship).
+   * EMPLOYEE_HAS_FUTURE_ASSIGNMENTS is not checked: per Phase 8.4 D-8.4-11 it
+   * concerns future DUTY assignments, which do not exist before SP-11. Monthly
+   * project assignments (SP-09) do not block deactivation; they stay as history.
    */
   async deactivate(
     tenant: TenantContext,

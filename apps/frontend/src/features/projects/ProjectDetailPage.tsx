@@ -1,17 +1,27 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router';
+import { Link, Navigate, useLocation } from 'react-router';
 import { PageFrame } from '../../app/PageFrame';
 import type { ReadSource } from '../../shared/data/data-source';
 import { useReadSource } from '../../shared/data/use-read-source';
+import type { Clock } from '../../shared/time/clock';
+import { addMonths, currentMonth, formatMonthLabel, parseMonth, type MonthKey } from '../../shared/time/month';
 import { ApiErrorAlert } from '../../shared/ui/ApiErrorAlert';
 import { StatusBadge } from '../../shared/ui/StatusBadge';
 import { ErrorState, LoadingState } from '../../shared/ui/ViewStates';
+import { ProjectAssignmentsPanel, type AssignmentApis } from './ProjectAssignmentsPanel';
 import type { ProjectNotice } from './ProjectCreatePage';
 import { ProjectNameForm } from './ProjectNameForm';
 import { PROJECT_STATUS, type Project } from './project-types';
 import type { ProjectsApi } from './projects-api';
 
-type DetailProps = { projectId: string; basePath: string; projects: ProjectsApi };
+type DetailProps = {
+  projectId: string;
+  /** Optional YYYY-MM route segment; absent means the clock's current month. */
+  monthParam: string | undefined;
+  basePath: string;
+  apis: AssignmentApis;
+  clock: Clock;
+};
 
 function noticeFromLocation(state: unknown): ProjectNotice | null {
   return typeof state === 'object' && state !== null && (state as { notice?: unknown }).notice === 'created'
@@ -19,8 +29,10 @@ function noticeFromLocation(state: unknown): ProjectNotice | null {
     : null;
 }
 
-export function ProjectDetailPage({ projectId, basePath, projects }: DetailProps) {
+export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock }: DetailProps) {
   const location = useLocation();
+  const { projects } = apis;
+  const requestedMonth = monthParam === undefined ? currentMonth(clock) : parseMonth(monthParam);
   const source = useMemo<ReadSource<string, Project>>(
     () => ({ kind: 'api', load: (id, signal) => projects.get(id, signal) }),
     [projects],
@@ -40,6 +52,9 @@ export function ProjectDetailPage({ projectId, basePath, projects }: DetailProps
     if (focusNotice) noticeRef.current?.focus();
   }, [focusNotice]);
 
+  // An invalid month in the URL falls back to the current month of this project.
+  if (requestedMonth === null) return <Navigate to={`${basePath}/${encodeURIComponent(projectId)}`} replace />;
+
   function changed(next: Project, message: string) {
     setUpdated(next);
     setNotice(message);
@@ -58,6 +73,12 @@ export function ProjectDetailPage({ projectId, basePath, projects }: DetailProps
           <>
             <MasterDataSection project={project} projects={projects} onChanged={changed} />
             <LifecycleSection project={project} projects={projects} onChanged={changed} />
+            <AssignmentSection
+              project={project}
+              month={requestedMonth}
+              monthPath={(month) => `${basePath}/${encodeURIComponent(project.id)}/${month}`}
+              apis={apis}
+            />
           </>
         ) : state.status === 'error' ? (
           <ErrorState
@@ -233,6 +254,43 @@ function LifecycleSection({ project, projects, onChanged }: SectionProps) {
           </div>
         </div>
       )}
+    </section>
+  );
+}
+
+type AssignmentSectionProps = {
+  project: Project;
+  month: MonthKey;
+  monthPath: (month: MonthKey) => string;
+  apis: AssignmentApis;
+};
+
+/** UX A09: the month bar stays mounted across month steps, so keyboard focus stays on the link. */
+function AssignmentSection({ project, month, monthPath, apis }: AssignmentSectionProps) {
+  const monthLabel = formatMonthLabel(month);
+  const previous = addMonths(month, -1);
+  const next = addMonths(month, 1);
+  return (
+    <section className="employees-card" aria-labelledby="project-assignments-title">
+      <h2 id="project-assignments-title">Mitarbeiterzuordnung</h2>
+      <div className="assignments__monthbar">
+        <h3 aria-live="polite">{monthLabel}</h3>
+        <Link
+          className="assignments__step assignments__step--previous"
+          to={monthPath(previous)}
+          aria-label={`Vorheriger Monat: ${formatMonthLabel(previous)}`}
+        >
+          <span aria-hidden="true">‹</span>Vorheriger Monat
+        </Link>
+        <Link
+          className="assignments__step assignments__step--next"
+          to={monthPath(next)}
+          aria-label={`Nächster Monat: ${formatMonthLabel(next)}`}
+        >
+          Nächster Monat<span aria-hidden="true">›</span>
+        </Link>
+      </div>
+      <ProjectAssignmentsPanel key={month} project={project} month={month} apis={apis} />
     </section>
   );
 }

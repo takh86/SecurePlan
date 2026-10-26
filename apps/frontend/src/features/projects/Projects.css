@@ -1,0 +1,81 @@
+/* SP-09 month assignment (UX A09). Lists, cards and forms reuse the SP-07 admin styles. */
+.assignments {
+  display: grid;
+  gap: 12px;
+}
+
+.assignments__outcome {
+  display: grid;
+  gap: 8px;
+}
+
+.assignments__outcome:focus {
+  outline: none;
+}
+
+.assignments__monthbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    'month month'
+    'previous next';
+  gap: 8px;
+  align-items: center;
+}
+
+.shell .assignments__monthbar h3 {
+  grid-area: month;
+  margin: 0;
+  color: var(--sp-color-ink);
+  font-size: 20px;
+  text-align: center;
+}
+
+.assignments__step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-color-surface);
+  color: var(--sp-color-brand-strong);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.assignments__step:hover {
+  border-color: var(--sp-color-brand);
+}
+
+.assignments__step--previous {
+  grid-area: previous;
+}
+
+.assignments__step--next {
+  grid-area: next;
+}
+
+.assignments__select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-color-surface);
+  color: var(--sp-color-ink);
+  font: inherit;
+}
+
+.assignments__select[aria-invalid='true'] {
+  border: 2px solid var(--sp-color-danger);
+}
+
+@media (min-width: 600px) {
+  .assignments__monthbar {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: 'previous month next';
+  }
+}
