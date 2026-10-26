@@ -110,13 +110,13 @@ export class ProjectAssignmentsService {
       const project = requireRow(
         await client.query<{ status: string }>(
           `SELECT status FROM projects
-           WHERE company_id = $1 AND id = $2
+           WHERE company_id = $1 AND id = $2 AND status IN ('ACTIVE', 'INACTIVE')
            FOR SHARE`,
           [tenant.companyId, dto.projectId],
         ),
       );
       if (employee.status !== 'ACTIVE') throw new ConflictException({ code: 'EMPLOYEE_INACTIVE' });
-      // INACTIVE and the API-unreachable ARCHIVED both block new assignments.
+      // ARCHIVED projects are invisible (404 above, ADR-0002 addendum); INACTIVE blocks.
       if (project.status !== 'ACTIVE') throw new ConflictException({ code: 'PROJECT_INACTIVE' });
 
       // Compared as uuid in SQL: the DTO accepts any letter case for ids.

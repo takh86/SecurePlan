@@ -267,6 +267,16 @@ describe('SP-09 — create and read', () => {
     await assign(employeeA, north, DEC).expect(201);
   });
 
+  it('an ARCHIVED project is invisible: assigning to it is 404 like an unknown project; its history stays readable', async () => {
+    const old = await assign(employeeA, north, NOV).expect(201);
+    await db().query("UPDATE projects SET status = 'ARCHIVED' WHERE id = $1", [north.projectId]);
+    const before = await tenantState(tenantA.companyId);
+    const blocked = await assign(employeeA, north, DEC).expect(404);
+    expect(blocked.body.code).toBe('RESOURCE_NOT_FOUND');
+    expect(await tenantState(tenantA.companyId)).toEqual(before);
+    expect((await read(`${BASE}?monthStart=${NOV}`, adminA).expect(200)).body.items).toEqual([old.body]);
+  });
+
   it('an audit failure rolls the create back completely', async () => {
     await bootApp(new FailingAudit('PROJECT_ASSIGNMENT_CREATED'));
     const before = await tenantState(tenantA.companyId);
