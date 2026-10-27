@@ -29,14 +29,17 @@ import {
   type ShiftFormValues,
 } from './shift-configuration-form';
 
+/** `dirty`: unsaved input; `saving`: a save whose outcome is not yet confirmed. */
+export type ShiftEditState = 'clean' | 'dirty' | 'saving';
+
 type SectionProps = {
   project: Project;
   /** The month selected in the page URL (`requestedMonth`). */
   month: MonthKey;
   api: ShiftConfigurationApi;
   clock: Clock;
-  /** Reports unsaved or not yet confirmed edits, so leaving the month can be confirmed first. */
-  onUnsavedChange: (unsaved: boolean) => void;
+  /** Reports the edit state, so leaving the page can be confirmed first. */
+  onEditStateChange: (state: ShiftEditState) => void;
 };
 
 type Editing = { values: ShiftFormValues; basis: ShiftFormBasis; effectiveFromMonth: MonthKey | null };
@@ -49,7 +52,7 @@ type Editing = { values: ShiftFormValues; basis: ShiftFormBasis; effectiveFromMo
  * Mount with `key={month}`: a new month starts without old state, and answers
  * that arrive for the previous month are discarded.
  */
-export function ShiftConfigurationSection({ project, month, api, clock, onUnsavedChange }: SectionProps) {
+export function ShiftConfigurationSection({ project, month, api, clock, onEditStateChange }: SectionProps) {
   const titleId = useId();
   const source = useMemo<ReadSource<MonthKey, ShiftConfiguration>>(
     () => ({ kind: 'api', load: (requested, signal) => api.get(project.id, requested, signal) }),
@@ -121,7 +124,7 @@ export function ShiftConfigurationSection({ project, month, api, clock, onUnsave
             returnFocusToEdit.current = true;
             setEditing(null);
           }}
-          onUnsavedChange={onUnsavedChange}
+          onEditStateChange={onEditStateChange}
         />
       ) : state.status === 'loading' ? (
         <LoadingState label="Schichtzeiten werden geladen …" />
@@ -246,7 +249,7 @@ type FormProps = {
   api: ShiftConfigurationApi;
   onSaved: () => void;
   onCancel: () => void;
-  onUnsavedChange: (unsaved: boolean) => void;
+  onEditStateChange: (state: ShiftEditState) => void;
 };
 
 const SERVER_FIELD_ERROR = 'Diese Angabe wurde nicht angenommen. Bitte prüfen Sie das Format HH:MM.';
@@ -265,7 +268,7 @@ function serverFieldErrors(error: Error, sent: readonly ShiftRuleInput[]): Shift
 }
 
 function ShiftConfigurationForm({
-  projectId, month, monthLabel, editing, blockedReason, api, onSaved, onCancel, onUnsavedChange,
+  projectId, month, monthLabel, editing, blockedReason, api, onSaved, onCancel, onEditStateChange,
 }: FormProps) {
   const [values, setValues] = useState<ShiftFormValues>(editing.values);
   const [errors, setErrors] = useState<ShiftFormErrors>({});
@@ -293,20 +296,21 @@ function ShiftConfigurationForm({
   }, [focusRequest]);
 
   // A save in flight is not yet confirmed either: leaving would hide its outcome.
+  const editState: ShiftEditState = submitting ? 'saving' : dirty ? 'dirty' : 'clean';
   useEffect(() => {
-    onUnsavedChange(dirty || submitting);
-  }, [dirty, submitting, onUnsavedChange]);
-  useEffect(() => () => onUnsavedChange(false), [onUnsavedChange]);
+    onEditStateChange(editState);
+  }, [editState, onEditStateChange]);
+  useEffect(() => () => onEditStateChange('clean'), [onEditStateChange]);
 
-  // Reload or closing the tab with unsaved input asks the browser to confirm.
+  // Reload or closing the tab with unsaved input or a running save asks the browser to confirm.
   useEffect(() => {
-    if (!dirty) return undefined;
+    if (editState === 'clean') return undefined;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
     };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty]);
+  }, [editState]);
 
   function update(kind: ShiftKind, change: Partial<ShiftFormValues[ShiftKind]>) {
     setValues((current) => ({ ...current, [kind]: { ...current[kind], ...change } }));

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // @vitest-environment-options {"url":"https://localhost:8443/projekte"}
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { SESSION_REDIRECT_STATE } from '../../app/session-redirect';
 import { ApiError } from '../../shared/api/api-error';
 import { deferred, httpError, type Handler, type RecordedRequest } from '../employees/employees.test-support';
 import { renderProjects } from './projects-render.test-support';
@@ -354,8 +355,11 @@ describe('SP-08b — month changes and unsaved changes', () => {
     await screen.findByRole('button', { name: 'Wird gespeichert …' });
 
     await user.click(screen.getByRole('link', { name: 'Nächster Monat: Januar 2027' }));
-    expect(screen.getByRole('group', { name: 'Ungespeicherte Schichtzeiten' })).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Änderungen verwerfen und wechseln' }));
+    // A running save is neither presented as safely discarded nor as cancelled.
+    const prompt = screen.getByRole('group', { name: 'Speichern läuft noch' });
+    expect(prompt.textContent).toContain('Ein Wechsel bricht das Speichern nicht ab');
+    expect(within(prompt).queryByRole('button', { name: 'Änderungen verwerfen und wechseln' })).toBeNull();
+    await user.click(within(prompt).getByRole('button', { name: 'Trotzdem wechseln' }));
     expect(location()).toBe(`${PATH}/2027-01`);
     expect(await screen.findByRole('table', { name: 'Schichtzeiten ab Januar 2027' })).toBeTruthy();
 
@@ -410,5 +414,192 @@ describe('SP-08b — month changes and unsaved changes', () => {
     await user.click(screen.getByRole('link', { name: 'Nächster Monat: Januar 2027' }));
     expect(location()).toBe(`${PATH}/2027-01`);
     expect(screen.queryByRole('group', { name: 'Ungespeicherte Schichtzeiten' })).toBeNull();
+  });
+
+  it('a running save also asks the browser before a reload', async () => {
+    const server = fakeCompany();
+    const held = holding(server, (request) => request.method === 'PATCH');
+    renderProjects(PATH, held.handler);
+    const user = userEvent.setup();
+    await openEditor(user, 'Schichtzeiten ab Dezember 2026 festlegen');
+    // Unchanged suggestion values: not dirty, but the save is not confirmed yet.
+    await user.click(screen.getByRole('button', { name: 'Schichtzeiten speichern' }));
+    await screen.findByRole('button', { name: 'Wird gespeichert …' });
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    held.release();
+    expect(await screen.findByText('Die Schichtzeiten ab Dezember 2026 wurden gespeichert.')).toBeTruthy();
+  });
+});
+
+describe('SP-08b — navigation blocking (data router, useBlocker)', () => {
+  const prompt = (name = 'Ungespeicherte Schichtzeiten') => screen.queryByRole('group', { name });
+
+  async function dirtyEditor(user: ReturnType<typeof userEvent.setup>, month = 'Dezember 2026') {
+    await openEditor(user, `Schichtzeiten ab ${month} festlegen`);
+    await user.clear(field('Ende Tagschicht'));
+    await user.type(field('Ende Tagschicht'), '17:45');
+  }
+
+  it('Browser Back and Forward (POP) are held: "Weiter bearbeiten" resets, discarding proceeds once', async () => {
+    const { router, location } = renderProjects(PATH, fakeCompany().handler);
+    const user = userEvent.setup();
+    // History: December -> January (clean step), then back to December.
+    await user.click(await screen.findByRole('link', { name: 'Nächster Monat: Januar 2027' }));
+    expect(await screen.findByRole('button', { name: 'Schichtzeiten ab Januar 2027 festlegen' })).toBeTruthy();
+    await act(async () => { await router.navigate(-1); });
+    expect(location()).toBe(PATH);
+
+    // Forward with unsaved input: held.
+    await dirtyEditor(user);
+    await act(async () => { await router.navigate(1); });
+    expect(prompt()).toBeTruthy();
+    expect(location()).toBe(PATH);
+    await user.click(within(prompt()!).getByRole('button', { name: 'Weiter bearbeiten' }));
+    expect(prompt()).toBeNull();
+    expect(field('Ende Tagschicht').value).toBe('17:45');
+
+    await act(async () => { await router.navigate(1); });
+    await user.click(within(prompt()!).getByRole('button', { name: 'Änderungen verwerfen und wechseln' }));
+    await waitFor(() => expect(location()).toBe(`${PATH}/2027-01`));
+    expect(await screen.findByRole('button', { name: 'Schichtzeiten ab Januar 2027 festlegen' })).toBeTruthy();
+
+    // Back with unsaved input: held as well.
+    await dirtyEditor(user, 'Januar 2027');
+    await act(async () => { await router.navigate(-1); });
+    expect(prompt()).toBeTruthy();
+    expect(location()).toBe(`${PATH}/2027-01`);
+    await user.click(within(prompt()!).getByRole('button', { name: 'Änderungen verwerfen und wechseln' }));
+    await waitFor(() => expect(location()).toBe(PATH));
+  });
+
+  it('a normal REPLACE without the session marker stays guarded; only the marked session redirect passes', async () => {
+    const { router, location } = renderProjects(PATH, fakeCompany().handler);
+    const user = userEvent.setup();
+    await dirtyEditor(user);
+
+    await act(async () => { await router.navigate('/projekte', { replace: true }); });
+    expect(prompt()).toBeTruthy();
+    expect(location()).toBe(PATH);
+    await user.click(within(prompt()!).getByRole('button', { name: 'Weiter bearbeiten' }));
+
+    await act(async () => { await router.navigate('/', { replace: true, state: SESSION_REDIRECT_STATE }); });
+    expect(location()).toBe('/');
+    expect(prompt()).toBeNull();
+  });
+
+  it('navigating again while the prompt is open keeps ONE prompt; the latest target wins; a double click navigates once', async () => {
+    const { router, location } = renderProjects(PATH, fakeCompany().handler);
+    const user = userEvent.setup();
+    await dirtyEditor(user);
+
+    await user.click(screen.getByRole('link', { name: 'Nächster Monat: Januar 2027' }));
+    await user.click(screen.getByRole('link', { name: 'Zurück zur Übersicht' }));
+    expect(screen.getAllByRole('group', { name: 'Ungespeicherte Schichtzeiten' })).toHaveLength(1);
+
+    const leave = within(prompt()!).getByRole('button', { name: 'Änderungen verwerfen und wechseln' });
+    fireEvent.click(leave);
+    fireEvent.click(leave);
+    await waitFor(() => expect(location()).toBe('/projekte'));
+    // Exactly one history entry was added: Back leads straight to the detail page
+    // (neither a second /projekte entry nor the abandoned January target).
+    await act(async () => { await router.navigate(-1); });
+    expect(location()).toBe(PATH);
+  });
+
+  it('a save that finishes while the prompt is open turns it into a neutral question; staying keeps the result', async () => {
+    const server = fakeCompany();
+    const held = holding(server, (request) => request.method === 'PATCH');
+    const { location } = renderProjects(PATH, held.handler);
+    const user = userEvent.setup();
+    await dirtyEditor(user);
+    await user.click(screen.getByRole('button', { name: 'Schichtzeiten speichern' }));
+    await screen.findByRole('button', { name: 'Wird gespeichert …' });
+    await user.click(screen.getByRole('link', { name: 'Nächster Monat: Januar 2027' }));
+    expect(prompt('Speichern läuft noch')).toBeTruthy();
+
+    held.release();
+    expect(await screen.findByRole('group', { name: 'Keine ungespeicherten Schichtzeiten mehr' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Hier bleiben' }));
+    expect(location()).toBe(PATH);
+    expect(screen.getByText('Die Schichtzeiten ab Dezember 2026 wurden gespeichert.')).toBeTruthy();
+    expect(server.state.shiftVersions.map((version) => version.month)).toEqual(['2026-12-01']);
+  });
+
+  it('the prompt is keyboard operable: focus starts on its heading and returns to the triggering link', async () => {
+    renderProjects(PATH, fakeCompany().handler);
+    const user = userEvent.setup();
+    await dirtyEditor(user);
+    const next = screen.getByRole('link', { name: 'Nächster Monat: Januar 2027' });
+    next.focus();
+    await user.keyboard('{Enter}');
+    const heading = within(prompt()!).getByRole('heading', { name: 'Ungespeicherte Schichtzeiten' });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    await user.tab();
+    expect(document.activeElement).toBe(within(prompt()!).getByRole('button', { name: 'Änderungen verwerfen und wechseln' }));
+    await user.tab();
+    await user.keyboard('{Enter}');
+    expect(prompt()).toBeNull();
+    expect(document.activeElement).toBe(next);
+    expect(field('Ende Tagschicht').value).toBe('17:45');
+  });
+});
+
+describe('SP-08b F-2 — read-only only for months past in every time zone (company zone unknown to the client)', () => {
+  // Absolute instants ("Z"): the rule uses UTC only, so the CI runner's time zone does not matter.
+  const at = (iso: string) => () => new Date(iso);
+
+  it('browser Berlin already in November, company New York still in October: no false lock, the save succeeds', async () => {
+    // 2026-11-01T03:30Z = Berlin 04:30 on 1 Nov, New York 23:30 on 31 Oct.
+    const server = fakeCompany({ shiftVersions: [october()], currentMonthStart: '2026-10-01' });
+    renderProjects(`${PATH}/2026-10`, server.handler, at('2026-11-01T03:30:00Z'));
+    const user = userEvent.setup();
+    await openEditor(user, 'Schichtzeiten ab Oktober 2026 ändern');
+    await user.clear(field('Ende Tagschicht'));
+    await user.type(field('Ende Tagschicht'), '18:30');
+    await user.click(screen.getByRole('button', { name: 'Schichtzeiten speichern' }));
+    expect(await screen.findByText('Die Schichtzeiten ab Oktober 2026 wurden gespeichert.')).toBeTruthy();
+    expect(server.state.shiftVersions[0].shifts[0].endLocal).toBe('18:30');
+  });
+
+  it('browser Berlin still in October, company Tokyo already in November: the attempt is offered, the 400 is explained, input stays', async () => {
+    // 2026-10-31T16:00Z = Berlin 17:00 on 31 Oct, Tokyo 01:00 on 1 Nov.
+    const server = fakeCompany({ shiftVersions: [october()], currentMonthStart: '2026-11-01' });
+    renderProjects(`${PATH}/2026-10`, server.handler, at('2026-10-31T16:00:00Z'));
+    const user = userEvent.setup();
+    await openEditor(user, 'Schichtzeiten ab Oktober 2026 ändern');
+    await user.clear(field('Ende Tagschicht'));
+    await user.type(field('Ende Tagschicht'), '18:30');
+    await user.click(screen.getByRole('button', { name: 'Schichtzeiten speichern' }));
+    expect((await within(region()).findByRole('alert')).textContent).toContain('Schichtzeiten nicht zulässig');
+    expect(field('Ende Tagschicht').value).toBe('18:30');
+    expect(server.state.shiftVersions).toEqual([october()]);
+  });
+
+  it.each([
+    // [label, now, month path, editable]
+    ['last instant of October at UTC-12', '2026-11-01T11:59:59Z', '2026-10', true],
+    ['every zone in November', '2026-11-01T12:00:00Z', '2026-10', false],
+    ['year boundary, UTC-12 still in December', '2027-01-01T11:59:59Z', '2026-12', true],
+    ['year boundary, every zone in January', '2027-01-01T12:00:00Z', '2026-12', false],
+    ['UTC+14 already in November does not lock October', '2026-10-31T10:00:00Z', '2026-10', true],
+  ] as const)('month boundary: %s', async (_label, now, month, editable) => {
+    const server = fakeCompany({ shiftVersions: [shiftVersion(`${month}-01`, [['DAY', '06:00', '18:00']])] });
+    renderProjects(`${PATH}/${month}`, server.handler, at(now));
+    expect(await screen.findByRole('table', { name: /^Schichtzeiten ab / })).toBeTruthy();
+    if (editable) {
+      expect(within(region()).getByRole('button', { name: /^Schichtzeiten ab .* ändern$/ })).toBeTruthy();
+    } else {
+      expect(within(region()).getByText(/liegt in der Vergangenheit/)).toBeTruthy();
+      expect(within(region()).queryByRole('button')).toBeNull();
+    }
+  });
+
+  it('an INACTIVE project stays read-only at a month boundary too (status rule unchanged)', async () => {
+    const server = fakeCompany({ projects: [project({ status: 'INACTIVE' })], shiftVersions: [october()], currentMonthStart: '2026-10-01' });
+    renderProjects(`${PATH}/2026-10`, server.handler, at('2026-11-01T03:30:00Z'));
+    expect(await within(await screen.findByRole('region', { name: 'Schichtzeiten' })).findByText(/Das Projekt ist inaktiv/)).toBeTruthy();
+    expect(within(region()).queryByRole('button')).toBeNull();
   });
 });

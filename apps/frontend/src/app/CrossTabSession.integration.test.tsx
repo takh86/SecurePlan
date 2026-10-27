@@ -6,6 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import App from '../App';
 
 const CSRF = 'c'.repeat(43);
@@ -105,5 +106,58 @@ describe('cross-tab session signals through <App/>', () => {
     expect(screen.getByRole('navigation', { name: 'Hauptnavigation' })).toBeTruthy();
     expect(screen.queryByRole('heading', { level: 1, name: 'Anmelden' })).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('SP-08b — session loss is never held back by unsaved shift times', () => {
+  // Synthetic example record, not a business rule.
+  const PROJECT = '7a2be0c4-1d3e-4f5a-8b6c-9d0e1f2a3b4c';
+  const json = (body: unknown): Responder => () => new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+  const emptyPage = json({ items: [], pagination: { page: 1, pageSize: 100, totalItems: 0, totalPages: 0 } });
+
+  function detailReads(me: Responder[]): Record<string, Responder[]> {
+    return {
+      '/api/v1/me': me,
+      [`/api/v1/projects/${PROJECT}`]: [json({ id: PROJECT, name: 'Demo-Objekt Hafen', status: 'ACTIVE' })],
+      '/api/v1/project-assignments?monthStart=2026-12-01&pageSize=100': [emptyPage],
+      '/api/v1/employees?pageSize=100': [emptyPage],
+      '/api/v1/projects?pageSize=100': [emptyPage],
+      [`/api/v1/projects/${PROJECT}/shift-configuration?effectiveForMonth=2026-12-01`]: [
+        json({ projectId: PROJECT, effectiveFromMonth: null, shifts: [] }),
+      ],
+    };
+  }
+
+  async function withUnsavedShiftTimes(me: Responder[]) {
+    await signedInAt(`/projekte/${PROJECT}/2026-12`, detailReads(me));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Schichtzeiten ab Dezember 2026 festlegen' }));
+    const end = await screen.findByLabelText('Ende Tagschicht');
+    await user.clear(end);
+    await user.type(end, '17:45');
+  }
+
+  it('a logout in another tab removes the shell and resets the URL', async () => {
+    await withUnsavedShiftTimes([authorized]);
+    act(() => otherTab.postMessage({ type: 'signed-out' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Anmelden' })).toBeTruthy();
+    await waitFor(() => expect(window.location.pathname).toBe('/'));
+    expect(screen.queryByRole('group', { name: 'Ungespeicherte Schichtzeiten' })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Hauptnavigation' })).toBeNull();
+    expect(document.body.textContent).not.toContain('Demo-Objekt Hafen');
+  });
+
+  it('a revoked session found by the re-check (login in another tab) signs out and resets the URL', async () => {
+    await withUnsavedShiftTimes([authorized, unauthorized]);
+    act(() => otherTab.postMessage({ type: 'signed-in' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Anmelden' })).toBeTruthy();
+    await waitFor(() => expect(window.location.pathname).toBe('/'));
+    expect(screen.queryByRole('group', { name: 'Ungespeicherte Schichtzeiten' })).toBeNull();
+    expect(document.body.textContent).not.toContain(ADMIN.email);
   });
 });

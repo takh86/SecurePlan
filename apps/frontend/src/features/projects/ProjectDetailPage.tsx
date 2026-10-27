@@ -1,6 +1,7 @@
-import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { Link, Navigate, useLocation, useNavigate } from 'react-router';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Link, Navigate, useBlocker, useLocation, type BlockerFunction } from 'react-router';
 import { PageFrame } from '../../app/PageFrame';
+import { isSessionRedirect } from '../../app/session-redirect';
 import type { ReadSource } from '../../shared/data/data-source';
 import { useReadSource } from '../../shared/data/use-read-source';
 import type { Clock } from '../../shared/time/clock';
@@ -14,7 +15,7 @@ import { ProjectNameForm } from './ProjectNameForm';
 import { PROJECT_STATUS, type Project } from './project-types';
 import type { ProjectsApi } from './projects-api';
 import type { ShiftConfigurationApi } from './shift-configuration-api';
-import { ShiftConfigurationSection } from './ShiftConfigurationSection';
+import { ShiftConfigurationSection, type ShiftEditState } from './ShiftConfigurationSection';
 
 export type ProjectDetailApis = AssignmentApis & { shiftConfigurations: ShiftConfigurationApi };
 
@@ -26,9 +27,6 @@ type DetailProps = {
   apis: ProjectDetailApis;
   clock: Clock;
 };
-
-/** A navigation held back because the shift times have unsaved changes. */
-type HeldNavigation = { to: string; trigger: HTMLElement };
 
 function noticeFromLocation(state: unknown): ProjectNotice | null {
   return typeof state === 'object' && state !== null && (state as { notice?: unknown }).notice === 'created'
@@ -53,9 +51,22 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
   const project = updated ?? (state.status === 'ready' ? state.data : null);
   const noticeRef = useRef<HTMLParagraphElement>(null);
   const [focusNotice, setFocusNotice] = useState<object | null>(null);
-  const navigate = useNavigate();
-  const [unsavedShifts, setUnsavedShifts] = useState(false);
-  const [held, setHeld] = useState<HeldNavigation | null>(null);
+  const [shiftEdit, setShiftEdit] = useState<ShiftEditState>('clean');
+
+  /**
+   * Any SPA navigation away from the current URL (links, sidebar, Back/Forward,
+   * programmatic, REPLACE included) waits for a decision while shift times are
+   * unsaved or a save is unconfirmed. Only the session boundary's marked
+   * redirect after sign-out or session loss always passes.
+   */
+  const shouldBlock = useCallback<BlockerFunction>(
+    ({ currentLocation, nextLocation }) =>
+      shiftEdit !== 'clean' &&
+      !isSessionRedirect(nextLocation.state) &&
+      (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search),
+    [shiftEdit],
+  );
+  const blocker = useBlocker(shouldBlock);
 
   // After a write the acting control may be gone: move focus to the confirmation message.
   useEffect(() => {
@@ -71,32 +82,16 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
     setFocusNotice({});
   }
 
-  /** Links inside this page never discard unsaved shift times silently. */
-  function guard(to: string) {
-    return (event: MouseEvent<HTMLAnchorElement>) => {
-      if (!unsavedShifts) return;
-      event.preventDefault();
-      setHeld({ to, trigger: event.currentTarget });
-    };
-  }
-
   return (
     <PageFrame title={project ? project.name : 'Projektdetails'}>
       <div className="employees employees--narrow">
-        <Link className="employees__back" to={basePath} onClick={guard(basePath)}>Zurück zur Übersicht</Link>
-        {held && (
+        <Link className="employees__back" to={basePath}>Zurück zur Übersicht</Link>
+        {blocker.state === 'blocked' && (
           <UnsavedShiftsPrompt
             monthLabel={formatMonthLabel(requestedMonth)}
-            onLeave={() => {
-              setHeld(null);
-              // A month step stays on this page: keep focus on the link that was used.
-              held.trigger.focus();
-              navigate(held.to);
-            }}
-            onStay={() => {
-              setHeld(null);
-              held.trigger.focus();
-            }}
+            editState={shiftEdit}
+            onLeave={() => blocker.proceed()}
+            onStay={() => blocker.reset()}
           />
         )}
         {/* Always mounted, so screen readers announce new messages. */}
@@ -110,7 +105,6 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
             <MonthSection
               month={requestedMonth}
               monthPath={(month) => `${basePath}/${encodeURIComponent(project.id)}/${month}`}
-              guard={guard}
             />
             <ShiftConfigurationSection
               key={requestedMonth}
@@ -118,7 +112,7 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
               month={requestedMonth}
               api={apis.shiftConfigurations}
               clock={clock}
-              onUnsavedChange={setUnsavedShifts}
+              onEditStateChange={setShiftEdit}
             />
             <AssignmentSection project={project} month={requestedMonth} apis={apis} />
           </>
@@ -303,14 +297,13 @@ function LifecycleSection({ project, projects, onChanged }: SectionProps) {
 type MonthSectionProps = {
   month: MonthKey;
   monthPath: (month: MonthKey) => string;
-  guard: (to: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
 };
 
 /**
  * UX A09 month navigation, shared by "Schichtzeiten" and "Mitarbeiterzuordnung".
  * The month bar stays mounted across month steps, so keyboard focus stays on the link.
  */
-function MonthSection({ month, monthPath, guard }: MonthSectionProps) {
+function MonthSection({ month, monthPath }: MonthSectionProps) {
   const monthLabel = formatMonthLabel(month);
   const previous = addMonths(month, -1);
   const next = addMonths(month, 1);
@@ -323,7 +316,6 @@ function MonthSection({ month, monthPath, guard }: MonthSectionProps) {
         <Link
           className="assignments__step assignments__step--previous"
           to={monthPath(previous)}
-          onClick={guard(monthPath(previous))}
           aria-label={`Vorheriger Monat: ${formatMonthLabel(previous)}`}
         >
           <span aria-hidden="true">‹</span>Vorheriger Monat
@@ -331,7 +323,6 @@ function MonthSection({ month, monthPath, guard }: MonthSectionProps) {
         <Link
           className="assignments__step assignments__step--next"
           to={monthPath(next)}
-          onClick={guard(monthPath(next))}
           aria-label={`Nächster Monat: ${formatMonthLabel(next)}`}
         >
           Nächster Monat<span aria-hidden="true">›</span>
@@ -343,32 +334,86 @@ function MonthSection({ month, monthPath, guard }: MonthSectionProps) {
 
 type UnsavedShiftsPromptProps = {
   monthLabel: string;
+  editState: ShiftEditState;
   onLeave: () => void;
   onStay: () => void;
 };
 
-/** Inline confirmation (no browser dialog) before unsaved shift times are discarded. */
-function UnsavedShiftsPrompt({ monthLabel, onLeave, onStay }: UnsavedShiftsPromptProps) {
+function promptText(state: ShiftEditState, monthLabel: string) {
+  switch (state) {
+    case 'saving':
+      // A running save is neither safely discarded nor cancelled by leaving.
+      return {
+        title: 'Speichern läuft noch',
+        text: `Die Schichtzeiten ab ${monthLabel} werden gerade gespeichert. Ein Wechsel bricht das Speichern nicht ab: Die Änderung kann trotzdem gespeichert werden oder fehlschlagen, Sie sehen das Ergebnis aber nicht. Prüfen Sie die Schichtzeiten danach.`,
+        leave: 'Trotzdem wechseln',
+        stay: 'Hier bleiben',
+      };
+    case 'dirty':
+      return {
+        title: 'Ungespeicherte Schichtzeiten',
+        text: `Die Änderungen an den Schichtzeiten ab ${monthLabel} sind noch nicht gespeichert. Wenn Sie die Ansicht wechseln, werden sie verworfen.`,
+        leave: 'Änderungen verwerfen und wechseln',
+        stay: 'Weiter bearbeiten',
+      };
+    default:
+      return {
+        title: 'Keine ungespeicherten Schichtzeiten mehr',
+        text: 'Es gibt keine ungespeicherten Änderungen mehr. Sie können die Ansicht jetzt wechseln.',
+        leave: 'Jetzt wechseln',
+        stay: 'Hier bleiben',
+      };
+  }
+}
+
+/**
+ * Inline confirmation (no browser dialog) for a navigation held back by the
+ * blocker. Exactly one decision per held navigation: proceed() or reset().
+ */
+function UnsavedShiftsPrompt({ monthLabel, editState, onLeave, onStay }: UnsavedShiftsPromptProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
+  const decided = useRef(false);
+  const [deciding, setDeciding] = useState(false);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const copy = promptText(editState, monthLabel);
 
   useEffect(() => {
+    // Remember the control that triggered the navigation (e.g. the month link).
+    const previous = document.activeElement;
+    returnFocus.current = previous instanceof HTMLElement && previous !== document.body ? previous : null;
     heading.current?.focus();
   }, []);
 
+  function decide(action: () => void, stay: boolean) {
+    // Guards against double clicks in the same tick: one navigation at most.
+    if (decided.current) return;
+    decided.current = true;
+    setDeciding(true);
+    const target = returnFocus.current;
+    if (target?.isConnected && (stay || !target.closest('form'))) {
+      target.focus();
+    } else if (stay) {
+      document.querySelector<HTMLElement>('.shift-config__form input')?.focus();
+    }
+    action();
+  }
+
   return (
     <div className="employees-card employees-confirm" role="group" aria-labelledby={titleId}>
-      <h2 id={titleId} ref={heading} tabIndex={-1}>Ungespeicherte Schichtzeiten</h2>
-      <p>
-        Die Schichtzeiten ab {monthLabel} sind noch nicht gespeichert oder das Speichern ist noch nicht bestätigt.
-        Wenn Sie die Ansicht jetzt wechseln, gehen die Änderungen verloren oder Sie sehen das Ergebnis nicht.
-      </p>
+      <h2 id={titleId} ref={heading} tabIndex={-1}>{copy.title}</h2>
+      <p>{copy.text}</p>
       <div className="employee-form__actions">
-        <button type="button" className="employees-button employees-button--danger" onClick={onLeave}>
-          Änderungen verwerfen und wechseln
+        <button
+          type="button"
+          className="employees-button employees-button--danger"
+          disabled={deciding}
+          onClick={() => decide(onLeave, false)}
+        >
+          {copy.leave}
         </button>
-        <button type="button" className="employees-button" onClick={onStay}>
-          Weiter bearbeiten
+        <button type="button" className="employees-button" disabled={deciding} onClick={() => decide(onStay, true)}>
+          {copy.stay}
         </button>
       </div>
     </div>

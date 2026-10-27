@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ComponentType } from 'react';
+import { StrictMode, type ComponentType } from 'react';
 import App from '../App';
 import type { IdentityContext } from '../features/auth/auth-api';
 import type { TenantRole } from './routes';
@@ -778,6 +778,207 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       });
       expect(document.body.innerHTML).not.toContain(CSRF);
       expect(setItemSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('SP-08b — unsaved shift times across SPA navigation (data router)', () => {
+    // Synthetic example record, not a business rule.
+    const project = { id: '7a2be0c4-1d3e-4f5a-8b6c-9d0e1f2a3b4c', name: 'Demo-Objekt Hafen', status: 'ACTIVE' };
+    const detail = (month: string) => `/projekte/${project.id}/${month}`;
+    const held = (name = 'Ungespeicherte Schichtzeiten') => screen.queryByRole('group', { name });
+
+    /** Reads of one month on the detail page: assignments, pool and the shift configuration. */
+    function enqueueMonth(monthStart: string) {
+      enqueue(queues, `/api/v1/project-assignments?monthStart=${monthStart}&pageSize=100`, emptyPage);
+      enqueue(queues, `${EMPLOYEES}?pageSize=100`, emptyPage);
+      enqueue(queues, `${PROJECTS}?pageSize=100`, emptyPage);
+      enqueue(queues, shiftConfiguration(project.id, monthStart), noShifts(project.id));
+    }
+
+    async function editUnsaved(user: ReturnType<typeof userEvent.setup>, monthLabel: string) {
+      await user.click(await screen.findByRole('button', { name: `Schichtzeiten ab ${monthLabel} festlegen` }));
+      const end = await screen.findByLabelText('Ende Tagschicht');
+      await user.clear(end);
+      await user.type(end, '17:45');
+    }
+
+    it('sidebar navigation is held: "Weiter bearbeiten" keeps the input, discarding navigates exactly once', async () => {
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+      enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project));
+      enqueueMonth('2027-01-01');
+      enqueue(queues, EMPLOYEES, emptyEmployees);
+      stubApi(queues);
+      renderAt(detail('2027-01'));
+      await expectShell(project.name);
+      const user = userEvent.setup();
+      await editUnsaved(user, 'Januar 2027');
+
+      const sidebar = screen.getByRole('link', { name: /^Mitarbeitende/ });
+      await user.click(sidebar);
+      expect(held()).toBeTruthy();
+      expect(window.location.pathname).toBe(detail('2027-01'));
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Ungespeicherte Schichtzeiten' })));
+      await user.click(screen.getByRole('button', { name: 'Weiter bearbeiten' }));
+      expect(held()).toBeNull();
+      expect((screen.getByLabelText('Ende Tagschicht') as HTMLInputElement).value).toBe('17:45');
+      expect(document.activeElement).toBe(sidebar);
+
+      await user.click(sidebar);
+      await user.click(screen.getByRole('button', { name: 'Änderungen verwerfen und wechseln' }));
+      expect(await screen.findByRole('heading', { level: 1, name: 'Mitarbeitende' })).toBeTruthy();
+      expect(window.location.pathname).toBe('/mitarbeitende');
+
+      // Exactly one entry was pushed: Back leads straight to the project again (the form is gone, so it is not held).
+      enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project));
+      enqueueMonth('2027-01-01');
+      await traverse('back', detail('2027-01'));
+      expect(await screen.findByRole('heading', { level: 1, name: project.name })).toBeTruthy();
+      expect(held()).toBeNull();
+    });
+
+    it('Browser Back and Forward are held until a decision; the URL is restored while held', async () => {
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+      enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project));
+      enqueueMonth('2026-12-01');
+      stubApi(queues);
+      renderAt(detail('2026-12'));
+      await expectShell(project.name);
+      const user = userEvent.setup();
+
+      // December -> January as a clean month step.
+      enqueueMonth('2027-01-01');
+      await user.click(await screen.findByRole('link', { name: 'Nächster Monat: Januar 2027' }));
+      await editUnsaved(user, 'Januar 2027');
+
+      // Back: held, the URL stays on January.
+      act(() => window.history.back());
+      await waitFor(() => expect(held()).toBeTruthy());
+      await waitFor(() => expect(window.location.pathname).toBe(detail('2027-01')));
+      await user.click(screen.getByRole('button', { name: 'Weiter bearbeiten' }));
+      expect((screen.getByLabelText('Ende Tagschicht') as HTMLInputElement).value).toBe('17:45');
+
+      enqueueMonth('2026-12-01');
+      act(() => window.history.back());
+      await waitFor(() => expect(held()).toBeTruthy());
+      await user.click(screen.getByRole('button', { name: 'Änderungen verwerfen und wechseln' }));
+      await waitFor(() => expect(window.location.pathname).toBe(detail('2026-12')));
+
+      // Forward from December with new unsaved input: held, then discarded.
+      await editUnsaved(user, 'Dezember 2026');
+      act(() => window.history.forward());
+      await waitFor(() => expect(held()).toBeTruthy());
+      await waitFor(() => expect(window.location.pathname).toBe(detail('2026-12')));
+      enqueueMonth('2027-01-01');
+      await user.click(screen.getByRole('button', { name: 'Änderungen verwerfen und wechseln' }));
+      await waitFor(() => expect(window.location.pathname).toBe(detail('2027-01')));
+      expect(await screen.findByRole('button', { name: 'Schichtzeiten ab Januar 2027 festlegen' })).toBeTruthy();
+    });
+
+    it('logout is never held back by unsaved shift times: the marked session redirect resets the URL', async () => {
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+      enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project));
+      enqueueMonth('2027-01-01');
+      enqueue(queues, '/api/v1/auth/logout', noContent);
+      stubApi(queues);
+      renderAt(detail('2027-01'));
+      await expectShell(project.name);
+      const user = userEvent.setup();
+      // A pushed entry after the deep link (logout replaces the CURRENT entry with `/`).
+      enqueueMonth('2027-02-01');
+      await user.click(await screen.findByRole('link', { name: 'Nächster Monat: Februar 2027' }));
+      await editUnsaved(user, 'Februar 2027');
+
+      await user.click(screen.getByRole('button', { name: 'Abmelden' }));
+      expect(await screen.findByRole('heading', { name: 'Anmelden' })).toBeTruthy();
+      await waitFor(() => expect(window.location.pathname).toBe('/'));
+      expect(held()).toBeNull();
+      expectNoProtectedContent('COMPANY_ADMIN');
+
+      // Back and Forward after logout never bring the project or the form back.
+      await traverse('back', detail('2027-01'));
+      expectNoProtectedContent('COMPANY_ADMIN');
+      expect(document.body.textContent).not.toContain(project.name);
+      await traverse('forward', '/');
+      expectNoProtectedContent('COMPANY_ADMIN');
+    });
+
+    it('a 401 during a running save ends the session in place; no prompt keeps protected content alive', async () => {
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+      enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project));
+      enqueueMonth('2027-01-01');
+      enqueue(queues, `${PROJECTS}/${project.id}/shift-configuration`, problem(401, 'SESSION_EXPIRED'));
+      stubApi(queues);
+      renderAt(detail('2027-01'));
+      await expectShell(project.name);
+      const user = userEvent.setup();
+      await editUnsaved(user, 'Januar 2027');
+
+      await user.click(screen.getByRole('button', { name: 'Schichtzeiten speichern' }));
+      expect(await screen.findByRole('heading', { name: 'Anmelden' })).toBeTruthy();
+      expectNoProtectedContent('COMPANY_ADMIN');
+      expect(held()).toBeNull();
+      expect(held('Speichern läuft noch')).toBeNull();
+      // As for every 401: the login appears in place and keeps the deep link.
+      expect(window.location.pathname).toBe(detail('2027-01'));
+    });
+
+    it('a bfcache restore whose session check fails signs out and resets the URL despite unsaved shift times', async () => {
+      const me = deferred();
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'), me.handler);
+      enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project));
+      enqueueMonth('2027-01-01');
+      stubApi(queues);
+      renderAt(detail('2027-01'));
+      await expectShell(project.name);
+      await editUnsaved(userEvent.setup(), 'Januar 2027');
+
+      restoreFromBfcache();
+      expectNoShellContent('COMPANY_ADMIN');
+      await act(async () => me.resolve(unauthorized()));
+      expect(await screen.findByRole('heading', { name: 'Anmelden' })).toBeTruthy();
+      await waitFor(() => expect(window.location.pathname).toBe('/'));
+      expect(held()).toBeNull();
+      expectNoProtectedContent('COMPANY_ADMIN');
+    });
+
+    it('re-login with another account after a logout with unsaved input starts clean on its own landing page', async () => {
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+      enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project));
+      enqueueMonth('2027-01-01');
+      enqueue(queues, '/api/v1/auth/logout', noContent);
+      enqueue(queues, '/api/v1/auth/login', authorized('EMPLOYEE'));
+      stubApi(queues);
+      renderAt(detail('2027-01'));
+      await expectShell(project.name);
+      const user = userEvent.setup();
+      await editUnsaved(user, 'Januar 2027');
+      await user.click(screen.getByRole('button', { name: 'Abmelden' }));
+      await screen.findByRole('heading', { name: 'Anmelden' });
+
+      await user.type(screen.getByLabelText('E-Mail-Adresse'), IDENTITIES.EMPLOYEE.email);
+      await user.type(screen.getByLabelText('Passwort'), 'Local Password 2026!');
+      await user.click(screen.getByRole('button', { name: 'Anmelden' }));
+      await expectShell(JOURNEYS.EMPLOYEE.landingTitle);
+      expect(window.location.pathname).toBe(JOURNEYS.EMPLOYEE.landing);
+      expect(held()).toBeNull();
+      expect(document.body.textContent).not.toContain(project.name);
+    });
+
+    it('StrictMode: the data router survives the probe unmount; links and the blocker still work', async () => {
+      // StrictMode runs the session check effect twice in development.
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'), authorized('COMPANY_ADMIN'));
+      enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project), json(200, project));
+      enqueueMonth('2027-01-01');
+      enqueueMonth('2027-01-01');
+      stubApi(queues);
+      window.history.replaceState(null, '', detail('2027-01'));
+      render(<StrictMode><App /></StrictMode>);
+      await expectShell(project.name);
+      const user = userEvent.setup();
+      await editUnsaved(user, 'Januar 2027');
+      await user.click(screen.getByRole('link', { name: /^Projekte & Zuordnungen/ }));
+      expect(held()).toBeTruthy();
+      expect(window.location.pathname).toBe(detail('2027-01'));
     });
   });
 });
