@@ -24,6 +24,7 @@ import { HealthController } from './database/health.controller.js';
 import { ThrottlerModule } from '@nestjs/throttler';
 
 import { BusinessAuditService } from './modules/audit/business-audit.service.js';
+import { WALL_CLOCK, systemWallClock } from './common/time/wall-clock.js';
 import { AccountLifecycleService } from './modules/identity/account-lifecycle.service.js';
 import {
   ACTIVATION_DELIVERY,
@@ -31,6 +32,8 @@ import {
 } from './modules/identity/activation-delivery.js';
 import { EmployeesController } from './modules/workforce/employees/employees.controller.js';
 import { EmployeesService } from './modules/workforce/employees/employees.service.js';
+import { ProjectAssignmentsController } from './modules/workforce/project-assignments/project-assignments.controller.js';
+import { ProjectAssignmentsService } from './modules/workforce/project-assignments/project-assignments.service.js';
 import { ProjectsController } from './modules/workforce/projects/projects.controller.js';
 import { ProjectsService } from './modules/workforce/projects/projects.service.js';
 
@@ -51,6 +54,7 @@ import { ProjectsService } from './modules/workforce/projects/projects.service.j
     SessionController,
     EmployeesController,
     ProjectsController,
+    ProjectAssignmentsController,
   ],
   providers: [
     AppService,
@@ -76,6 +80,10 @@ import { ProjectsService } from './modules/workforce/projects/projects.service.j
     EmployeesService,
     // SP-08: projects (minimal slice, no shift configuration yet).
     ProjectsService,
+    // SP-09: month-scoped project assignments (create/read slice).
+    ProjectAssignmentsService,
+    // Business "current month" rules read the time here (company time zone, never UTC).
+    { provide: WALL_CLOCK, useValue: systemWallClock },
   ],
 })
 export class AppModule {}

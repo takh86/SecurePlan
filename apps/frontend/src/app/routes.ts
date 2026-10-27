@@ -59,7 +59,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: '/projekte',
     role: 'COMPANY_ADMIN',
     title: 'Projekte & Zuordnungen',
-    lead: 'Projekte anlegen, umbenennen und aktiv oder inaktiv setzen.',
+    lead: 'Projekte pflegen und Mitarbeitende monatsweise einem Projekt zuordnen.',
     availability: 'available',
     nested: true,
   },

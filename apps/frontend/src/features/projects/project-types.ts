@@ -17,6 +17,8 @@ export type ProjectPage = {
 export type ProjectListQuery = {
   status?: ProjectStatus;
   page?: number;
+  /** Not taken from the page URL; used by selection lists that load all pages (SP-09). */
+  pageSize?: number;
 };
 
 /** PATCH body: only changed fields. */

@@ -186,6 +186,17 @@ describe('SP-06 — runtime route access inventory', () => {
       for (const route of projectRoutes) {
         expect({ route: route.key, roles: route.roles }).toEqual({ route: route.key, roles: ['COMPANY_ADMIN'] });
       }
+
+      // SP-09: month assignments are COMPANY_ADMIN-only; create/read/correct, no DELETE.
+      const assignmentRoutes = handlers.filter((h) => h.key.includes(' /api/v1/project-assignments'));
+      expect(assignmentRoutes.map((h) => h.key)).toEqual([
+        'GET /api/v1/project-assignments',
+        'PATCH /api/v1/project-assignments/:assignmentId',
+        'POST /api/v1/project-assignments',
+      ]);
+      for (const route of assignmentRoutes) {
+        expect({ route: route.key, roles: route.roles }).toEqual({ route: route.key, roles: ['COMPANY_ADMIN'] });
+      }
       for (const handler of handlers) {
         expect(handler.roles ?? []).not.toContain('PLATFORM_ADMIN');
       }

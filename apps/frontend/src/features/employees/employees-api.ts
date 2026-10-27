@@ -86,6 +86,7 @@ export function listQuerySearch(query: EmployeeListQuery): string {
   if (query.q) params.set('q', query.q);
   if (query.status) params.set('status', query.status);
   if (query.page && query.page > 1) params.set('page', String(query.page));
+  if (query.pageSize) params.set('pageSize', String(query.pageSize));
   return params.toString();
 }
 

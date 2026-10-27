@@ -32,7 +32,12 @@ export type KnownErrorCode =
   | 'EMPLOYEE_HAS_FUTURE_ASSIGNMENTS'
   // SP-08 projects (approved backend catalogue).
   | 'PROJECT_NAME_ALREADY_EXISTS'
-  | 'PROJECT_INACTIVE';
+  | 'PROJECT_INACTIVE'
+  // SP-09 month assignments (approved backend catalogue).
+  | 'INVALID_MONTH_START'
+  | 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH'
+  | 'PROJECT_ASSIGNMENT_ALREADY_EXISTS'
+  | 'PROJECT_ASSIGNMENT_CONFLICT';
 
 export type ApiErrorKind = 'http' | 'network' | 'invalid-response';
 
@@ -81,6 +86,10 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   EMPLOYEE_HAS_FUTURE_ASSIGNMENTS: 409,
   PROJECT_NAME_ALREADY_EXISTS: 409,
   PROJECT_INACTIVE: 409,
+  INVALID_MONTH_START: 400,
+  EMPLOYEE_NOT_EMPLOYED_FOR_MONTH: 409,
+  PROJECT_ASSIGNMENT_ALREADY_EXISTS: 409,
+  PROJECT_ASSIGNMENT_CONFLICT: 409,
 };
 
 const POINTER_PATTERN = /^#(?:\/(?:[A-Za-z0-9_-]|~[01])+)+$/;
@@ -217,6 +226,23 @@ const EMPLOYEE_ERROR_TEXT: Partial<Record<string, { title: string; description: 
   PROJECT_INACTIVE: {
     title: 'Projekt ist inaktiv',
     description: 'Für ein inaktives Projekt sind keine neuen Zuordnungen möglich. Reaktivieren Sie das Projekt zuerst oder laden Sie die Ansicht neu.',
+  },
+  // SP-09 month assignments.
+  PROJECT_ASSIGNMENT_CONFLICT: {
+    title: 'Bereits einem anderen Projekt zugeordnet',
+    description: 'Diese Person ist im gewählten Monat bereits einem anderen Projekt zugeordnet. Je Kalendermonat ist nur ein Projekt möglich; die Zuordnung wurde nicht geändert.',
+  },
+  EMPLOYEE_NOT_EMPLOYED_FOR_MONTH: {
+    title: 'Nicht beschäftigt in diesem Monat',
+    description: 'Der dokumentierte Beschäftigungszeitraum dieser Person deckt den gewählten Monat nicht ab oder es ist kein Beschäftigungsbeginn hinterlegt. Bitte Beschäftigungsdaten prüfen oder einen anderen Monat wählen.',
+  },
+  PROJECT_ASSIGNMENT_ALREADY_EXISTS: {
+    title: 'Zuordnung besteht bereits',
+    description: 'Diese Person ist dem Projekt für diesen Monat bereits zugeordnet.',
+  },
+  INVALID_MONTH_START: {
+    title: 'Monat ungültig',
+    description: 'Bitte wählen Sie einen gültigen Kalendermonat.',
   },
 };
 

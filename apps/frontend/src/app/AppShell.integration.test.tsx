@@ -72,6 +72,17 @@ const emptyEmployees = json(200, { items: [], pagination: { page: 1, pageSize: 2
 // SP-08: an empty company for the real project list.
 const PROJECTS = '/api/v1/projects';
 const emptyProjects = json(200, { items: [], pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 } });
+// SP-09: reads of the month-assignment panel on a project detail page (test "today": December 2026).
+const MONTH_ASSIGNMENTS = '/api/v1/project-assignments?monthStart=2026-12-01&pageSize=100';
+const emptyPage = json(200, { items: [], pagination: { page: 1, pageSize: 100, totalItems: 0, totalPages: 0 } });
+
+function enqueueMonthReads(visits: number) {
+  for (let visit = 0; visit < visits; visit += 1) {
+    enqueue(queues, MONTH_ASSIGNMENTS, emptyPage);
+    enqueue(queues, `${EMPLOYEES}?pageSize=100`, emptyPage);
+    enqueue(queues, `${PROJECTS}?pageSize=100`, emptyPage);
+  }
+}
 
 function deferred() {
   let resolve!: (response: Response) => void;
@@ -664,6 +675,8 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       // Each visit of a page reads again: detail, list, detail (Back), list (Forward).
       enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project), json(200, project));
       enqueue(queues, PROJECTS, emptyProjects, emptyProjects);
+      // SP-09: every detail visit also reads the month assignment and its pool (December 2026).
+      enqueueMonthReads(2);
       enqueue(queues, '/api/v1/auth/logout', noContent);
       const fetchMock = stubApi(queues);
       renderAt(detailPath);
@@ -703,6 +716,60 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       expectNoProtectedContent('COMPANY_ADMIN');
       expect(document.body.textContent).not.toMatch(projectName);
       expect(refreshed.mock.calls.map(([url]) => String(url))).toEqual(['/api/v1/me']);
+    });
+  });
+
+  describe('SP-09 — month assignment deep link', () => {
+    // Synthetic example record, not a business rule.
+    const project = { id: '7a2be0c4-1d3e-4f5a-8b6c-9d0e1f2a3b4c', name: 'Demo-Objekt Hafen', status: 'ACTIVE' };
+    const monthPath = `/projekte/${project.id}/2027-01`;
+
+    it('a 401 from the month read shows the login in place and keeps the month deep link', async () => {
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+      enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project));
+      enqueue(queues, '/api/v1/project-assignments?monthStart=2027-01-01&pageSize=100', problem(401, 'SESSION_EXPIRED'));
+      enqueue(queues, `${EMPLOYEES}?pageSize=100`, emptyPage);
+      enqueue(queues, `${PROJECTS}?pageSize=100`, emptyPage);
+      stubApi(queues);
+      renderAt(monthPath);
+
+      expect(await screen.findByRole('heading', { name: 'Anmelden' })).toBeTruthy();
+      expectNoProtectedContent('COMPANY_ADMIN');
+      expect(document.body.textContent).not.toContain(project.name);
+      expect(screen.getByRole('alert').textContent).toContain('Anmeldung erforderlich');
+      expect(window.location.pathname).toBe(monthPath);
+    });
+
+    it('an assignment write carries the in-memory CSRF token and only the three business fields', async () => {
+      const employee = {
+        id: '6f1ad9a6-3a0c-4b7c-9c5e-0d4f2a1e8b11', employeeCode: 'A-001', firstName: 'Mira', lastName: 'Beispiel',
+        employmentStart: null, employmentEnd: null, shiftEligibility: 'BOTH', status: 'ACTIVE',
+        email: 'mira@secureplan.test', accountStatus: 'ACTIVE',
+      };
+      const created = { id: 'a-1', employeeId: employee.id, projectId: project.id, monthStart: '2027-01-01' };
+      const pageOf = (items: unknown[]) => json(200, { items, pagination: { page: 1, pageSize: 100, totalItems: items.length, totalPages: 1 } });
+      const MONTH = '/api/v1/project-assignments?monthStart=2027-01-01&pageSize=100';
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+      enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project));
+      enqueue(queues, MONTH, pageOf([]), pageOf([created]));
+      enqueue(queues, `${EMPLOYEES}?pageSize=100`, pageOf([employee]), pageOf([employee]));
+      enqueue(queues, `${PROJECTS}?pageSize=100`, pageOf([project]), pageOf([project]));
+      enqueue(queues, '/api/v1/project-assignments', json(201, created));
+      const fetchMock = stubApi(queues);
+      renderAt(monthPath);
+
+      const user = userEvent.setup();
+      await user.selectOptions(await screen.findByLabelText('Mitarbeiter:in für Januar 2027 zuordnen'), employee.id);
+      await user.click(screen.getByRole('button', { name: 'Zuordnen' }));
+      expect(await screen.findByText('Mira Beispiel ist dem Projekt Demo-Objekt Hafen für Januar 2027 zugeordnet.')).toBeTruthy();
+
+      const post = fetchMock.mock.calls.find(([url, init]) => url === '/api/v1/project-assignments' && init?.method === 'POST');
+      expect(new Headers(post?.[1]?.headers).get('x-csrf-token')).toBe(CSRF);
+      expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+        employeeId: employee.id, projectId: project.id, monthStart: '2027-01-01',
+      });
+      expect(document.body.innerHTML).not.toContain(CSRF);
+      expect(setItemSpy).not.toHaveBeenCalled();
     });
   });
 });

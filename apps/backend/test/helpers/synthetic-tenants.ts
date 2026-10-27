@@ -135,13 +135,16 @@ export async function createSyntheticEmployee(
   pool: TestPool,
   account: SyntheticAccount,
   employeeNumber = `SYN-${randomUUID().slice(0, 8)}`,
+  /** Opt-in documented employment (YYYY-MM-DD); omitted = no employment evidence. */
+  employment: { start: string | null; end?: string | null } = { start: null },
 ): Promise<SyntheticEmployee> {
   const employeeId = randomUUID();
   await pool.query(
     `INSERT INTO employees
-       (id, company_id, account_id, employee_number, first_name, last_name, shift_eligibility)
-     VALUES ($1, $2, $3, $4, 'Synthetic', 'Employee', 'BOTH')`,
-    [employeeId, account.companyId, account.accountId, employeeNumber],
+       (id, company_id, account_id, employee_number, first_name, last_name, shift_eligibility,
+        employment_start, employment_end)
+     VALUES ($1, $2, $3, $4, 'Synthetic', 'Employee', 'BOTH', $5::date, $6::date)`,
+    [employeeId, account.companyId, account.accountId, employeeNumber, employment.start, employment.end ?? null],
   );
   return { employeeId, employeeNumber, account };
 }
@@ -190,9 +193,12 @@ export async function removeSyntheticTenants(pool: TestPool, companyIds: string[
     // Fail visibly (lock_not_available) instead of hanging into a hook timeout
     // if a leaked test transaction still holds a fixture row lock.
     await client.query("SET LOCAL lock_timeout = '5s'");
-    // employees before accounts (composite FK ON DELETE RESTRICT, SP-07);
-    // projects reference only companies (SP-08).
-    for (const table of ['sessions', 'account_tokens', 'audit_event', 'projects', 'employees', 'accounts']) {
+    // Children before parents (composite FKs ON DELETE RESTRICT): project
+    // assignments (SP-09) before projects (SP-08) and employees (SP-07),
+    // employees before accounts.
+    for (const table of [
+      'sessions', 'account_tokens', 'audit_event', 'project_assignments', 'projects', 'employees', 'accounts',
+    ]) {
       await client.query(`DELETE FROM ${table} WHERE company_id = ANY($1::uuid[])`, [companyIds]);
     }
     await client.query('DELETE FROM companies WHERE id = ANY($1::uuid[])', [companyIds]);
