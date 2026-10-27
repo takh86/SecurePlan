@@ -10,7 +10,7 @@ import type { PoolClient } from 'pg';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
-/** Action names chosen for SP-07..SP-09; no approved audit-action catalogue exists yet. */
+/** Action names chosen for SP-07..SP-08b; no approved audit-action catalogue exists yet. */
 export type BusinessAuditAction =
   | 'EMPLOYEE_CREATED'
   | 'EMPLOYEE_UPDATED'
@@ -23,13 +23,15 @@ export type BusinessAuditAction =
   | 'PROJECT_UPDATED'
   | 'PROJECT_ASSIGNMENT_CREATED'
   /** Provisional MVP name (owner 26.10.2026): correction of an existing assignment; old/new IDs and month only. */
-  | 'PROJECT_ASSIGNMENT_CORRECTED';
+  | 'PROJECT_ASSIGNMENT_CORRECTED'
+  /** Provisional MVP name (owner 27.10.2026, ADR-0003): shift set of one effective month replaced; resource = project. */
+  | 'SHIFT_CONFIGURATION_UPDATED';
 
 export type BusinessAuditEntry = {
   companyId: string;
   actorAccountId: string | null;
   action: BusinessAuditAction;
-  resourceType: 'EMPLOYEE' | 'ACCOUNT' | 'PROJECT' | 'PROJECT_ASSIGNMENT';
+  resourceType: 'EMPLOYEE' | 'ACCOUNT' | 'PROJECT' | 'PROJECT_ASSIGNMENT' | 'PROJECT_SHIFT_CONFIGURATION';
   resourceId: string;
   oldValues?: Readonly<Record<string, unknown>> | null;
   newValues?: Readonly<Record<string, unknown>> | null;
