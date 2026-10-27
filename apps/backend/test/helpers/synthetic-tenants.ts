@@ -146,6 +146,27 @@ export async function createSyntheticEmployee(
   return { employeeId, employeeNumber, account };
 }
 
+export type SyntheticProject = {
+  projectId: string;
+  companyId: string;
+  name: string;
+};
+
+/** SP-08: project in an existing synthetic tenant (committed). */
+export async function createSyntheticProject(
+  pool: TestPool,
+  companyId: string,
+  name = `Synthetic Project ${randomUUID().slice(0, 8)}`,
+  status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED' = 'ACTIVE',
+): Promise<SyntheticProject> {
+  const projectId = randomUUID();
+  await pool.query(
+    'INSERT INTO projects (id, company_id, name, status) VALUES ($1, $2, $3, $4)',
+    [projectId, companyId, name, status],
+  );
+  return { projectId, companyId, name };
+}
+
 export async function createSyntheticSession(
   sessions: SessionService,
   member: SyntheticAccount,
@@ -169,8 +190,9 @@ export async function removeSyntheticTenants(pool: TestPool, companyIds: string[
     // Fail visibly (lock_not_available) instead of hanging into a hook timeout
     // if a leaked test transaction still holds a fixture row lock.
     await client.query("SET LOCAL lock_timeout = '5s'");
-    // employees before accounts (composite FK ON DELETE RESTRICT, SP-07).
-    for (const table of ['sessions', 'account_tokens', 'audit_event', 'employees', 'accounts']) {
+    // employees before accounts (composite FK ON DELETE RESTRICT, SP-07);
+    // projects reference only companies (SP-08).
+    for (const table of ['sessions', 'account_tokens', 'audit_event', 'projects', 'employees', 'accounts']) {
       await client.query(`DELETE FROM ${table} WHERE company_id = ANY($1::uuid[])`, [companyIds]);
     }
     await client.query('DELETE FROM companies WHERE id = ANY($1::uuid[])', [companyIds]);

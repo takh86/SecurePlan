@@ -69,6 +69,9 @@ const json = (status: number, body: unknown): Responder => () => new Response(JS
 });
 // SP-07: an empty company for the real employee list.
 const emptyEmployees = json(200, { items: [], pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 } });
+// SP-08: an empty company for the real project list.
+const PROJECTS = '/api/v1/projects';
+const emptyProjects = json(200, { items: [], pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 } });
 
 function deferred() {
   let resolve!: (response: Response) => void;
@@ -204,6 +207,8 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
 
   it('supports link navigation, Back and Forward with focus and title updates', async () => {
     enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+    // SP-08: the projects area reads the real list on each visit.
+    enqueue(queues, PROJECTS, emptyProjects, emptyProjects);
     stubApi(queues);
     renderAt('/arbeitsuebersicht');
     await expectShell('Arbeitsübersicht');
@@ -645,6 +650,59 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       await act(async () => { await Promise.resolve(); });
       expectNoProtectedContent('COMPANY_ADMIN');
       expect(screen.queryByRole('alert')).toBeNull();
+    });
+  });
+
+  describe('SP-08 — project detail deep link: logout, then Back, Forward and Refresh', () => {
+    // Synthetic example record, not a business rule.
+    const project = { id: '7a2be0c4-1d3e-4f5a-8b6c-9d0e1f2a3b4c', name: 'Demo-Objekt Hafen', status: 'ACTIVE' };
+    const detailPath = `/projekte/${project.id}`;
+    const projectName = new RegExp(project.name);
+
+    it('never brings the project back after logout; Refresh re-checks the session first', async () => {
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+      // Each visit of a page reads again: detail, list, detail (Back), list (Forward).
+      enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project), json(200, project));
+      enqueue(queues, PROJECTS, emptyProjects, emptyProjects);
+      enqueue(queues, '/api/v1/auth/logout', noContent);
+      const fetchMock = stubApi(queues);
+      renderAt(detailPath);
+      await expectShell(project.name);
+
+      // A pushed entry after the deep link: logout replaces the CURRENT entry with `/`.
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('link', { name: 'Zurück zur Übersicht' }));
+      expect(await screen.findByText('Noch keine Projekte')).toBeTruthy();
+      await traverse('back', detailPath);
+      expect(await screen.findByRole('heading', { level: 1, name: project.name })).toBeTruthy();
+      await traverse('forward', '/projekte');
+      await user.click(screen.getByRole('button', { name: 'Abmelden' }));
+      await screen.findByRole('heading', { name: 'Anmelden' });
+      expect(window.location.pathname).toBe('/');
+      const callsAfterLogout = fetchMock.mock.calls.length;
+
+      await traverse('back', detailPath);
+      expectNoProtectedContent('COMPANY_ADMIN');
+      expect(document.body.textContent).not.toMatch(projectName);
+      await traverse('forward', '/');
+      expectNoProtectedContent('COMPANY_ADMIN');
+      expect(fetchMock.mock.calls.length).toBe(callsAfterLogout);
+
+      await traverse('back', detailPath);
+      cleanup();
+      // Simulated browser refresh: fresh module graph, the server rejects the revoked session.
+      vi.resetModules();
+      const me = deferred();
+      enqueue(queues, '/api/v1/me', me.handler);
+      const refreshed = stubApi(queues);
+      const FreshApp = (await import('../App')).default;
+      renderAt(detailPath, FreshApp);
+      expect(screen.getByRole('heading', { name: 'Sitzung wird geprüft' })).toBeTruthy();
+      await act(async () => me.resolve(unauthorized()));
+      expect(await screen.findByRole('heading', { name: 'Anmelden' })).toBeTruthy();
+      expectNoProtectedContent('COMPANY_ADMIN');
+      expect(document.body.textContent).not.toMatch(projectName);
+      expect(refreshed.mock.calls.map(([url]) => String(url))).toEqual(['/api/v1/me']);
     });
   });
 });

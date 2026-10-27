@@ -113,7 +113,7 @@ describe('F1 — role-based routes (UI gating only; the server authorizes every 
     expect(links.map((link) => link.textContent)).toEqual([
       'Arbeitsübersicht',
       'Mitarbeitende',
-      'Projekte & Zuordnungen folgt',
+      'Projekte & Zuordnungen',
       'Monatsplanung folgt',
     ]);
     expect(links[0].getAttribute('aria-current')).toBe('page');

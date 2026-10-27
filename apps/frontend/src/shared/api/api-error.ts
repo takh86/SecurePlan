@@ -29,7 +29,10 @@ export type KnownErrorCode =
   | 'EMPLOYEE_CODE_ALREADY_EXISTS'
   | 'EMAIL_ALREADY_IN_USE'
   | 'EMPLOYEE_INACTIVE'
-  | 'EMPLOYEE_HAS_FUTURE_ASSIGNMENTS';
+  | 'EMPLOYEE_HAS_FUTURE_ASSIGNMENTS'
+  // SP-08 projects (approved backend catalogue).
+  | 'PROJECT_NAME_ALREADY_EXISTS'
+  | 'PROJECT_INACTIVE';
 
 export type ApiErrorKind = 'http' | 'network' | 'invalid-response';
 
@@ -76,6 +79,8 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   EMAIL_ALREADY_IN_USE: 409,
   EMPLOYEE_INACTIVE: 409,
   EMPLOYEE_HAS_FUTURE_ASSIGNMENTS: 409,
+  PROJECT_NAME_ALREADY_EXISTS: 409,
+  PROJECT_INACTIVE: 409,
 };
 
 const POINTER_PATTERN = /^#(?:\/(?:[A-Za-z0-9_-]|~[01])+)+$/;
@@ -202,6 +207,16 @@ const EMPLOYEE_ERROR_TEXT: Partial<Record<string, { title: string; description: 
   EMPLOYMENT_DATE_CONFLICT: {
     title: 'Beschäftigungszeitraum prüfen',
     description: 'Das Beschäftigungsende darf nicht vor dem Beschäftigungsbeginn liegen.',
+  },
+
+  // SP-08 projects.
+  PROJECT_NAME_ALREADY_EXISTS: {
+    title: 'Projektname bereits vergeben',
+    description: 'Dieser Projektname wird in Ihrem Unternehmen bereits verwendet. Bitte wählen Sie einen anderen Namen.',
+  },
+  PROJECT_INACTIVE: {
+    title: 'Projekt ist inaktiv',
+    description: 'Für ein inaktives Projekt sind keine neuen Zuordnungen möglich. Reaktivieren Sie das Projekt zuerst oder laden Sie die Ansicht neu.',
   },
 };
 

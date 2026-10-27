@@ -10,7 +10,7 @@ import type { PoolClient } from 'pg';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
-/** Action names chosen for SP-07; no approved audit-action catalogue exists yet. */
+/** Action names chosen for SP-07/SP-08; no approved audit-action catalogue exists yet. */
 export type BusinessAuditAction =
   | 'EMPLOYEE_CREATED'
   | 'EMPLOYEE_UPDATED'
@@ -18,13 +18,15 @@ export type BusinessAuditAction =
   | 'ACCOUNT_PROVISIONED'
   | 'ACCOUNT_DEACTIVATED'
   | 'ACCOUNT_ACTIVATION_DELIVERY_FAILED'
-  | 'ACCOUNT_ACTIVATION_REISSUED';
+  | 'ACCOUNT_ACTIVATION_REISSUED'
+  | 'PROJECT_CREATED'
+  | 'PROJECT_UPDATED';
 
 export type BusinessAuditEntry = {
   companyId: string;
   actorAccountId: string | null;
   action: BusinessAuditAction;
-  resourceType: 'EMPLOYEE' | 'ACCOUNT';
+  resourceType: 'EMPLOYEE' | 'ACCOUNT' | 'PROJECT';
   resourceId: string;
   oldValues?: Readonly<Record<string, unknown>> | null;
   newValues?: Readonly<Record<string, unknown>> | null;
