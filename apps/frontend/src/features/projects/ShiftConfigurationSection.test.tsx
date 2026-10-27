@@ -489,6 +489,49 @@ describe('SP-08b — navigation blocking (data router, useBlocker)', () => {
     expect(prompt()).toBeNull();
   });
 
+  describe('F-3: only a marked REPLACE to a bare "/" is exempt from the guard', () => {
+    async function expectHeld(
+      target: string,
+      options: { replace?: boolean; state?: unknown },
+    ) {
+      const { router, location } = renderProjects(PATH, fakeCompany().handler);
+      const user = userEvent.setup();
+      await dirtyEditor(user);
+      await act(async () => { await router.navigate(target, options); });
+      expect(prompt()).toBeTruthy();
+      expect(location()).toBe(PATH);
+      await user.click(within(prompt()!).getByRole('button', { name: 'Weiter bearbeiten' }));
+      expect(field('Ende Tagschicht').value).toBe('17:45');
+    }
+
+    it('1: a marked REPLACE to "/" passes without a prompt', async () => {
+      const { router, location } = renderProjects(PATH, fakeCompany().handler);
+      const user = userEvent.setup();
+      await dirtyEditor(user);
+      await act(async () => { await router.navigate('/', { replace: true, state: SESSION_REDIRECT_STATE }); });
+      expect(location()).toBe('/');
+      expect(prompt()).toBeNull();
+    });
+
+    it('2: a marked REPLACE to /projekte is held', async () => {
+      await expectHeld('/projekte', { replace: true, state: SESSION_REDIRECT_STATE });
+    });
+
+    it('3: a marked PUSH to "/" is held', async () => {
+      await expectHeld('/', { state: SESSION_REDIRECT_STATE });
+    });
+
+    it('4: an unmarked REPLACE to "/" is held', async () => {
+      await expectHeld('/', { replace: true });
+    });
+
+    it('a marked REPLACE to "/" with extra search or hash is held', async () => {
+      await expectHeld('/?next=x', { replace: true, state: SESSION_REDIRECT_STATE });
+      cleanup();
+      await expectHeld('/#x', { replace: true, state: SESSION_REDIRECT_STATE });
+    });
+  });
+
   it('navigating again while the prompt is open keeps ONE prompt; the latest target wins; a double click navigates once', async () => {
     const { router, location } = renderProjects(PATH, fakeCompany().handler);
     const user = userEvent.setup();

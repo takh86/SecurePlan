@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useBlocker, useLocation, type BlockerFunction } from 'react-router';
 import { PageFrame } from '../../app/PageFrame';
-import { isSessionRedirect } from '../../app/session-redirect';
+import { isSessionRedirectNavigation } from '../../app/session-redirect';
 import type { ReadSource } from '../../shared/data/data-source';
 import { useReadSource } from '../../shared/data/use-read-source';
 import type { Clock } from '../../shared/time/clock';
@@ -57,12 +57,13 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
    * Any SPA navigation away from the current URL (links, sidebar, Back/Forward,
    * programmatic, REPLACE included) waits for a decision while shift times are
    * unsaved or a save is unconfirmed. Only the session boundary's marked
-   * redirect after sign-out or session loss always passes.
+   * REPLACE to `/` after sign-out or session loss passes (UX exception, not
+   * an authorization mechanism).
    */
   const shouldBlock = useCallback<BlockerFunction>(
-    ({ currentLocation, nextLocation }) =>
+    ({ currentLocation, nextLocation, historyAction }) =>
       shiftEdit !== 'clean' &&
-      !isSessionRedirect(nextLocation.state) &&
+      !isSessionRedirectNavigation(historyAction, nextLocation) &&
       (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search),
     [shiftEdit],
   );
