@@ -1,6 +1,7 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Link, Navigate, useLocation } from 'react-router';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Link, Navigate, useBlocker, useLocation, type BlockerFunction } from 'react-router';
 import { PageFrame } from '../../app/PageFrame';
+import { isSessionRedirectNavigation } from '../../app/session-redirect';
 import type { ReadSource } from '../../shared/data/data-source';
 import { useReadSource } from '../../shared/data/use-read-source';
 import type { Clock } from '../../shared/time/clock';
@@ -13,13 +14,17 @@ import type { ProjectNotice } from './ProjectCreatePage';
 import { ProjectNameForm } from './ProjectNameForm';
 import { PROJECT_STATUS, type Project } from './project-types';
 import type { ProjectsApi } from './projects-api';
+import type { ShiftConfigurationApi } from './shift-configuration-api';
+import { ShiftConfigurationSection, type ShiftEditState } from './ShiftConfigurationSection';
+
+export type ProjectDetailApis = AssignmentApis & { shiftConfigurations: ShiftConfigurationApi };
 
 type DetailProps = {
   projectId: string;
   /** Optional YYYY-MM route segment; absent means the clock's current month. */
   monthParam: string | undefined;
   basePath: string;
-  apis: AssignmentApis;
+  apis: ProjectDetailApis;
   clock: Clock;
 };
 
@@ -46,6 +51,23 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
   const project = updated ?? (state.status === 'ready' ? state.data : null);
   const noticeRef = useRef<HTMLParagraphElement>(null);
   const [focusNotice, setFocusNotice] = useState<object | null>(null);
+  const [shiftEdit, setShiftEdit] = useState<ShiftEditState>('clean');
+
+  /**
+   * Any SPA navigation away from the current URL (links, sidebar, Back/Forward,
+   * programmatic, REPLACE included) waits for a decision while shift times are
+   * unsaved or a save is unconfirmed. Only the session boundary's marked
+   * REPLACE to `/` after sign-out or session loss passes (UX exception, not
+   * an authorization mechanism).
+   */
+  const shouldBlock = useCallback<BlockerFunction>(
+    ({ currentLocation, nextLocation, historyAction }) =>
+      shiftEdit !== 'clean' &&
+      !isSessionRedirectNavigation(historyAction, nextLocation) &&
+      (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search),
+    [shiftEdit],
+  );
+  const blocker = useBlocker(shouldBlock);
 
   // After a write the acting control may be gone: move focus to the confirmation message.
   useEffect(() => {
@@ -65,6 +87,14 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
     <PageFrame title={project ? project.name : 'Projektdetails'}>
       <div className="employees employees--narrow">
         <Link className="employees__back" to={basePath}>Zurück zur Übersicht</Link>
+        {blocker.state === 'blocked' && (
+          <UnsavedShiftsPrompt
+            monthLabel={formatMonthLabel(requestedMonth)}
+            editState={shiftEdit}
+            onLeave={() => blocker.proceed()}
+            onStay={() => blocker.reset()}
+          />
+        )}
         {/* Always mounted, so screen readers announce new messages. */}
         <div role="status" aria-live="polite">
           {notice && <p ref={noticeRef} tabIndex={-1} className="employees__notice">{notice}</p>}
@@ -73,12 +103,19 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
           <>
             <MasterDataSection project={project} projects={projects} onChanged={changed} />
             <LifecycleSection project={project} projects={projects} onChanged={changed} />
-            <AssignmentSection
-              project={project}
+            <MonthSection
               month={requestedMonth}
               monthPath={(month) => `${basePath}/${encodeURIComponent(project.id)}/${month}`}
-              apis={apis}
             />
+            <ShiftConfigurationSection
+              key={requestedMonth}
+              project={project}
+              month={requestedMonth}
+              api={apis.shiftConfigurations}
+              clock={clock}
+              onEditStateChange={setShiftEdit}
+            />
+            <AssignmentSection project={project} month={requestedMonth} apis={apis} />
           </>
         ) : state.status === 'error' ? (
           <ErrorState
@@ -258,21 +295,23 @@ function LifecycleSection({ project, projects, onChanged }: SectionProps) {
   );
 }
 
-type AssignmentSectionProps = {
-  project: Project;
+type MonthSectionProps = {
   month: MonthKey;
   monthPath: (month: MonthKey) => string;
-  apis: AssignmentApis;
 };
 
-/** UX A09: the month bar stays mounted across month steps, so keyboard focus stays on the link. */
-function AssignmentSection({ project, month, monthPath, apis }: AssignmentSectionProps) {
+/**
+ * UX A09 month navigation, shared by "Schichtzeiten" and "Mitarbeiterzuordnung".
+ * The month bar stays mounted across month steps, so keyboard focus stays on the link.
+ */
+function MonthSection({ month, monthPath }: MonthSectionProps) {
   const monthLabel = formatMonthLabel(month);
   const previous = addMonths(month, -1);
   const next = addMonths(month, 1);
   return (
-    <section className="employees-card" aria-labelledby="project-assignments-title">
-      <h2 id="project-assignments-title">Mitarbeiterzuordnung</h2>
+    <section className="employees-card" aria-labelledby="project-month-title">
+      <h2 id="project-month-title">Monat</h2>
+      <p className="employees-card__hint">Schichtzeiten und Mitarbeiterzuordnung gelten für den gewählten Monat.</p>
       <div className="assignments__monthbar">
         <h3 aria-live="polite">{monthLabel}</h3>
         <Link
@@ -290,6 +329,118 @@ function AssignmentSection({ project, month, monthPath, apis }: AssignmentSectio
           Nächster Monat<span aria-hidden="true">›</span>
         </Link>
       </div>
+    </section>
+  );
+}
+
+type UnsavedShiftsPromptProps = {
+  monthLabel: string;
+  editState: ShiftEditState;
+  onLeave: () => void;
+  onStay: () => void;
+};
+
+function promptText(state: ShiftEditState, monthLabel: string) {
+  switch (state) {
+    case 'saving':
+      // A running save is neither safely discarded nor cancelled by leaving.
+      return {
+        title: 'Speichern läuft noch',
+        text: `Die Schichtzeiten ab ${monthLabel} werden gerade gespeichert. Ein Wechsel bricht das Speichern nicht ab: Die Änderung kann trotzdem gespeichert werden oder fehlschlagen, Sie sehen das Ergebnis aber nicht. Prüfen Sie die Schichtzeiten danach.`,
+        leave: 'Trotzdem wechseln',
+        stay: 'Hier bleiben',
+      };
+    case 'dirty':
+      return {
+        title: 'Ungespeicherte Schichtzeiten',
+        text: `Die Änderungen an den Schichtzeiten ab ${monthLabel} sind noch nicht gespeichert. Wenn Sie die Ansicht wechseln, werden sie verworfen.`,
+        leave: 'Änderungen verwerfen und wechseln',
+        stay: 'Weiter bearbeiten',
+      };
+    default:
+      return {
+        title: 'Keine ungespeicherten Schichtzeiten mehr',
+        text: 'Es gibt keine ungespeicherten Änderungen mehr. Sie können die Ansicht jetzt wechseln.',
+        leave: 'Jetzt wechseln',
+        stay: 'Hier bleiben',
+      };
+  }
+}
+
+/**
+ * Inline confirmation (no browser dialog) for a navigation held back by the
+ * blocker. Exactly one decision per held navigation: proceed() or reset().
+ */
+function UnsavedShiftsPrompt({ monthLabel, editState, onLeave, onStay }: UnsavedShiftsPromptProps) {
+  const container = useRef<HTMLDivElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const titleId = useId();
+  const decided = useRef(false);
+  const [deciding, setDeciding] = useState(false);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const copy = promptText(editState, monthLabel);
+
+  useEffect(() => {
+    // Remember the control that triggered the navigation (e.g. the month link).
+    // Idempotent: StrictMode runs this twice, and the second run must not
+    // capture the already focused prompt heading.
+    const previous = document.activeElement;
+    if (
+      returnFocus.current === null &&
+      previous instanceof HTMLElement &&
+      previous !== document.body &&
+      !container.current?.contains(previous)
+    ) {
+      returnFocus.current = previous;
+    }
+    heading.current?.focus();
+  }, []);
+
+  function decide(action: () => void, stay: boolean) {
+    // Guards against double clicks in the same tick: one navigation at most.
+    if (decided.current) return;
+    decided.current = true;
+    setDeciding(true);
+    const target = returnFocus.current;
+    if (target?.isConnected && (stay || !target.closest('form'))) {
+      target.focus();
+    } else if (stay) {
+      document.querySelector<HTMLElement>('.shift-config__form input')?.focus();
+    }
+    action();
+  }
+
+  return (
+    <div ref={container} className="employees-card employees-confirm" role="group" aria-labelledby={titleId}>
+      <h2 id={titleId} ref={heading} tabIndex={-1}>{copy.title}</h2>
+      <p>{copy.text}</p>
+      <div className="employee-form__actions">
+        <button
+          type="button"
+          className="employees-button employees-button--danger"
+          disabled={deciding}
+          onClick={() => decide(onLeave, false)}
+        >
+          {copy.leave}
+        </button>
+        <button type="button" className="employees-button" disabled={deciding} onClick={() => decide(onStay, true)}>
+          {copy.stay}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type AssignmentSectionProps = {
+  project: Project;
+  month: MonthKey;
+  apis: AssignmentApis;
+};
+
+function AssignmentSection({ project, month, apis }: AssignmentSectionProps) {
+  return (
+    <section className="employees-card" aria-labelledby="project-assignments-title">
+      <h2 id="project-assignments-title">Mitarbeiterzuordnung</h2>
       <ProjectAssignmentsPanel key={month} project={project} month={month} apis={apis} />
     </section>
   );

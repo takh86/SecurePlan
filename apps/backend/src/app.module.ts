@@ -36,6 +36,8 @@ import { ProjectAssignmentsController } from './modules/workforce/project-assign
 import { ProjectAssignmentsService } from './modules/workforce/project-assignments/project-assignments.service.js';
 import { ProjectsController } from './modules/workforce/projects/projects.controller.js';
 import { ProjectsService } from './modules/workforce/projects/projects.service.js';
+import { ShiftConfigurationsController } from './modules/workforce/shift-configurations/shift-configurations.controller.js';
+import { ShiftConfigurationsService } from './modules/workforce/shift-configurations/shift-configurations.service.js';
 
 @Module({
   imports: [
@@ -55,6 +57,7 @@ import { ProjectsService } from './modules/workforce/projects/projects.service.j
     EmployeesController,
     ProjectsController,
     ProjectAssignmentsController,
+    ShiftConfigurationsController,
   ],
   providers: [
     AppService,
@@ -78,10 +81,12 @@ import { ProjectsService } from './modules/workforce/projects/projects.service.j
     { provide: ACTIVATION_DELIVERY, useFactory: createActivationDelivery },
     BusinessAuditService,
     EmployeesService,
-    // SP-08: projects (minimal slice, no shift configuration yet).
+    // SP-08: projects (name + status).
     ProjectsService,
     // SP-09: month-scoped project assignments (create/read slice).
     ProjectAssignmentsService,
+    // SP-08b: month-versioned project shift configuration (ADR-0003).
+    ShiftConfigurationsService,
     // Business "current month" rules read the time here (company time zone, never UTC).
     { provide: WALL_CLOCK, useValue: systemWallClock },
   ],

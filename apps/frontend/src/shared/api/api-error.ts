@@ -37,7 +37,11 @@ export type KnownErrorCode =
   | 'INVALID_MONTH_START'
   | 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH'
   | 'PROJECT_ASSIGNMENT_ALREADY_EXISTS'
-  | 'PROJECT_ASSIGNMENT_CONFLICT';
+  | 'PROJECT_ASSIGNMENT_CONFLICT'
+  // SP-08b shift configuration (approved backend catalogue). SHIFT_CONFIGURATION_MISSING
+  // is reserved for duty creation (SP-11) and deliberately NOT known here.
+  | 'SHIFT_CONFIGURATION_INVALID'
+  | 'SHIFT_CONFIGURATION_CONFLICT';
 
 export type ApiErrorKind = 'http' | 'network' | 'invalid-response';
 
@@ -90,6 +94,8 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   EMPLOYEE_NOT_EMPLOYED_FOR_MONTH: 409,
   PROJECT_ASSIGNMENT_ALREADY_EXISTS: 409,
   PROJECT_ASSIGNMENT_CONFLICT: 409,
+  SHIFT_CONFIGURATION_INVALID: 400,
+  SHIFT_CONFIGURATION_CONFLICT: 409,
 };
 
 const POINTER_PATTERN = /^#(?:\/(?:[A-Za-z0-9_-]|~[01])+)+$/;
@@ -225,7 +231,7 @@ const EMPLOYEE_ERROR_TEXT: Partial<Record<string, { title: string; description: 
   },
   PROJECT_INACTIVE: {
     title: 'Projekt ist inaktiv',
-    description: 'Für ein inaktives Projekt sind keine neuen Zuordnungen möglich. Reaktivieren Sie das Projekt zuerst oder laden Sie die Ansicht neu.',
+    description: 'Für ein inaktives Projekt sind keine neuen Zuordnungen und keine Änderungen der Schichtzeiten möglich. Reaktivieren Sie das Projekt zuerst oder laden Sie die Ansicht neu.',
   },
   // SP-09 month assignments.
   PROJECT_ASSIGNMENT_CONFLICT: {
@@ -243,6 +249,15 @@ const EMPLOYEE_ERROR_TEXT: Partial<Record<string, { title: string; description: 
   INVALID_MONTH_START: {
     title: 'Monat ungültig',
     description: 'Bitte wählen Sie einen gültigen Kalendermonat.',
+  },
+  // SP-08b shift configuration.
+  SHIFT_CONFIGURATION_INVALID: {
+    title: 'Schichtzeiten nicht zulässig',
+    description: 'Beginn und Ende müssen sich unterscheiden, und eine Tagschicht endet am selben Tag. Schichtzeiten vergangener Monate können nicht geändert werden. Es wurde nichts gespeichert.',
+  },
+  SHIFT_CONFIGURATION_CONFLICT: {
+    title: 'Schichtzeiten derzeit nicht änderbar',
+    description: 'Die Schichtzeiten können im Moment nicht geändert werden, weil die Änderung bestehende Planungen betreffen könnte. Es wurde nichts gespeichert.',
   },
 };
 

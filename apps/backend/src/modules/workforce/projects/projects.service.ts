@@ -9,7 +9,8 @@
  *
  * API v1 exposes name + ACTIVE/INACTIVE only (owner decision 26.10.2026).
  * INACTIVE blocks new month assignments; history stays readable (Phase 8.4
- * D-8.4-12). Shift configuration is not part of this slice.
+ * D-8.4-12). The shift configuration is ShiftConfigurationsService (SP-08b);
+ * the FOR NO KEY UPDATE lock below also serializes against its writes.
  */
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../../database/database.service.js';

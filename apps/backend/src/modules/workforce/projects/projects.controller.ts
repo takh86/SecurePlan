@@ -8,7 +8,8 @@ import { CreateProjectDto, ListProjectsQueryDto, UpdateProjectDto } from './dto/
 import { ProjectsService } from './projects.service.js';
 
 /**
- * SP-08 project administration (minimal slice: no shift configuration yet).
+ * SP-08 project administration (name + status; the shift configuration is
+ * ShiftConfigurationsController, SP-08b).
  * COMPANY_ADMIN of the session's own company only. Origin, session, CSRF
  * (unsafe methods) and the live role are enforced by the global
  * AccessControlGuard; tenant scope and 404 concealment in ProjectsService SQL.

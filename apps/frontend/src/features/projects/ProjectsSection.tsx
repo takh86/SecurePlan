@@ -8,26 +8,28 @@ import { createEmployeesApi } from '../employees/employees-api';
 // Shared admin list/form/card styles (introduced with SP-07).
 import '../employees/Employees.css';
 import { createProjectAssignmentsApi } from './project-assignments-api';
-import type { AssignmentApis } from './ProjectAssignmentsPanel';
 import { ProjectCreatePage } from './ProjectCreatePage';
-import { ProjectDetailPage } from './ProjectDetailPage';
+import { ProjectDetailPage, type ProjectDetailApis } from './ProjectDetailPage';
 import { ProjectsListPage } from './ProjectsListPage';
 import { createProjectsApi } from './projects-api';
+import { createShiftConfigurationApi } from './shift-configuration-api';
 import './Projects.css';
 
 type SectionProps = { route: AppRoute; api: SessionApi; clock?: Clock };
 
 /**
- * SP-08/SP-09 admin area `/projekte`: list, create (`/neu`) and detail with
- * the month assignment (`/:id` = current month, `/:id/:month` with YYYY-MM).
+ * SP-08/SP-08b/SP-09 admin area `/projekte`: list, create (`/neu`) and detail
+ * with the month-scoped shift configuration and assignment (`/:id` = current
+ * month, `/:id/:month` with YYYY-MM).
  * Only real API data; the server enforces COMPANY_ADMIN and tenant scope.
  */
 export function ProjectsSection({ route, api, clock = systemClock }: SectionProps) {
-  const apis = useMemo<AssignmentApis>(
+  const apis = useMemo<ProjectDetailApis>(
     () => ({
       projects: createProjectsApi(api),
       employees: createEmployeesApi(api),
       assignments: createProjectAssignmentsApi(api),
+      shiftConfigurations: createShiftConfigurationApi(api),
     }),
     [api],
   );
@@ -53,7 +55,7 @@ function sameProjectPage(previous: string, next: string): boolean {
   return before !== undefined && before !== 'neu' && before === DETAIL_PATH.exec(next)?.[1];
 }
 
-function DetailRoute({ basePath, apis, clock }: { basePath: string; apis: AssignmentApis; clock: Clock }) {
+function DetailRoute({ basePath, apis, clock }: { basePath: string; apis: ProjectDetailApis; clock: Clock }) {
   const { projectId = '', month } = useParams();
   // A new id is a new page: no state carries over from the previous record.
   return (

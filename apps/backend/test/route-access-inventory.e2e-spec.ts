@@ -175,12 +175,15 @@ describe('SP-06 — runtime route access inventory', () => {
         expect({ route: route.key, roles: route.roles }).toEqual({ route: route.key, roles: ['COMPANY_ADMIN'] });
       }
 
-      // SP-08: project administration is COMPANY_ADMIN-only, on every route.
+      // SP-08/SP-08b: project administration and the project shift configuration
+      // are COMPANY_ADMIN-only, on every route; the shift configuration has no POST/DELETE.
       const projectRoutes = handlers.filter((h) => h.key.includes(' /api/v1/projects'));
       expect(projectRoutes.map((h) => h.key)).toEqual([
         'GET /api/v1/projects',
         'GET /api/v1/projects/:projectId',
+        'GET /api/v1/projects/:projectId/shift-configuration',
         'PATCH /api/v1/projects/:projectId',
+        'PATCH /api/v1/projects/:projectId/shift-configuration',
         'POST /api/v1/projects',
       ]);
       for (const route of projectRoutes) {
