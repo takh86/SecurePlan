@@ -3,7 +3,8 @@ import { ApiError } from '../../shared/api/api-error';
 import type { ReadSource } from '../../shared/data/data-source';
 import { useReadSource } from '../../shared/data/use-read-source';
 import type { Clock } from '../../shared/time/clock';
-import { currentMonth, formatMonthLabel, type MonthKey } from '../../shared/time/month';
+import { isCertainlyPastMonth } from '../../shared/time/company-month';
+import { formatMonthLabel, type MonthKey } from '../../shared/time/month';
 import { ApiErrorAlert } from '../../shared/ui/ApiErrorAlert';
 import { StatusBadge } from '../../shared/ui/StatusBadge';
 import { EmptyState, ErrorState, LoadingState } from '../../shared/ui/ViewStates';
@@ -62,11 +63,12 @@ export function ShiftConfigurationSection({ project, month, api, clock, onUnsave
   const editButton = useRef<HTMLButtonElement>(null);
   const returnFocusToEdit = useRef(false);
   const monthLabel = formatMonthLabel(month);
-  // The browser's month is only a hint; the server decides in the company time zone.
+  // Read-only only for months past in EVERY time zone (company zone unknown to
+  // the client); at a month boundary the server decides in the company zone.
   const readOnlyReason =
     project.status !== 'ACTIVE'
       ? 'Das Projekt ist inaktiv. Schichtzeiten können nur angesehen werden; reaktivieren Sie das Projekt, um sie zu ändern.'
-      : month < currentMonth(clock)
+      : isCertainlyPastMonth(month, clock())
         ? `${monthLabel} liegt in der Vergangenheit. Schichtzeiten vergangener Monate können nicht geändert werden.`
         : null;
 
