@@ -1,5 +1,5 @@
-import { useRef, useState, type FormEvent } from 'react';
-import { BrowserRouter } from 'react-router';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { RouterProvider, createBrowserRouter } from 'react-router';
 import { ApiError, parseApiError } from './shared/api/api-error';
 import { ApiErrorAlert } from './shared/ui/ApiErrorAlert';
 import { SessionRoot } from './app/SessionRoot';
@@ -216,14 +216,34 @@ function ActivationScreen() {
   );
 }
 
+type AppRouter = ReturnType<typeof createBrowserRouter>;
+
+/**
+ * Data router (needed for navigation blocking, e.g. unsaved shift times). The
+ * existing route tree stays unchanged below ONE splat route as descendant
+ * <Routes>. One router per mount: created in an effect and disposed on
+ * unmount, so StrictMode's probe unmount cannot leave a disposed router in use.
+ */
+function AppRouterRoot() {
+  const [router, setRouter] = useState<AppRouter | null>(null);
+
+  useEffect(() => {
+    const created = createBrowserRouter([{ path: '*', element: <SessionRoot /> }]);
+    // Deliberate: the router is an external object with a history listener. A
+    // useState/useMemo initializer runs twice under StrictMode and would leak an
+    // undisposed router; the effect pairs every creation with dispose().
+    // oxlint-disable-next-line react/set-state-in-effect
+    setRouter(created);
+    return () => created.dispose();
+  }, []);
+
+  return router ? <RouterProvider router={router} /> : null;
+}
+
 export default function App() {
   if (window.location.pathname === '/activate') {
     return <ActivationScreen />;
   }
 
-  return (
-    <BrowserRouter>
-      <SessionRoot />
-    </BrowserRouter>
-  );
+  return <AppRouterRoot />;
 }
