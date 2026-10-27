@@ -371,6 +371,7 @@ function promptText(state: ShiftEditState, monthLabel: string) {
  * blocker. Exactly one decision per held navigation: proceed() or reset().
  */
 function UnsavedShiftsPrompt({ monthLabel, editState, onLeave, onStay }: UnsavedShiftsPromptProps) {
+  const container = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
   const decided = useRef(false);
@@ -380,8 +381,17 @@ function UnsavedShiftsPrompt({ monthLabel, editState, onLeave, onStay }: Unsaved
 
   useEffect(() => {
     // Remember the control that triggered the navigation (e.g. the month link).
+    // Idempotent: StrictMode runs this twice, and the second run must not
+    // capture the already focused prompt heading.
     const previous = document.activeElement;
-    returnFocus.current = previous instanceof HTMLElement && previous !== document.body ? previous : null;
+    if (
+      returnFocus.current === null &&
+      previous instanceof HTMLElement &&
+      previous !== document.body &&
+      !container.current?.contains(previous)
+    ) {
+      returnFocus.current = previous;
+    }
     heading.current?.focus();
   }, []);
 
@@ -400,7 +410,7 @@ function UnsavedShiftsPrompt({ monthLabel, editState, onLeave, onStay }: Unsaved
   }
 
   return (
-    <div className="employees-card employees-confirm" role="group" aria-labelledby={titleId}>
+    <div ref={container} className="employees-card employees-confirm" role="group" aria-labelledby={titleId}>
       <h2 id={titleId} ref={heading} tabIndex={-1}>{copy.title}</h2>
       <p>{copy.text}</p>
       <div className="employee-form__actions">

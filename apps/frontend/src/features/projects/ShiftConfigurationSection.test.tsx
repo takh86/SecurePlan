@@ -527,6 +527,18 @@ describe('SP-08b — navigation blocking (data router, useBlocker)', () => {
     expect(server.state.shiftVersions.map((version) => version.month)).toEqual(['2026-12-01']);
   });
 
+  it('under StrictMode (double effects, as on the dev server) "Weiter bearbeiten" still returns focus to the triggering link', async () => {
+    renderProjects(PATH, fakeCompany().handler, undefined, { strict: true });
+    const user = userEvent.setup();
+    await dirtyEditor(user);
+    const next = screen.getByRole('link', { name: 'Nächster Monat: Januar 2027' });
+    await user.click(next);
+    await waitFor(() => expect(document.activeElement).toBe(within(prompt()!).getByRole('heading', { name: 'Ungespeicherte Schichtzeiten' })));
+    await user.click(within(prompt()!).getByRole('button', { name: 'Weiter bearbeiten' }));
+    expect(prompt()).toBeNull();
+    expect(document.activeElement).toBe(next);
+  });
+
   it('the prompt is keyboard operable: focus starts on its heading and returns to the triggering link', async () => {
     renderProjects(PATH, fakeCompany().handler);
     const user = userEvent.setup();
