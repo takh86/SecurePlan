@@ -95,7 +95,10 @@ export class ProjectAssignmentsService {
 
   /**
    * Error precedence: 404 employee -> 404 project -> 409 EMPLOYEE_INACTIVE ->
-   * 409 PROJECT_INACTIVE -> 409 existing assignment for that month.
+   * 409 PROJECT_INACTIVE -> 409 EMPLOYEE_NOT_EMPLOYED_FOR_MONTH (owner decision
+   * F-1: documented employment must overlap the target month on at least one day,
+   * for past, current and future months; missing start = no evidence) ->
+   * 409 existing assignment for that month.
    */
   async create(
     tenant: TenantContext,
@@ -107,8 +110,11 @@ export class ProjectAssignmentsService {
     return this.database.withTransaction(async (client) => {
       await assertActorInTransaction(client, tenant, ADMIN_ONLY);
       const employee = requireRow(
-        await client.query<{ status: string }>(
-          `SELECT status FROM employees
+        await client.query<{ status: string; employment_start: string | null; employment_end: string | null }>(
+          `SELECT status,
+                  to_char(employment_start, 'YYYY-MM-DD') AS employment_start,
+                  to_char(employment_end, 'YYYY-MM-DD') AS employment_end
+           FROM employees
            WHERE company_id = $1 AND id = $2
            FOR NO KEY UPDATE`,
           [tenant.companyId, dto.employeeId],
@@ -125,6 +131,9 @@ export class ProjectAssignmentsService {
       if (employee.status !== 'ACTIVE') throw new ConflictException({ code: 'EMPLOYEE_INACTIVE' });
       // ARCHIVED projects are invisible (404 above, ADR-0002 addendum); INACTIVE blocks.
       if (project.status !== 'ACTIVE') throw new ConflictException({ code: 'PROJECT_INACTIVE' });
+      if (!employmentCovers(employee, dto.monthStart)) {
+        throw new ConflictException({ code: 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH' });
+      }
 
       // Compared as uuid in SQL: the DTO accepts any letter case for ids.
       const existing = await client.query<{ same_project: boolean }>(

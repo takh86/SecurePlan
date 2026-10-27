@@ -36,6 +36,8 @@ const RESPONSE_KEYS = ['employeeId', 'id', 'monthStart', 'projectId'];
 const NOV = '2026-11-01';
 const DEC = '2026-12-01';
 const JAN = '2027-01-01';
+// Explicit documented employment (F-1): covers all months used by the fixtures.
+const EMPLOYED = { start: '2026-01-01' };
 
 let pool: TestPool | undefined;
 let sessions: SessionService;
@@ -108,8 +110,8 @@ beforeEach(async () => {
   createdCompanies.push(tenantA.companyId);
   tenantB = await createSyntheticTenant(db(), 'SP09 Tenant B');
   createdCompanies.push(tenantB.companyId);
-  employeeA = await createSyntheticEmployee(db(), tenantA.employee, 'A-001');
-  employeeB = await createSyntheticEmployee(db(), tenantB.employee, 'B-001');
+  employeeA = await createSyntheticEmployee(db(), tenantA.employee, 'A-001', EMPLOYED);
+  employeeB = await createSyntheticEmployee(db(), tenantB.employee, 'B-001', EMPLOYED);
   north = await createSyntheticProject(db(), tenantA.companyId, 'Objekt Nord');
   south = await createSyntheticProject(db(), tenantA.companyId, 'Objekt Süd');
   projectB = await createSyntheticProject(db(), tenantB.companyId, 'Objekt B');
@@ -286,6 +288,61 @@ describe('SP-09 — create and read', () => {
   });
 });
 
+describe('SP-09 — F-1 employment must overlap the target month (owner decision)', () => {
+  async function employed(code: string, start: string | null, end: string | null = null) {
+    return createSyntheticEmployee(
+      db(), await createSyntheticAccount(db(), tenantA.companyId, 'EMPLOYEE'), code, { start, end },
+    );
+  }
+
+  it.each([
+    ['start after the target month', '2026-12-01', null, NOV, 409],
+    ['start on the last day of the month', '2026-11-30', null, NOV, 201],
+    ['end on the first day of the month', '2026-01-01', '2026-11-01', NOV, 201],
+    ['end before the target month', '2026-01-01', '2026-10-31', NOV, 409],
+    ['no employment start (no evidence)', null, null, NOV, 409],
+    ['no employment start, with an end date', null, '2027-12-31', NOV, 409],
+    ['valid far-future month (no artificial limit)', '2026-01-01', null, '2031-05-01', 201],
+    ['historical month before employment', '2026-06-01', null, '2025-01-01', 409],
+  ] as const)('%s -> %i', async (_label, start, end, month, status) => {
+    const person = await employed(`F1-${randomUUID().slice(0, 6)}`, start, end);
+    const before = await tenantState(tenantA.companyId);
+    const response = await assign(person, north, month).expect(status);
+    if (status === 409) {
+      expect(response.body.code).toBe('EMPLOYEE_NOT_EMPLOYED_FOR_MONTH');
+      expect(await tenantState(tenantA.companyId)).toEqual(before); // no row, no audit
+    } else {
+      expect(await assignmentCount(tenantA.companyId)).toBe(1);
+    }
+  });
+
+  it('precedence: inactive employee/project and 404 win over the employment check; the employment check wins over existing assignments', async () => {
+    const unemployed = await employed('F1-NOEMP', null);
+    const unemployedInactive = await employed('F1-INACT', null);
+    await db().query("UPDATE employees SET status = 'DEACTIVATED', deactivated_at = now() WHERE id = $1", [unemployedInactive.employeeId]);
+    const inactiveProject = await createSyntheticProject(db(), tenantA.companyId, 'Objekt Inaktiv', 'INACTIVE');
+    const archived = await createSyntheticProject(db(), tenantA.companyId, 'Objekt Archiv', 'ARCHIVED');
+
+    expect((await assign(unemployedInactive, north, NOV).expect(409)).body.code).toBe('EMPLOYEE_INACTIVE');
+    expect((await assign(unemployed, inactiveProject, NOV).expect(409)).body.code).toBe('PROJECT_INACTIVE');
+    expect((await assign(unemployed, archived, NOV).expect(404)).body.code).toBe('RESOURCE_NOT_FOUND');
+    expect((await assign(employeeB, north, NOV).expect(404)).body.code).toBe('RESOURCE_NOT_FOUND'); // foreign employee
+    expect((await assign(unemployed, projectB, NOV).expect(404)).body.code).toBe('RESOURCE_NOT_FOUND'); // foreign project
+
+    // Existing assignment (inserted bypassing the app) + employment gap: employment check comes first.
+    await db().query(
+      'INSERT INTO project_assignments (company_id, employee_id, project_id, planning_month) VALUES ($1, $2, $3, $4::date)',
+      [tenantA.companyId, unemployed.employeeId, north.projectId, NOV],
+    );
+    expect((await assign(unemployed, north, NOV).expect(409)).body.code).toBe('EMPLOYEE_NOT_EMPLOYED_FOR_MONTH');
+    expect((await assign(unemployed, south, NOV).expect(409)).body.code).toBe('EMPLOYEE_NOT_EMPLOYED_FOR_MONTH');
+    // Employed person: existing 409 codes unchanged.
+    await assign(employeeA, north, NOV).expect(201);
+    expect((await assign(employeeA, north, NOV).expect(409)).body.code).toBe('PROJECT_ASSIGNMENT_ALREADY_EXISTS');
+    expect((await assign(employeeA, south, NOV).expect(409)).body.code).toBe('PROJECT_ASSIGNMENT_CONFLICT');
+  });
+});
+
 describe('SP-09 — tenant isolation', () => {
   it('a foreign employee or project answers exactly like an unknown id (404); nothing is written anywhere', async () => {
     const beforeA = await tenantState(tenantA.companyId);
@@ -381,7 +438,7 @@ describe('SP-09 — validation', () => {
 describe('SP-09 — list order and paging', () => {
   it('orders by employee code, narrows by project/employee and pages with consistent totals', async () => {
     const extra = async (code: string) =>
-      createSyntheticEmployee(db(), await createSyntheticAccount(db(), tenantA.companyId, 'EMPLOYEE'), code);
+      createSyntheticEmployee(db(), await createSyntheticAccount(db(), tenantA.companyId, 'EMPLOYEE'), code, EMPLOYED);
     const c3 = await extra('C-003');
     const b2 = await extra('B-002');
     await assign(c3, south, NOV).expect(201);

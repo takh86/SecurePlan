@@ -135,7 +135,7 @@ beforeAll(() => {
 beforeEach(async () => {
   tenantA = await createSyntheticTenant(db(), 'SP09 Concurrency');
   createdCompanies.push(tenantA.companyId);
-  employeeA = await createSyntheticEmployee(db(), tenantA.employee, 'K-001');
+  employeeA = await createSyntheticEmployee(db(), tenantA.employee, 'K-001', { start: '2026-01-01' });
   north = await createSyntheticProject(db(), tenantA.companyId, 'Objekt Nord');
   south = await createSyntheticProject(db(), tenantA.companyId, 'Objekt Süd');
   adminA = await createSyntheticSession(sessions, tenantA.admin);
@@ -239,6 +239,32 @@ describe('SP-09 — concurrent lifecycle changes are observed, not bypassed', ()
     expect(response.status).toBe(409);
     expect(response.body.code).toBe('EMPLOYEE_INACTIVE');
     expect(await rows()).toEqual([]);
+  });
+
+  it.each([
+    ['moved after the month', "employment_start = '2027-01-01'", 409, 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH'],
+    ['ended before the month', "employment_end = '2026-10-31'", 409, 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH'],
+    ['widened to cover the month (was start-less)', "employment_start = '2026-01-01'", 201, undefined],
+  ] as const)('F-1: employment period %s while the create waits is observed under the row lock', async (_label, set, status, code) => {
+    if (status === 201) {
+      await db().query('UPDATE employees SET employment_start = NULL WHERE id = $1', [employeeA.employeeId]);
+    }
+    const change = await begin();
+    await change.client.query(`UPDATE employees SET ${set} WHERE id = $1`, [employeeA.employeeId]);
+    const attempt = assign(adminA, north);
+    await waitForBlocked(change.pid);
+    await finish(change, 'COMMIT');
+
+    const response = await attempt;
+    expect(response.status).toBe(status);
+    if (code) {
+      expect(response.body.code).toBe(code);
+      expect(await rows()).toEqual([]);
+      expect(await auditCount()).toBe(0);
+    } else {
+      expect(await rows()).toHaveLength(1);
+      expect(await auditCount()).toBe(1);
+    }
   });
 
   it('a project switched to INACTIVE while the create waits yields 409 PROJECT_INACTIVE and no row', async () => {

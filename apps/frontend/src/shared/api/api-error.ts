@@ -35,6 +35,7 @@ export type KnownErrorCode =
   | 'PROJECT_INACTIVE'
   // SP-09 month assignments (approved backend catalogue).
   | 'INVALID_MONTH_START'
+  | 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH'
   | 'PROJECT_ASSIGNMENT_ALREADY_EXISTS'
   | 'PROJECT_ASSIGNMENT_CONFLICT';
 
@@ -86,6 +87,7 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   PROJECT_NAME_ALREADY_EXISTS: 409,
   PROJECT_INACTIVE: 409,
   INVALID_MONTH_START: 400,
+  EMPLOYEE_NOT_EMPLOYED_FOR_MONTH: 409,
   PROJECT_ASSIGNMENT_ALREADY_EXISTS: 409,
   PROJECT_ASSIGNMENT_CONFLICT: 409,
 };
@@ -229,6 +231,10 @@ const EMPLOYEE_ERROR_TEXT: Partial<Record<string, { title: string; description: 
   PROJECT_ASSIGNMENT_CONFLICT: {
     title: 'Bereits einem anderen Projekt zugeordnet',
     description: 'Diese Person ist im gewählten Monat bereits einem anderen Projekt zugeordnet. Je Kalendermonat ist nur ein Projekt möglich; die Zuordnung wurde nicht geändert.',
+  },
+  EMPLOYEE_NOT_EMPLOYED_FOR_MONTH: {
+    title: 'Nicht beschäftigt in diesem Monat',
+    description: 'Der dokumentierte Beschäftigungszeitraum dieser Person deckt den gewählten Monat nicht ab oder es ist kein Beschäftigungsbeginn hinterlegt. Bitte Beschäftigungsdaten prüfen oder einen anderen Monat wählen.',
   },
   PROJECT_ASSIGNMENT_ALREADY_EXISTS: {
     title: 'Zuordnung besteht bereits',

@@ -123,6 +123,7 @@ describe('SP-09 — month assignment (UX A09, real API source)', () => {
     ['PROJECT_ASSIGNMENT_ALREADY_EXISTS', 409, 'Zuordnung besteht bereits'],
     ['EMPLOYEE_INACTIVE', 409, 'Bereits deaktiviert'],
     ['PROJECT_INACTIVE', 409, 'Projekt ist inaktiv'],
+    ['EMPLOYEE_NOT_EMPLOYED_FOR_MONTH', 409, 'Nicht beschäftigt in diesem Monat'],
     ['RESOURCE_NOT_FOUND', 404, 'Nicht gefunden'],
   ] as const)('shows the approved %s error safely', async (code, status, title) => {
     const server = company();

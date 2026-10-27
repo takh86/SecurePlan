@@ -51,3 +51,15 @@ Oberfläche für Korrekturen, Entfernen von Zuordnungen (der Vertrag sieht kein 
 ## Restrisiko Sitzungsablauf (kein Polling)
 
 Es gibt bewusst kein periodisches `GET /me`, weil jeder Aufruf die Leerlaufzeit der Sitzung verlängern würde. Beibehalten sind die Prüfung beim Fokus (bfcache-Rückkehr), bei Navigation und bei jedem Request sowie die Cross-Tab-Signale für Logout und Login. Verbleibend: Ein Tab ohne jede Aktion zeigt nach einem serverseitigen Ablauf der Sitzung weiter seine zuletzt geladenen Daten, bis die nächste Aktion eine 401 liefert. Schreibzugriffe und Lesezugriffe sind serverseitig weiterhin geschützt.
+
+## F-1: Beschäftigung muss den Zielmonat überlappen (Owner-Entscheidung Option A, 27.10.2026)
+
+Betrifft `POST /api/v1/project-assignments`. `PATCH` bleibt unverändert (Regeln siehe oben).
+
+- **Regel:** Ein dokumentierter Beschäftigungszeitraum (`employment_start`, `employment_end`) muss den Zielmonat an mindestens einem Kalendertag überlappen. Ein fehlender Beschäftigungsbeginn gilt als fehlender Nachweis. Die Regel gilt für historische, aktuelle und zukünftige Monate; für Zukunftsmonate gibt es kein künstliches Zeitlimit. Grenzfälle sind inklusiv: Beginn am Monatsletzten zählt, Ende am Monatsersten zählt.
+- **Begründung:** Eine Zuordnung ist Grundlage der späteren Planung. Ohne Beschäftigungsnachweis für den Monat dürfte die Person dort nicht eingeplant werden. Dieselbe Evidenzregel gilt bereits beim historischen Personenwechsel per PATCH.
+- **Fehlercode:** `409 Conflict`, `EMPLOYEE_NOT_EMPLOYED_FOR_MONTH`. Kein HTTP 422; kein anderer Code wurde umdefiniert. Der Code steht im Fehlerkatalog (`error-contract.ts`) und in der Frontend-Fehlerbehandlung des Zuordnungsformulars.
+- **Prüfungsreihenfolge:** (1) Mitarbeiter 404 (unbekannt oder fremder Tenant), (2) Projekt 404 (unbekannt, fremder Tenant oder ARCHIVED), (3) `EMPLOYEE_INACTIVE`, (4) `PROJECT_INACTIVE`, (5) `EMPLOYEE_NOT_EMPLOYED_FOR_MONTH`, (6) `PROJECT_ASSIGNMENT_ALREADY_EXISTS` bzw. `PROJECT_ASSIGNMENT_CONFLICT`. Die Beschäftigungsdaten werden in derselben gesperrten Mitarbeiter-Abfrage gelesen; die Ablehnung erfolgt vor INSERT und Audit.
+- **Auswirkung auf optionale Beschäftigungsdaten:** `employment_start` ist für Stammdaten weiterhin optional. Wer keinen Beschäftigungsbeginn hat, kann aber keinem Monat zugeordnet werden, bis der Beginn gepflegt ist.
+- **Bestand:** Keine rückwirkende Migration und keine Neubewertung bestehender Zuordnungen.
+- **Offen (formell):** Die privaten Phase-8-Baselines (API-Vertrag, Fehlerkatalog, Validierungs- und Testvertrag) müssen diese Entscheidung formell fortschreiben. Sie wurden hier nicht verändert.

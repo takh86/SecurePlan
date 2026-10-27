@@ -133,8 +133,10 @@ beforeAll(() => {
 beforeEach(async () => {
   tenant = await createSyntheticTenant(db(), 'SP09 PATCH Concurrency');
   createdCompanies.push(tenant.companyId);
-  mira = await createSyntheticEmployee(db(), tenant.employee, 'K-001');
-  jonas = await createSyntheticEmployee(db(), await createSyntheticAccount(db(), tenant.companyId, 'EMPLOYEE'), 'K-002');
+  mira = await createSyntheticEmployee(db(), tenant.employee, 'K-001', { start: '2026-01-01' });
+  jonas = await createSyntheticEmployee(
+    db(), await createSyntheticAccount(db(), tenant.companyId, 'EMPLOYEE'), 'K-002', { start: '2026-01-01' },
+  );
   north = await createSyntheticProject(db(), tenant.companyId, 'Objekt Nord');
   south = await createSyntheticProject(db(), tenant.companyId, 'Objekt Süd');
   admins = await Promise.all([1, 2, 3].map(() => createSyntheticSession(sessions, tenant.admin)));
