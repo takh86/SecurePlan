@@ -76,11 +76,17 @@ const emptyProjects = json(200, { items: [], pagination: { page: 1, pageSize: 25
 const MONTH_ASSIGNMENTS = '/api/v1/project-assignments?monthStart=2026-12-01&pageSize=100';
 const emptyPage = json(200, { items: [], pagination: { page: 1, pageSize: 100, totalItems: 0, totalPages: 0 } });
 
-function enqueueMonthReads(visits: number) {
+// SP-08b: the detail page also reads the shift configuration effective for the month.
+const shiftConfiguration = (projectId: string, monthStart: string) =>
+  `${PROJECTS}/${projectId}/shift-configuration?effectiveForMonth=${monthStart}`;
+const noShifts = (projectId: string) => json(200, { projectId, effectiveFromMonth: null, shifts: [] });
+
+function enqueueMonthReads(visits: number, projectId: string) {
   for (let visit = 0; visit < visits; visit += 1) {
     enqueue(queues, MONTH_ASSIGNMENTS, emptyPage);
     enqueue(queues, `${EMPLOYEES}?pageSize=100`, emptyPage);
     enqueue(queues, `${PROJECTS}?pageSize=100`, emptyPage);
+    enqueue(queues, shiftConfiguration(projectId, '2026-12-01'), noShifts(projectId));
   }
 }
 
@@ -675,8 +681,8 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       // Each visit of a page reads again: detail, list, detail (Back), list (Forward).
       enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project), json(200, project));
       enqueue(queues, PROJECTS, emptyProjects, emptyProjects);
-      // SP-09: every detail visit also reads the month assignment and its pool (December 2026).
-      enqueueMonthReads(2);
+      // SP-09/SP-08b: every detail visit also reads the month assignment, its pool and the shift times (December 2026).
+      enqueueMonthReads(2, project.id);
       enqueue(queues, '/api/v1/auth/logout', noContent);
       const fetchMock = stubApi(queues);
       renderAt(detailPath);
@@ -730,6 +736,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       enqueue(queues, '/api/v1/project-assignments?monthStart=2027-01-01&pageSize=100', problem(401, 'SESSION_EXPIRED'));
       enqueue(queues, `${EMPLOYEES}?pageSize=100`, emptyPage);
       enqueue(queues, `${PROJECTS}?pageSize=100`, emptyPage);
+      enqueue(queues, shiftConfiguration(project.id, '2027-01-01'), noShifts(project.id));
       stubApi(queues);
       renderAt(monthPath);
 
@@ -755,6 +762,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       enqueue(queues, `${EMPLOYEES}?pageSize=100`, pageOf([employee]), pageOf([employee]));
       enqueue(queues, `${PROJECTS}?pageSize=100`, pageOf([project]), pageOf([project]));
       enqueue(queues, '/api/v1/project-assignments', json(201, created));
+      enqueue(queues, shiftConfiguration(project.id, '2027-01-01'), noShifts(project.id));
       const fetchMock = stubApi(queues);
       renderAt(monthPath);
 

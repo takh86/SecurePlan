@@ -79,3 +79,69 @@
     grid-template-areas: 'previous month next';
   }
 }
+
+/* SP-08b shift configuration ("Schichtzeiten"). */
+.shift-config__form h3 {
+  margin: 0;
+  color: var(--sp-color-ink);
+  font-size: 18px;
+}
+
+.shift-config__notice {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--sp-tone-info-fg);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-tone-info-bg);
+  color: var(--sp-tone-info-fg);
+}
+
+/* Suggested values are never mistaken for saved data. */
+.shift-config__notice--suggestion {
+  border-color: var(--sp-tone-attention-fg);
+  background: var(--sp-tone-attention-bg);
+  color: var(--sp-tone-attention-fg);
+}
+
+.shift-config__unsaved {
+  margin: 0;
+}
+
+.shift-config__kind {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--sp-color-border);
+  border-radius: var(--sp-radius-small);
+}
+
+.shift-config__kind legend {
+  padding: 0 4px;
+  color: var(--sp-color-ink);
+  font-weight: 650;
+}
+
+.shift-config__toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.shift-config__toggle input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+
+.shift-config__toggle input[aria-invalid='true'] {
+  outline: 2px solid var(--sp-color-danger);
+  outline-offset: 2px;
+}
+
+.shift-config__toggle label {
+  color: var(--sp-color-ink);
+  font-weight: 600;
+  cursor: pointer;
+}

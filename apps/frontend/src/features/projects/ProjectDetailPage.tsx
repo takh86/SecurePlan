@@ -1,5 +1,5 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Link, Navigate, useLocation } from 'react-router';
+import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router';
 import { PageFrame } from '../../app/PageFrame';
 import type { ReadSource } from '../../shared/data/data-source';
 import { useReadSource } from '../../shared/data/use-read-source';
@@ -13,15 +13,22 @@ import type { ProjectNotice } from './ProjectCreatePage';
 import { ProjectNameForm } from './ProjectNameForm';
 import { PROJECT_STATUS, type Project } from './project-types';
 import type { ProjectsApi } from './projects-api';
+import type { ShiftConfigurationApi } from './shift-configuration-api';
+import { ShiftConfigurationSection } from './ShiftConfigurationSection';
+
+export type ProjectDetailApis = AssignmentApis & { shiftConfigurations: ShiftConfigurationApi };
 
 type DetailProps = {
   projectId: string;
   /** Optional YYYY-MM route segment; absent means the clock's current month. */
   monthParam: string | undefined;
   basePath: string;
-  apis: AssignmentApis;
+  apis: ProjectDetailApis;
   clock: Clock;
 };
+
+/** A navigation held back because the shift times have unsaved changes. */
+type HeldNavigation = { to: string; trigger: HTMLElement };
 
 function noticeFromLocation(state: unknown): ProjectNotice | null {
   return typeof state === 'object' && state !== null && (state as { notice?: unknown }).notice === 'created'
@@ -46,6 +53,9 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
   const project = updated ?? (state.status === 'ready' ? state.data : null);
   const noticeRef = useRef<HTMLParagraphElement>(null);
   const [focusNotice, setFocusNotice] = useState<object | null>(null);
+  const navigate = useNavigate();
+  const [unsavedShifts, setUnsavedShifts] = useState(false);
+  const [held, setHeld] = useState<HeldNavigation | null>(null);
 
   // After a write the acting control may be gone: move focus to the confirmation message.
   useEffect(() => {
@@ -61,10 +71,34 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
     setFocusNotice({});
   }
 
+  /** Links inside this page never discard unsaved shift times silently. */
+  function guard(to: string) {
+    return (event: MouseEvent<HTMLAnchorElement>) => {
+      if (!unsavedShifts) return;
+      event.preventDefault();
+      setHeld({ to, trigger: event.currentTarget });
+    };
+  }
+
   return (
     <PageFrame title={project ? project.name : 'Projektdetails'}>
       <div className="employees employees--narrow">
-        <Link className="employees__back" to={basePath}>Zurück zur Übersicht</Link>
+        <Link className="employees__back" to={basePath} onClick={guard(basePath)}>Zurück zur Übersicht</Link>
+        {held && (
+          <UnsavedShiftsPrompt
+            monthLabel={formatMonthLabel(requestedMonth)}
+            onLeave={() => {
+              setHeld(null);
+              // A month step stays on this page: keep focus on the link that was used.
+              held.trigger.focus();
+              navigate(held.to);
+            }}
+            onStay={() => {
+              setHeld(null);
+              held.trigger.focus();
+            }}
+          />
+        )}
         {/* Always mounted, so screen readers announce new messages. */}
         <div role="status" aria-live="polite">
           {notice && <p ref={noticeRef} tabIndex={-1} className="employees__notice">{notice}</p>}
@@ -73,12 +107,20 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
           <>
             <MasterDataSection project={project} projects={projects} onChanged={changed} />
             <LifecycleSection project={project} projects={projects} onChanged={changed} />
-            <AssignmentSection
-              project={project}
+            <MonthSection
               month={requestedMonth}
               monthPath={(month) => `${basePath}/${encodeURIComponent(project.id)}/${month}`}
-              apis={apis}
+              guard={guard}
             />
+            <ShiftConfigurationSection
+              key={requestedMonth}
+              project={project}
+              month={requestedMonth}
+              api={apis.shiftConfigurations}
+              clock={clock}
+              onUnsavedChange={setUnsavedShifts}
+            />
+            <AssignmentSection project={project} month={requestedMonth} apis={apis} />
           </>
         ) : state.status === 'error' ? (
           <ErrorState
@@ -258,26 +300,30 @@ function LifecycleSection({ project, projects, onChanged }: SectionProps) {
   );
 }
 
-type AssignmentSectionProps = {
-  project: Project;
+type MonthSectionProps = {
   month: MonthKey;
   monthPath: (month: MonthKey) => string;
-  apis: AssignmentApis;
+  guard: (to: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
 };
 
-/** UX A09: the month bar stays mounted across month steps, so keyboard focus stays on the link. */
-function AssignmentSection({ project, month, monthPath, apis }: AssignmentSectionProps) {
+/**
+ * UX A09 month navigation, shared by "Schichtzeiten" and "Mitarbeiterzuordnung".
+ * The month bar stays mounted across month steps, so keyboard focus stays on the link.
+ */
+function MonthSection({ month, monthPath, guard }: MonthSectionProps) {
   const monthLabel = formatMonthLabel(month);
   const previous = addMonths(month, -1);
   const next = addMonths(month, 1);
   return (
-    <section className="employees-card" aria-labelledby="project-assignments-title">
-      <h2 id="project-assignments-title">Mitarbeiterzuordnung</h2>
+    <section className="employees-card" aria-labelledby="project-month-title">
+      <h2 id="project-month-title">Monat</h2>
+      <p className="employees-card__hint">Schichtzeiten und Mitarbeiterzuordnung gelten für den gewählten Monat.</p>
       <div className="assignments__monthbar">
         <h3 aria-live="polite">{monthLabel}</h3>
         <Link
           className="assignments__step assignments__step--previous"
           to={monthPath(previous)}
+          onClick={guard(monthPath(previous))}
           aria-label={`Vorheriger Monat: ${formatMonthLabel(previous)}`}
         >
           <span aria-hidden="true">‹</span>Vorheriger Monat
@@ -285,11 +331,60 @@ function AssignmentSection({ project, month, monthPath, apis }: AssignmentSectio
         <Link
           className="assignments__step assignments__step--next"
           to={monthPath(next)}
+          onClick={guard(monthPath(next))}
           aria-label={`Nächster Monat: ${formatMonthLabel(next)}`}
         >
           Nächster Monat<span aria-hidden="true">›</span>
         </Link>
       </div>
+    </section>
+  );
+}
+
+type UnsavedShiftsPromptProps = {
+  monthLabel: string;
+  onLeave: () => void;
+  onStay: () => void;
+};
+
+/** Inline confirmation (no browser dialog) before unsaved shift times are discarded. */
+function UnsavedShiftsPrompt({ monthLabel, onLeave, onStay }: UnsavedShiftsPromptProps) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  const titleId = useId();
+
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
+
+  return (
+    <div className="employees-card employees-confirm" role="group" aria-labelledby={titleId}>
+      <h2 id={titleId} ref={heading} tabIndex={-1}>Ungespeicherte Schichtzeiten</h2>
+      <p>
+        Die Schichtzeiten ab {monthLabel} sind noch nicht gespeichert oder das Speichern ist noch nicht bestätigt.
+        Wenn Sie die Ansicht jetzt wechseln, gehen die Änderungen verloren oder Sie sehen das Ergebnis nicht.
+      </p>
+      <div className="employee-form__actions">
+        <button type="button" className="employees-button employees-button--danger" onClick={onLeave}>
+          Änderungen verwerfen und wechseln
+        </button>
+        <button type="button" className="employees-button" onClick={onStay}>
+          Weiter bearbeiten
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type AssignmentSectionProps = {
+  project: Project;
+  month: MonthKey;
+  apis: AssignmentApis;
+};
+
+function AssignmentSection({ project, month, apis }: AssignmentSectionProps) {
+  return (
+    <section className="employees-card" aria-labelledby="project-assignments-title">
+      <h2 id="project-assignments-title">Mitarbeiterzuordnung</h2>
       <ProjectAssignmentsPanel key={month} project={project} month={month} apis={apis} />
     </section>
   );
