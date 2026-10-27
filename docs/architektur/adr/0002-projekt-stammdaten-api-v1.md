@@ -42,9 +42,10 @@ Ohne Entscheidung ist SP-08 nicht vertragskonform umsetzbar: Eine Pflichtadresse
 - **Datenbank:**
   - `UNIQUE (company_id, name)` und tenant-sicheres `UNIQUE (company_id, id)` als FK-Ziel.
   - Adresse, interne Kennung und Notiz werden nicht angelegt.
-- **ARCHIVED:**
+- **ARCHIVED (verbindliche Regel, gilt seit dem Nachtrag vom 26.10.2026):**
   - Der DB-CHECK erlaubt den Wert weiterhin (physisches Design), kein API-v1-Pfad schreibt ihn.
-  - Eine gespeicherte ARCHIVED-Zeile gilt als Serverdefekt und schlägt geschlossen fehl (500 ohne Details), statt still sichtbar oder änderbar zu sein.
+  - Eine gespeicherte ARCHIVED-Zeile ist über API v1 unsichtbar: Liste enthält sie nicht, Detail und Änderung liefern `404 RESOURCE_NOT_FOUND`, identisch zu einem unbekannten Projekt.
+  - **Historisch und überholt:** Die ursprüngliche Fassung dieser Entscheidung behandelte eine gespeicherte ARCHIVED-Zeile als Serverdefekt und ließ sie geschlossen fehlschlagen (HTTP 500 ohne Details). Diese Regel ist **kein** Vertragsverhalten mehr. Sie bleibt nur als nachvollziehbare Ausgangsentscheidung erhalten; Begründung und Ablösung stehen im Nachtrag (F-3).
 
 **Ausschlaggebender Grund:** Das Schema soll genau das abbilden, was der freigegebene API-Vertrag schreiben kann. Keine Pflichtspalte ohne Schreibpfad und keine Felder, Statuswerte oder Codes außerhalb des Vertrags.
 
@@ -69,8 +70,10 @@ Keine Schwächung. Tenant-Kontext bleibt ausschließlich serverseitig, alle Abfr
 ## Offene Folgepunkte
 
 - **SP-08 bleibt PARTIAL:** Die projektbezogene Schichtkonfiguration (TAG/NACHT-Zeiten) fehlt noch.
-- **Internes Amendment:** Die Abweichung ist zusätzlich in den internen Baselines nachzuziehen (DB-Design, UX).
-- **Offene UX-Frage:** Ein „Blocking Conflict“ beim Inaktivsetzen trotz zukünftiger Zuordnungen hat keinen API-Code. Bis zu einer Freigabe wird nichts blockiert.
+- **OPEN – Formelle interne Baseline-Nachführung:** Die Abweichung ist zusätzlich in den internen Baselines nachzuziehen (DB-Design, UX, API-Vertrag). Das ist noch nicht erfolgt und wird ohne Freigabe nicht entschieden.
+- **OPEN – Inaktivsetzen mit zukünftigen Zuordnungen:** Ein „Blocking Conflict“ beim Inaktivsetzen trotz zukünftiger Zuordnungen hat keinen API-Code. Das ist eine offene Produktentscheidung; bis zu einer Freigabe wird nichts blockiert.
+- **OPEN – Audit-Aktionskatalog:** Der Katalog der Audit-Aktionen ist nicht abschließend festgelegt. Das ist eine offene Produktentscheidung.
+- **SP-09-Abhängigkeit:** Das Verhalten beim Zuordnen zu ARCHIVED (siehe Nachtrag) ist ein vereinbarter Folgevertrag und wird erst durch PR #61 umgesetzt.
 
 ## Nachweis des Verständnisses
 
@@ -80,7 +83,7 @@ Keine Schwächung. Tenant-Kontext bleibt ausschließlich serverseitig, alle Abfr
 
 ## Nachtrag vom 26.10.2026 (Review-Gate, vor dem ersten Merge)
 
-Dieser Nachtrag ändert die Entscheidung nicht. Er macht zwei Folgen ausdrücklich, die im Review aufgefallen sind (Findings F-4 und F-3).
+Dieser Nachtrag ändert die Entscheidung für Option A nicht. Er macht zwei Folgen ausdrücklich, die im Review aufgefallen sind (Findings F-4 und F-3). Für ARCHIVED löst er die ursprüngliche 500-Regel des Entscheidungsteils ab (F-3).
 
 ### Geänderte Eindeutigkeitsregel für Projektnamen (F-4)
 
@@ -93,9 +96,12 @@ Dieser Nachtrag ändert die Entscheidung nicht. Er macht zwei Folgen ausdrückli
 
 - **Entscheidung:** Ein gespeichertes `ARCHIVED` bleibt in PostgreSQL erhalten, ist über API v1 aber unsichtbar. Es gibt keine neue Archivierungsfunktion und keinen neuen Statuswert.
 - **Begründung (Risiko der ursprünglichen Fail-closed-Variante, 500):** Eine einzige archivierte Zeile ließ die Projektliste jeder Seite mit dieser Zeile und das Zuordnungs-Panel aller Projekte des Unternehmens ausfallen. Vertraulichkeit und Integrität waren nicht betroffen, wohl aber die Verfügbarkeit innerhalb des Tenants.
-- **Umsetzung:** Liste, Detail, Änderung und Zuordnen filtern auf `status IN ('ACTIVE','INACTIVE')`. Bereits angelegte Zuordnungen auf ein archiviertes Projekt bleiben in der Zuordnungsliste lesbar (Historie).
+- **Ersetzt die ursprüngliche 500-Regel:** Die Fail-closed-Variante (HTTP 500) aus dem Entscheidungsteil ist damit ausdrücklich überholt. Maßgeblich ist: ARCHIVED ist unsichtbar, Detail und Änderung liefern `404 RESOURCE_NOT_FOUND`.
+- **Umsetzung in PR #60 (SP-08):** Liste, Detail und Änderung von Projekten filtern auf `status IN ('ACTIVE','INACTIVE')`.
+- **Vereinbarter Folgevertrag für SP-09 (noch nicht Teil von PR #60):** Zuordnungen sind nicht Gegenstand von SP-08. Die folgenden Regeln gelten für die Zuordnung (SP-09) und werden erst durch die Implementierung und Integration von PR #61 erfüllt:
+  - Bereits angelegte Zuordnungen auf ein archiviertes Projekt bleiben in der Zuordnungsliste lesbar (Historie).
+  - Zuordnen zu einem archivierten Projekt liefert `404 RESOURCE_NOT_FOUND` (statt `PROJECT_INACTIVE`), identisch zu einem unbekannten Projekt.
 - **Namen archivierter Projekte bleiben reserviert (Owner-Bestätigung 26.10.2026):** Die DB-Eindeutigkeit des Namens gilt auch für unsichtbare archivierte Zeilen. Ein neuer oder umbenannter Name, der mit einem archivierten Projekt kollidiert, ergibt `409 PROJECT_NAME_ALREADY_EXISTS`. Die Antwort ist **neutral**: Sie ist in Code, Titel und Aufbau identisch zu einer Kollision mit einem sichtbaren Projekt und erwähnt nicht, dass ein archiviertes Projekt existiert (per Test belegt). Eine Archivierungsfunktion müsste die Wiederverwendung von Namen fachlich lösen.
-- **Zuordnen zu einem archivierten Projekt:** `404 RESOURCE_NOT_FOUND` (statt `PROJECT_INACTIVE`), identisch zu einem unbekannten Projekt.
 
 ### Formell fortzuschreibende interne Baselines
 
