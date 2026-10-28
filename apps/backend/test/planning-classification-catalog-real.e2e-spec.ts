@@ -134,7 +134,7 @@ describe('E-10 — post-migration catalog check, real PostgreSQL', () => {
       (name: string) => [`unexpected schema: ${name}`, `relation outside schema public: ${name}.duties (relkind r)`],
     ],
     [
-      'table in information_schema (outside the runtime guards\' scope)',
+      'table in information_schema',
       (name: string) => `CREATE TABLE information_schema.${name} (id uuid)`,
       (name: string) => [`relation outside schema public: information_schema.${name} (relkind r)`],
     ],

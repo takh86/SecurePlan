@@ -10,7 +10,8 @@
  *
  * Defense in three layers, none of which creates or names a business table:
  * 1. Runtime: every guard counts relations from PLANNING_GUARD_TABLES in ANY
- *    non-system schema. Stricter than before (fail-closed direction only).
+ *    schema except PostgreSQL's reserved `pg_*` schemas, information_schema
+ *    included. Stricter than before (fail-closed direction only).
  * 2. CI, static tripwire: planning-table-classification.spec.ts scans the
  *    migration files without a database and fails on a visible unclassified
  *    relation or schema change. It is a regex scan, not a SQL parser: DDL built
@@ -70,11 +71,12 @@ export const KNOWN_NON_PLANNING_TABLES = [
 export const MIGRATION_LEDGER_TABLES = ['schema_migrations'] as const;
 
 /**
- * Number of relations (any kind) named like a planning table in any
- * non-system schema. Names starting with `pg_` are reserved by PostgreSQL for
- * system schemas (catalog, toast, other sessions' temporary schemas).
- * Guards run inside READ COMMITTED write transactions, so every call sees the
- * catalog state committed at the start of that statement.
+ * Number of relations (any kind) named like a planning table in any schema
+ * except the system schemas whose names start with the reserved `pg_` (catalog,
+ * toast, other sessions' temporary schemas). information_schema is not exempt:
+ * a superuser can create relations there, and none of its system views carries
+ * a planning name. Guards run inside READ COMMITTED write transactions, so
+ * every call sees the catalog state committed at the start of that statement.
  */
 export async function countPlanningRelations(client: Queryable): Promise<number> {
   const present = await client.query<{ n: number }>(
@@ -82,7 +84,6 @@ export async function countPlanningRelations(client: Queryable): Promise<number>
      FROM pg_catalog.pg_class AS c
      JOIN pg_catalog.pg_namespace AS ns ON ns.oid = c.relnamespace
      WHERE c.relname = ANY($1::text[])
-       AND ns.nspname <> 'information_schema'
        AND ns.nspname !~ '^pg_'`,
     [[...PLANNING_GUARD_TABLES]],
   );

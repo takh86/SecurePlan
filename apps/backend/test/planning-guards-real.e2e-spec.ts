@@ -49,7 +49,8 @@ async function guardOutcomes(client: Queryable) {
       await check;
       return 'PASS';
     } catch (error) {
-      return (error as { response?: { code?: string } }).response?.code ?? 'UNEXPECTED_ERROR';
+      const { status, response } = error as { status?: number; response?: { code?: string } };
+      return `${status} ${response?.code ?? 'UNEXPECTED_ERROR'}`;
     }
   };
   return {
@@ -59,7 +60,7 @@ async function guardOutcomes(client: Queryable) {
 }
 
 const OPEN = { sp09: 'PASS', sp08b: 'PASS' };
-const CLOSED = { sp09: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT', sp08b: 'SHIFT_CONFIGURATION_CONFLICT' };
+const CLOSED = { sp09: '409 PROJECT_ASSIGNMENT_CORRECTION_CONFLICT', sp08b: '409 SHIFT_CONFIGURATION_CONFLICT' };
 
 /** Runs `work` in a transaction on one connection and always rolls it back. */
 async function inRolledBackTransaction(work: (client: PoolClient) => Promise<void>): Promise<void> {
@@ -103,8 +104,31 @@ describe('E-10 — shared planning-table classification, real PostgreSQL', () =>
     }
   });
 
+  it('PostgreSQL\'s own relations (pg_catalog, information_schema, TOAST) cause no false positive', async () => {
+    // OIDs below 16384 (FirstNormalObjectId) belong to initdb, i.e. to PostgreSQL itself.
+    const system = await db().query<{ schema: string; relations: number; planning: string[] }>(
+      `SELECT ns.nspname AS schema, count(*)::int AS relations,
+              coalesce(array_agg(c.relname::text) FILTER (WHERE c.relname = ANY($1::text[])), '{}') AS planning
+       FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+       WHERE c.oid < 16384
+       GROUP BY 1 ORDER BY 1`,
+      [[...PLANNING_GUARD_TABLES]],
+    );
+    expect(system.rows.map(({ schema }) => schema)).toEqual(expect.arrayContaining(['information_schema', 'pg_catalog', 'pg_toast']));
+    for (const { schema, relations, planning } of system.rows) {
+      expect(relations, schema).toBeGreaterThan(0);
+      expect(planning, schema).toEqual([]);
+    }
+    const client = await db().connect();
+    try {
+      expect(await guardOutcomes(client)).toEqual(OPEN);
+    } finally {
+      client.release();
+    }
+  });
+
   it.each([...PLANNING_GUARD_TABLES])(
-    '%s: both guards fail closed as a public table, a public view and a table in another schema; rollback reopens them',
+    '%s: both guards fail closed as a public table, a public view, a table in another schema and a table in information_schema; rollback reopens them',
     async (name) => {
       for (const ddl of [
         `CREATE TABLE public.${name} (id uuid)`,
@@ -113,6 +137,8 @@ describe('E-10 — shared planning-table classification, real PostgreSQL', () =>
           const schema = `sp_e10_${suffix()}`;
           return `CREATE SCHEMA ${schema}; CREATE TABLE ${schema}.${name} (id uuid)`;
         })(),
+        // Needs a superuser (Docker setup, CI); information_schema is not a system schema for the guards.
+        `CREATE TABLE information_schema.${name} (id uuid)`,
       ]) {
         await inRolledBackTransaction(async (client) => {
           expect(await guardOutcomes(client), `${ddl} (before)`).toEqual(OPEN);
@@ -182,7 +208,17 @@ describe('E-10 — committed versus uncommitted DDL across sessions (isolated te
 });
 
 describe('E-10 — real services: true no-op passes, every effective change fails closed and leaves no trace', () => {
-  it('SP-09 correction and SP-08b shift configuration with a planning table outside schema public', async () => {
+  it.each([
+    [
+      'in another schema',
+      (): string => {
+        const schema = `sp_e10_${suffix()}`;
+        return `CREATE SCHEMA ${schema}; CREATE TABLE ${schema}.duty_assignment (id uuid)`;
+      },
+    ],
+    // Needs a superuser (Docker setup, CI).
+    ['in information_schema', (): string => 'CREATE TABLE information_schema.duty_assignment (id uuid)'],
+  ] as const)('SP-09 correction and SP-08b shift configuration with a planning table %s', async (_placement, planningDdl) => {
     const tenantA = await createSyntheticTenant(db(), 'E10 guards');
     createdCompanies.push(tenantA.companyId);
     const employee = await createSyntheticEmployee(db(), tenantA.employee, 'E10-001', { start: '2026-01-01' });
@@ -209,8 +245,7 @@ describe('E-10 — real services: true no-op passes, every effective change fail
         audit: (await probe.query('SELECT count(*)::int AS n FROM audit_event WHERE company_id = $1', [tenantA.companyId])).rows[0].n,
       });
 
-      const schema = `sp_e10_${suffix()}`;
-      await probe.query(`CREATE SCHEMA ${schema}; CREATE TABLE ${schema}.duty_assignment (id uuid)`);
+      await probe.query(planningDdl());
       const before = await snapshot();
 
       // True no-ops never reach the guards.
@@ -218,11 +253,11 @@ describe('E-10 — real services: true no-op passes, every effective change fail
       expect(await shifts.replace(tenant, north.projectId, { effectiveFromMonth: '2027-01-01', shifts: [NIGHT, DAY] }, randomUUID()))
         .toEqual(stored);
 
-      // Effective changes fail closed with the catalogued codes ...
+      // Effective changes fail closed with 409 and the catalogued codes ...
       await expect(assignments.correct(tenant, assignmentId, { monthStart: '2027-02-01' }, randomUUID()))
-        .rejects.toMatchObject({ response: { code: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' } });
+        .rejects.toMatchObject({ status: 409, response: { code: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' } });
       await expect(shifts.replace(tenant, north.projectId, { effectiveFromMonth: '2027-01-01', shifts: [DAY] }, randomUUID()))
-        .rejects.toMatchObject({ response: { code: 'SHIFT_CONFIGURATION_CONFLICT' } });
+        .rejects.toMatchObject({ status: 409, response: { code: 'SHIFT_CONFIGURATION_CONFLICT' } });
 
       // ... without any write or audit entry.
       expect(await snapshot()).toEqual(before);

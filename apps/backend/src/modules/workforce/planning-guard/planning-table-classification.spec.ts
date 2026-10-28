@@ -202,8 +202,9 @@ describe('E-10 - both guards share one query and one list', () => {
     expect(sp09.calls).toHaveLength(1);
     expect(sp09.calls).toEqual(sp08b.calls);
     expect(sp09.calls[0].values).toEqual([[...PLANNING_GUARD_TABLES]]);
-    // Any non-system schema counts, not only public.
+    // Every schema counts except the reserved pg_* system schemas; information_schema is not exempt.
     expect(sp09.calls[0].text).not.toContain("'public.'");
+    expect(sp09.calls[0].text).not.toContain('information_schema');
     expect(sp09.calls[0].text).toContain("ns.nspname !~ '^pg_'");
   });
 
