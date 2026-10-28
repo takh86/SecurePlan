@@ -189,6 +189,10 @@ export class ProjectAssignmentsService {
    *   or project may stay, but a NEWLY referenced one must be ACTIVE, and a newly
    *   referenced employee needs documented employment covering that month
    *   (missing evidence is never treated as valid);
+   * - HISTORICAL correction into a FUTURE target month (owner decision B of
+   *   28.10.2026): the resulting employee needs employment evidence for the
+   *   target month even if unchanged (POST's code); an employee change keeps
+   *   the historical code. Status rules stay historical;
    * - error precedence after the no-op check: EMPLOYEE_INACTIVE ->
    *   PROJECT_INACTIVE -> missing employment evidence -> planning guard ->
    *   target month taken;
@@ -294,7 +298,7 @@ export class ProjectAssignmentsService {
         throw new ConflictException({ code: 'PROJECT_INACTIVE' });
       }
       // Read from the employee row locked above, so a concurrent change of the dates is serialized.
-      const employmentConflict = correctionEmploymentConflict(scope, employeeChanged, nextEmployee, next.monthStart);
+      const employmentConflict = correctionEmploymentConflict(scope, employeeChanged, nextEmployee, next.monthStart, zone);
       if (employmentConflict !== null) throw new ConflictException({ code: employmentConflict });
 
       await assertPlanningDependencyCheckImplemented(client);
@@ -378,15 +382,24 @@ export function employmentCovers(
  * evidence for the resulting month, or null when no evidence check applies:
  * - FUTURE (#64 case 1, owner decision 1a): always, with POST's code, even if
  *   only the project or only the month changes;
- * - HISTORICAL (D2, unchanged): only for a newly referenced employee.
+ * - HISTORICAL into a month after `currentMonth` (owner decision B): also for
+ *   an unchanged employee, with POST's code;
+ * - HISTORICAL otherwise (D2, unchanged): only for a newly referenced employee.
+ * A newly referenced employee in HISTORICAL scope keeps the D2 code, whatever
+ * the target month.
  */
 export function correctionEmploymentConflict(
   scope: 'FUTURE' | 'HISTORICAL',
   employeeChanged: boolean,
   employee: { employment_start: string | null; employment_end: string | null },
   monthStart: string,
+  currentMonth: string,
 ): 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH' | 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' | null {
-  if (scope === 'HISTORICAL' && !employeeChanged) return null;
+  // Month starts as YYYY-MM-DD strings compare chronologically.
+  const intoFuture = monthStart > currentMonth;
+  if (scope === 'HISTORICAL' && !employeeChanged && !intoFuture) return null;
   if (employmentCovers(employee, monthStart)) return null;
-  return scope === 'FUTURE' ? 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH' : 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT';
+  return scope === 'HISTORICAL' && employeeChanged
+    ? 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT'
+    : 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH';
 }

@@ -224,10 +224,11 @@ describe('E-10 — real services: true no-op passes, every effective change fail
     const employee = await createSyntheticEmployee(db(), tenantA.employee, 'E10-001', { start: '2026-01-01' });
     const north = await createSyntheticProject(db(), tenantA.companyId, 'E10 Nord');
     const assignmentId = randomUUID();
+    const historicalId = randomUUID(); // November 2026: a past month for the pinned clock
     await db().query(
       `INSERT INTO project_assignments (id, company_id, employee_id, project_id, planning_month)
-       VALUES ($1, $2, $3, $4, '2027-01-01')`,
-      [assignmentId, tenantA.companyId, employee.employeeId, north.projectId],
+       VALUES ($1, $2, $3, $4, '2027-01-01'), ($5, $2, $3, $4, '2026-11-01')`,
+      [assignmentId, tenantA.companyId, employee.employeeId, north.projectId, historicalId],
     );
     const tenant = {
       sessionId: randomUUID(), accountId: tenantA.admin.accountId, companyId: tenantA.companyId, role: 'COMPANY_ADMIN',
@@ -240,7 +241,7 @@ describe('E-10 — real services: true no-op passes, every effective change fail
       const shifts = new ShiftConfigurationsService(database, new BusinessAuditService(), MID_DEC);
       const stored = await shifts.replace(tenant, north.projectId, { effectiveFromMonth: '2027-01-01', shifts: [DAY, NIGHT] }, randomUUID());
       const snapshot = async () => ({
-        assignment: (await probe.query('SELECT employee_id, project_id, planning_month::text, updated_at FROM project_assignments WHERE id = $1', [assignmentId])).rows,
+        assignment: (await probe.query('SELECT employee_id, project_id, planning_month::text, updated_at FROM project_assignments WHERE id = ANY($1::uuid[]) ORDER BY id', [[assignmentId, historicalId]])).rows,
         rules: (await probe.query('SELECT id, shift_kind, start_local, end_local, updated_at FROM shift_configurations WHERE project_id = $1 ORDER BY id', [north.projectId])).rows,
         audit: (await probe.query('SELECT count(*)::int AS n FROM audit_event WHERE company_id = $1', [tenantA.companyId])).rows[0].n,
       });
@@ -258,9 +259,14 @@ describe('E-10 — real services: true no-op passes, every effective change fail
         .rejects.toMatchObject({ status: 409, response: { code: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' } });
       await expect(shifts.replace(tenant, north.projectId, { effectiveFromMonth: '2027-01-01', shifts: [DAY] }, randomUUID()))
         .rejects.toMatchObject({ status: 409, response: { code: 'SHIFT_CONFIGURATION_CONFLICT' } });
-      // #64 case 1: missing employment evidence is refused before the guard is consulted; still a 409.
+      // #64 decision B: a historical row moved into a future month WITH evidence still meets the guard.
+      await expect(assignments.correct(tenant, historicalId, { monthStart: '2027-03-01' }, randomUUID()))
+        .rejects.toMatchObject({ status: 409, response: { code: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' } });
+      // #64 case 1 and decision B: missing employment evidence is refused before the guard is consulted; still a 409.
       await probe.query("UPDATE employees SET employment_end = '2027-01-31' WHERE id = $1", [employee.employeeId]);
       await expect(assignments.correct(tenant, assignmentId, { monthStart: '2027-02-01' }, randomUUID()))
+        .rejects.toMatchObject({ status: 409, response: { code: 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH' } });
+      await expect(assignments.correct(tenant, historicalId, { monthStart: '2027-03-01' }, randomUUID()))
         .rejects.toMatchObject({ status: 409, response: { code: 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH' } });
 
       // ... without any write or audit entry.

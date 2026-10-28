@@ -7,6 +7,7 @@
  * that the employee/month invariant survives concurrent corrections/creates.
  * #64 case 1: employment dates changed concurrently are judged under the
  * correction's employee lock, in both orders.
+ * #64 decision B: the same holds for moving a historical row into a future month.
  */
 import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
@@ -348,5 +349,83 @@ describe('#64 case 1 — employment changes and FUTURE corrections are serialize
     // (not part of this slice; raw SQL here bypasses the employee service anyway).
     await changed;
     await finish(change, 'COMMIT');
+  });
+});
+
+describe('#64 decision B — moving a historical row into a future month is judged under the same employee lock', () => {
+  // The clock says December 2026: November is past, December current, March 2027 future.
+  it.each([
+    ['a past month', '2026-11-01'],
+    ['the current month', '2026-12-01'],
+  ] as const)('from %s: employment ended before the target month, committed while the move waits: 409, nothing written', async (_label, month) => {
+    const x = await seed(mira, north, month);
+    const audits = await auditCount();
+    const change = await begin();
+    await change.client.query("UPDATE employees SET employment_end = '2027-02-28' WHERE id = $1", [mira.employeeId]);
+    const attempt = send('patch', `${BASE}/${x}`, admins[0], { monthStart: '2027-03-01' });
+    await waitForBlocked(change.pid);
+    await finish(change, 'COMMIT');
+
+    const response = await attempt;
+    expect([response.status, response.body.code]).toEqual([409, 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH']);
+    expect(await rows(month)).toEqual([{ employee_id: mira.employeeId, project_id: north.projectId }]);
+    expect(await rows('2027-03-01')).toEqual([]);
+    expect(await auditCount()).toBe(audits);
+  });
+
+  it.each([
+    ['evidence added and committed', 'COMMIT', "employment_start = '2027-03-31'", null],
+    ['evidence removed but rolled back', 'ROLLBACK', 'employment_start = NULL', '2026-01-01'],
+  ] as const)('%s while the move waits: only committed dates count (200, one audit entry)', async (_label, command, set, initialStart) => {
+    const x = await seed(mira, north, '2026-11-01');
+    await db().query('UPDATE employees SET employment_start = $2::date WHERE id = $1', [mira.employeeId, initialStart]);
+    const audits = await auditCount();
+    const change = await begin();
+    await change.client.query(`UPDATE employees SET ${set} WHERE id = $1`, [mira.employeeId]);
+    const attempt = send('patch', `${BASE}/${x}`, admins[0], { monthStart: '2027-03-01' });
+    await waitForBlocked(change.pid);
+    await finish(change, command);
+
+    expect((await attempt).status).toBe(200);
+    expect(await rows('2027-03-01')).toEqual([{ employee_id: mira.employeeId, project_id: north.projectId }]);
+    expect(await auditCount()).toBe(audits + 1);
+  });
+
+  it('other order: an employment change arriving while the move holds the employee lock waits for it; no deadlock', async () => {
+    const x = await seed(mira, north, '2026-11-01');
+    // Gate on the stored project: the move takes it (FOR SHARE) only AFTER locking the employee.
+    const gate = await begin();
+    await gate.client.query('SELECT 1 FROM projects WHERE id = $1 FOR UPDATE', [north.projectId]);
+    const attempt = send('patch', `${BASE}/${x}`, admins[0], { monthStart: '2027-03-01' });
+    await waitForBlocked(gate.pid);
+    const change = await begin();
+    const changed = change.client.query("UPDATE employees SET employment_end = '2027-02-28' WHERE id = $1", [mira.employeeId]);
+    void changed.catch(() => {});
+    await waitForBlocked(gate.pid, 2); // the change queues behind the move, not beside it
+    await finish(gate, 'ROLLBACK');
+
+    // Decided on the dates committed when the move took the lock.
+    expect((await attempt).status).toBe(200);
+    expect(await rows('2027-03-01')).toEqual([{ employee_id: mira.employeeId, project_id: north.projectId }]);
+    await changed;
+    await finish(change, 'COMMIT');
+  });
+
+  it('a move and a create for the same employee and target month: exactly one wins, one audit entry', async () => {
+    const x = await seed(mira, north, '2026-11-01');
+    const audits = await auditCount();
+    const gate = await begin();
+    await gate.client.query('SELECT 1 FROM employees WHERE id = $1 FOR UPDATE', [mira.employeeId]);
+    const move = send('patch', `${BASE}/${x}`, admins[0], { monthStart: '2027-04-01' });
+    const creation = send('post', BASE, admins[1], { employeeId: mira.employeeId, projectId: south.projectId, monthStart: '2027-04-01' });
+    await waitForBlocked(gate.pid, 2);
+    await finish(gate, 'ROLLBACK');
+
+    const responses = await Promise.all([move, creation]);
+    expect(responses.filter((response) => response.status < 300)).toHaveLength(1);
+    expect(responses.filter((response) => response.status === 409).map((response) => response.body.code))
+      .toEqual(['PROJECT_ASSIGNMENT_CONFLICT']);
+    expect(await rows('2027-04-01')).toHaveLength(1);
+    expect(await auditCount()).toBe(audits + 1);
   });
 });
