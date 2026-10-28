@@ -84,8 +84,11 @@ describe('SP-05 — Login HTTP transport', () => {
     });
     expect(response.headers['x-csrf-token']).toBe(csrfToken);
     expect(response.headers['cache-control']).toBe('no-store');
-    const cookies = response.headers['set-cookie'] as string[] | undefined;
-    const cookie = cookies?.[0] ?? '';
+    const header: unknown = response.headers['set-cookie'];
+    const cookies: unknown[] = Array.isArray(header) ? header : [header];
+    expect(cookies).toHaveLength(1);
+    const [cookie] = cookies;
+    if (typeof cookie !== 'string') throw new Error('Expected one Set-Cookie header');
     expect(cookie).toContain(`__Host-secureplan_session=${rawToken}`);
     expect(cookie).toContain('Secure');
     expect(cookie).toContain('HttpOnly');

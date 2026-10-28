@@ -65,6 +65,7 @@ Health-Endpunkte sind technische Betriebsendpunkte, zusätzlich zu den entworfen
 
 ```bash
 npm run lint
+npm run typecheck
 npm run build
 npm test
 npm run test:e2e

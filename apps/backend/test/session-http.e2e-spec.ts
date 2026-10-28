@@ -99,11 +99,15 @@ describe('SP-05 — /me and logout HTTP transport', () => {
     expect(response.text).toBe('');
     expect(revoke).toHaveBeenCalledOnce();
     expect(revoke).toHaveBeenCalledWith(RAW_TOKEN);
-    const cookies = response.headers['set-cookie'] as string[] | undefined;
-    expect(cookies?.[0]).toMatch(/__Host-secureplan_session=;.*Max-Age=0/);
-    expect(cookies?.[0]).toContain('Secure');
-    expect(cookies?.[0]).toContain('HttpOnly');
-    expect(cookies?.[0]).not.toMatch(/\bDomain=/i);
+    const header: unknown = response.headers['set-cookie'];
+    const cookies: unknown[] = Array.isArray(header) ? header : [header];
+    expect(cookies).toHaveLength(1);
+    const [cookie] = cookies;
+    if (typeof cookie !== 'string') throw new Error('Expected one Set-Cookie header');
+    expect(cookie).toMatch(/__Host-secureplan_session=;.*Max-Age=0/);
+    expect(cookie).toContain('Secure');
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).not.toMatch(/\bDomain=/i);
   });
 
   it('06: logout without CSRF returns 403 and does not revoke', async () => {
