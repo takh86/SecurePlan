@@ -6,6 +6,8 @@
  * D4 (employee reassignment), D5 (audit PROJECT_ASSIGNMENT_CORRECTED).
  * #64 case 1 (owner decision 1a, 28.10.2026): FUTURE corrections need the same
  * employment evidence for the resulting employee and month as POST.
+ * #64 owner decision B (28.10.2026): so does a HISTORICAL correction into a
+ * future target month, also for an unchanged employee.
  * The "current month" comes from an injected wall clock, so the month-boundary
  * cases are deterministic. Synthetic data only; migrated LOCAL PostgreSQL.
  */
@@ -414,15 +416,188 @@ describe('#64 case 1 — FUTURE corrections need employment evidence for the res
     expect((await patch(past, { employeeId: jonas.employeeId }).expect(409)).body.code)
       .toBe('PROJECT_ASSIGNMENT_CORRECTION_CONFLICT');
   });
+});
 
-  it('OPEN (#64, not decided): moving a past row into a future month is HISTORICAL scope and stays unchecked', async () => {
-    // Pins the unchanged contract rather than endorsing it: decision 1a covers FUTURE scope only (old AND new
-    // month in the future). This path can still produce a future row that POST would refuse; changing it
-    // needs an explicit owner decision.
+describe('#64 decision B — HISTORICAL→FUTURE corrections need employment evidence for the target month', () => {
+  it('unchanged employee without evidence for the future target month: 409 EMPLOYEE_NOT_EMPLOYED_FOR_MONTH, nothing written', async () => {
     const past = await seed(mira, north, '2026-10-01');
+    const current = await seed(mira, south, '2026-12-01'); // the current month counts as historical (D1)
+    const before = await state(tenantA.companyId);
+    for (const [start, end] of [
+      [null, null], // nothing documented
+      [null, '2030-12-31'], // end without start
+      ['2020-01-01', '2026-12-31'], // left at the end of the current month
+      ['2027-03-01', null], // hired after the target month
+    ] as const) {
+      await setEmployment(mira, start, end);
+      for (const [id, body] of [
+        [past, { monthStart: '2027-02-01' }],
+        [current, { monthStart: '2027-02-01', projectId: north.projectId }],
+      ] as const) {
+        const refused = await patch(id, body).expect(409);
+        expect(refused.body.code).toBe('EMPLOYEE_NOT_EMPLOYED_FOR_MONTH');
+        expect(await auditFor(refused.headers['x-correlation-id'])).toEqual([]);
+      }
+    }
+    expect(await state(tenantA.companyId)).toEqual(before);
+  });
+
+  it('unchanged employee with evidence for the target month: 200, audited as HISTORICAL scope and persisted', async () => {
+    const past = await seed(mira, north, '2026-10-01');
+    await setEmployment(mira, '2020-01-01', '2027-02-01'); // ends on the 1st of the target month
+    const response = await patch(past, { monthStart: '2027-02-01', projectId: south.projectId }).expect(200);
+    expect(response.body).toEqual({ id: past, employeeId: mira.employeeId, projectId: south.projectId, monthStart: '2027-02-01' });
+    expect(await auditFor(response.headers['x-correlation-id'])).toEqual([{
+      action: 'PROJECT_ASSIGNMENT_CORRECTED',
+      resource_type: 'PROJECT_ASSIGNMENT',
+      resource_id: past,
+      actor_account_id: tenantA.admin.accountId,
+      old_values: { projectId: north.projectId, monthStart: '2026-10-01' },
+      // Classification unchanged (D1): the old month counts, so the scope stays HISTORICAL.
+      new_values: { scope: 'HISTORICAL', projectId: south.projectId, monthStart: '2027-02-01' },
+    }]);
+    expect((await read(`${BASE}?monthStart=2027-02-01`, adminA).expect(200)).body.items).toEqual([response.body]);
+
+    // From the current month: one month too far is refused, the covered month is accepted.
+    const current = await seed(mira, north, '2026-12-01');
+    expect((await patch(current, { monthStart: '2027-03-01' }).expect(409)).body.code).toBe('EMPLOYEE_NOT_EMPLOYED_FOR_MONTH');
+    expect((await patch(current, { monthStart: '2027-01-01' }).expect(200)).body.monthStart).toBe('2027-01-01');
+  });
+
+  it('target-month boundaries are inclusive and leap February counts', async () => {
+    const id = await seed(mira, north, '2026-11-01');
+    const before = await state(tenantA.companyId);
+    // Left the day before the target month, or hired the day after it: no overlap.
+    await setEmployment(mira, '2020-01-01', '2027-02-28');
+    expect((await patch(id, { monthStart: '2027-03-01' }).expect(409)).body.code).toBe('EMPLOYEE_NOT_EMPLOYED_FOR_MONTH');
+    await setEmployment(mira, '2027-04-01', null);
+    expect((await patch(id, { monthStart: '2027-03-01' }).expect(409)).body.code).toBe('EMPLOYEE_NOT_EMPLOYED_FOR_MONTH');
+    expect(await state(tenantA.companyId)).toEqual(before);
+    // Hired on the last day of the target month: overlaps.
+    await setEmployment(mira, '2027-03-31', null);
+    expect((await patch(id, { monthStart: '2027-03-01' }).expect(200)).body.monthStart).toBe('2027-03-01');
+
+    // Hired on 29 Feb 2028: January 2028 has no evidence, February 2028 has.
+    const leap = await seed(mira, south, '2026-10-01');
+    await setEmployment(mira, '2028-02-29', null);
+    expect((await patch(leap, { monthStart: '2028-01-01' }).expect(409)).body.code).toBe('EMPLOYEE_NOT_EMPLOYED_FOR_MONTH');
+    const ok = await patch(leap, { monthStart: '2028-02-01' }).expect(200);
+    expect((await auditFor(ok.headers['x-correlation-id']))[0].new_values).toEqual({ scope: 'HISTORICAL', monthStart: '2028-02-01' });
+  });
+
+  it('an employee change keeps the historical employee-change contract, checked for the target month', async () => {
+    const id = await seed(mira, north, '2026-10-01');
+    await setEmployment(mira, null, null); // the previous employee no longer matters
+    const before = await state(tenantA.companyId);
+    for (const [start, end] of [
+      [null, null],
+      ['2020-01-01', '2027-01-31'], // left before the target month
+      ['2027-03-01', null], // hired after it
+    ] as const) {
+      await setEmployment(jonas, start, end);
+      expect((await patch(id, { employeeId: jonas.employeeId, monthStart: '2027-02-01' }).expect(409)).body.code)
+        .toBe('PROJECT_ASSIGNMENT_CORRECTION_CONFLICT');
+    }
+    expect(await state(tenantA.companyId)).toEqual(before);
+
+    await setEmployment(jonas, '2027-02-28', null);
+    const ok = await patch(id, { employeeId: jonas.employeeId, monthStart: '2027-02-01' }).expect(200);
+    expect(await auditFor(ok.headers['x-correlation-id'])).toEqual([expect.objectContaining({
+      old_values: { employeeId: mira.employeeId, monthStart: '2026-10-01' },
+      new_values: { scope: 'HISTORICAL', employeeId: jonas.employeeId, monthStart: '2027-02-01' },
+    })]);
+
+    // A newly referenced inactive employee is refused before the evidence, as in every historical correction.
+    const other = await seed(mira, south, '2026-11-01');
+    await db().query("UPDATE employees SET status = 'DEACTIVATED' WHERE id = $1", [jonas.employeeId]);
+    expect((await patch(other, { employeeId: jonas.employeeId, monthStart: '2027-03-01' }).expect(409)).body.code)
+      .toBe('EMPLOYEE_INACTIVE');
+  });
+
+  it('within history nothing new is checked: past→past, past→current, future→past and project only', async () => {
+    const past = await seed(mira, north, '2026-09-01');
+    const future = await seed(mira, south, '2027-03-01');
+    await setEmployment(mira, null, null);
+    expect((await patch(past, { monthStart: '2026-10-01' }).expect(200)).body.monthStart).toBe('2026-10-01');
+    expect((await patch(past, { monthStart: '2026-12-01' }).expect(200)).body.monthStart).toBe('2026-12-01');
+    expect((await patch(past, { projectId: south.projectId }).expect(200)).body.projectId).toBe(south.projectId);
+    const back = await patch(future, { monthStart: '2026-11-01' }).expect(200);
+    expect((await auditFor(back.headers['x-correlation-id']))[0].new_values).toEqual({ scope: 'HISTORICAL', monthStart: '2026-11-01' });
+  });
+
+  it('precedence: 404, then a newly referenced inactive project, then employment, then the taken target month', async () => {
+    const id = await seed(mira, north, '2026-10-01');
+    await seed(mira, south, '2027-02-01'); // mira's target month is taken
+    const inactive = await createSyntheticProject(db(), tenantA.companyId, 'Inaktiv', 'INACTIVE');
     await setEmployment(mira, '2020-01-01', '2026-12-31');
-    const response = await patch(past, { monthStart: '2027-02-01' }).expect(200);
-    expect((await auditFor(response.headers['x-correlation-id']))[0].new_values).toMatchObject({ scope: 'HISTORICAL' });
+    const before = await state(tenantA.companyId);
+    // Missing evidence wins over the taken target month ...
+    expect((await patch(id, { monthStart: '2027-02-01' }).expect(409)).body.code).toBe('EMPLOYEE_NOT_EMPLOYED_FOR_MONTH');
+    // ... a newly referenced inactive project wins over missing evidence ...
+    expect((await patch(id, { monthStart: '2027-02-01', projectId: inactive.projectId }).expect(409)).body.code)
+      .toBe('PROJECT_INACTIVE');
+    // ... and an unknown project is a 404 before any of them.
+    expect((await patch(id, { monthStart: '2027-02-01', projectId: randomUUID() }).expect(404)).body.code)
+      .toBe('RESOURCE_NOT_FOUND');
+    // With evidence, the taken month decides as before.
+    await setEmployment(mira, '2020-01-01', null);
+    expect((await patch(id, { monthStart: '2027-02-01' }).expect(409)).body.code).toBe('PROJECT_ASSIGNMENT_CONFLICT');
+    expect((await patch(id, { monthStart: '2027-02-01', projectId: south.projectId }).expect(409)).body.code)
+      .toBe('PROJECT_ASSIGNMENT_ALREADY_EXISTS');
+    expect(await state(tenantA.companyId)).toEqual(before);
+  });
+
+  it('a genuine no-op on a historical row stays 200 without write or audit, even without evidence', async () => {
+    const id = await seed(mira, north, '2026-10-01');
+    await setEmployment(mira, null, null);
+    const before = await state(tenantA.companyId);
+    const response = await patch(id, { employeeId: mira.employeeId.toUpperCase(), projectId: north.projectId, monthStart: '2026-10-01' })
+      .expect(200);
+    expect(response.body).toEqual({ id, employeeId: mira.employeeId, projectId: north.projectId, monthStart: '2026-10-01' });
+    expect(await state(tenantA.companyId)).toEqual(before);
+  });
+
+  it('actor authorization and tenant isolation come before the employment check', async () => {
+    const id = await seed(mira, north, '2026-10-01');
+    await setEmployment(mira, null, null);
+    await setEmployment(employeeB, '2020-01-01', null);
+    const beforeA = await state(tenantA.companyId);
+    const beforeB = await state(tenantB.companyId);
+    const move = { monthStart: '2027-02-01' };
+    const shape = (body: Record<string, unknown>) => {
+      const { correlationId, instance, ...rest } = body;
+      expect([typeof correlationId, typeof instance]).toEqual(['string', 'string']);
+      return rest;
+    };
+    // No session, an EMPLOYEE session, a foreign CSRF token: refused without revealing the employment state.
+    expect((await patch(id, move, null).expect(401)).body.code).toBe('SESSION_REQUIRED');
+    const employee = await createSyntheticSession(sessions, tenantA.employee);
+    expect((await patch(id, move, employee).expect(403)).body.code).toBe('ACTION_FORBIDDEN');
+    const wrongCsrf = await http().patch(`${BASE}/${id}`).set('Origin', ORIGIN).set('Cookie', adminA.cookie)
+      .set('X-CSRF-Token', adminB.csrf).send(move).expect(403);
+    expect(wrongCsrf.body.code).toBe('CSRF_VALIDATION_FAILED');
+    // Tenant B's admin gets the same 404 as for an unknown id; tenant A's admin gets the 409.
+    const reference = await patch(randomUUID(), move, adminB).expect(404);
+    expect(shape((await patch(id, move, adminB).expect(404)).body)).toEqual(shape(reference.body));
+    expect((await patch(id, move).expect(409)).body.code).toBe('EMPLOYEE_NOT_EMPLOYED_FOR_MONTH');
+    // Tenant B's employee has evidence but is invisible to tenant A.
+    const foreignEmployee = await patch(id, { ...move, employeeId: employeeB.employeeId }).expect(404);
+    expect(shape(foreignEmployee.body)).toEqual(shape(reference.body));
+    expect(await state(tenantA.companyId)).toEqual(beforeA);
+    expect(await state(tenantB.companyId)).toEqual(beforeB);
+  });
+
+  it('OPEN (not decided): status rules stay historical, so an already referenced inactive employee or inactive/archived project may move into a future month', async () => {
+    // Pins the unchanged contract rather than endorsing it: decision B adds only the employment check.
+    // POST and FUTURE corrections would refuse these rows (EMPLOYEE_INACTIVE / PROJECT_INACTIVE).
+    const id = await seed(mira, north, '2026-10-01');
+    const archived = await seed(jonas, south, '2026-10-01');
+    await db().query("UPDATE projects SET status = 'INACTIVE' WHERE id = $1", [north.projectId]);
+    await db().query("UPDATE projects SET status = 'ARCHIVED' WHERE id = $1", [south.projectId]);
+    await db().query("UPDATE employees SET status = 'DEACTIVATED' WHERE id = $1", [mira.employeeId]);
+    const response = await patch(id, { monthStart: '2027-02-01' }).expect(200);
+    expect((await auditFor(response.headers['x-correlation-id']))[0].new_values).toEqual({ scope: 'HISTORICAL', monthStart: '2027-02-01' });
+    expect((await patch(archived, { monthStart: '2027-02-01' }).expect(200)).body.monthStart).toBe('2027-02-01');
   });
 });
 
@@ -551,6 +726,35 @@ describe('SP-09 PATCH — company time zone and month boundaries (D3)', () => {
     await setEmployment(jonas, '2027-01-01', null);
     const response = await patch(berlin, { monthStart: '2027-01-01', employeeId: jonas.employeeId }).expect(200);
     expect((await auditFor(response.headers['x-correlation-id']))[0].new_values).toMatchObject({ scope: 'FUTURE' });
+  });
+
+  it('decision B: at 03:30 UTC on 1 Nov, October→November is HISTORICAL→FUTURE in New York but stays within history in Berlin', async () => {
+    await bootApp({ clock: () => new Date('2026-11-01T03:30:00Z') }); // New York 31 Oct 23:30, Berlin 1 Nov 04:30
+    const id = await seed(mira, north, '2026-10-01');
+    await setEmployment(mira, '2020-01-01', '2026-10-31');
+    await setZone('America/New_York');
+    // October is current, November future: mira left on 31 Oct, so the move is refused.
+    expect((await patch(id, { monthStart: '2026-11-01' }).expect(409)).body.code).toBe('EMPLOYEE_NOT_EMPLOYED_FOR_MONTH');
+    expect(await row(id)).toMatchObject({ month: '2026-10-01' });
+    await setZone('Europe/Berlin');
+    // November is already the current month: a correction within history, no evidence check (D2).
+    const moved = await patch(id, { monthStart: '2026-11-01' }).expect(200);
+    expect((await auditFor(moved.headers['x-correlation-id']))[0].new_values).toEqual({ scope: 'HISTORICAL', monthStart: '2026-11-01' });
+  });
+
+  it('decision B at the year boundary: at 23:30 UTC on 31 Dec, December→January 2027 is checked in New York, not in Berlin', async () => {
+    await bootApp({ clock: () => new Date('2026-12-31T23:30:00Z') }); // New York 31 Dec 18:30, Berlin 1 Jan 00:30
+    const miraDecember = await seed(mira, north, '2026-12-01');
+    const jonasDecember = await seed(jonas, south, '2026-12-01');
+    await setEmployment(mira, '2020-01-01', '2026-12-31');
+    await setEmployment(jonas, '2020-01-01', '2027-01-01'); // ends on the 1st of January
+    await setZone('America/New_York');
+    expect((await patch(miraDecember, { monthStart: '2027-01-01' }).expect(409)).body.code).toBe('EMPLOYEE_NOT_EMPLOYED_FOR_MONTH');
+    const covered = await patch(jonasDecember, { monthStart: '2027-01-01' }).expect(200);
+    expect((await auditFor(covered.headers['x-correlation-id']))[0].new_values).toEqual({ scope: 'HISTORICAL', monthStart: '2027-01-01' });
+    await setZone('Europe/Berlin');
+    // January 2027 is already current in Berlin: no evidence check without an employee change.
+    expect((await patch(miraDecember, { monthStart: '2027-01-01' }).expect(200)).body.monthStart).toBe('2027-01-01');
   });
 });
 
