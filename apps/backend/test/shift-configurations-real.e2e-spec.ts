@@ -497,7 +497,7 @@ describe('SP-08b — tenant isolation, integrity, rollback and planning guard', 
     const a = tenantA.companyId;
     await expect(insert(a, projectB.projectId, '2027-01-01', 'TAG', '06:00', '18:00'))
       .rejects.toMatchObject({ code: '23503', constraint: 'fk_shift_configurations__projects' });
-    for (const [args, constraint] of [
+    for (const [[month, kind, start, end], constraint] of [
       [['2027-01-15', 'TAG', '06:00', '18:00'], 'ck_shift_configurations__month_start'],
       [['2027-01-01', 'NACHT', '18:00', '18:00'], 'ck_shift_configurations__distinct_times'],
       [['2027-01-01', 'TAG', '18:00', '06:00'], 'ck_shift_configurations__day_same_day'],
@@ -505,7 +505,7 @@ describe('SP-08b — tenant isolation, integrity, rollback and planning guard', 
       [['2027-01-01', 'DAY', '06:00', '18:00'], 'ck_shift_configurations__shift_kind'],
       [['2027-01-01', 'NACHT', '18:00:30', '06:00'], 'ck_shift_configurations__minute_precision'],
     ] as const) {
-      await expect(insert(a, north.projectId, ...args), constraint).rejects.toMatchObject({ code: '23514', constraint });
+      await expect(insert(a, north.projectId, month, kind, start, end), constraint).rejects.toMatchObject({ code: '23514', constraint });
     }
     await insert(a, north.projectId, '2027-01-01', 'TAG', '06:00', '18:00');
     await expect(insert(a, north.projectId, '2027-01-01', 'TAG', '07:00', '19:00'))
