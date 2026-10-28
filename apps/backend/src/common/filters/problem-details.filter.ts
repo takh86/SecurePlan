@@ -27,8 +27,7 @@ function resolveParserError(exception: unknown): ErrorResolution | undefined {
   if (!(exception instanceof Error) || !isRecord(exception)) return undefined;
   if (exception.status !== exception.statusCode) return undefined;
 
-  // 413/415 codes are PROPOSED, not additions to the approved code catalogue.
-  // See docs/api/proposals/issue-51-http-parser-errors.md (human approval gate).
+  // Approved parser mappings; only known type/status pairs are accepted.
   if (exception.type === 'entity.too.large' && exception.status === 413) {
     return { status: 413, code: 'REQUEST_BODY_TOO_LARGE' };
   }
@@ -58,11 +57,6 @@ function resolveError(exception: unknown): ErrorResolution {
   // Provisional operational readiness exception. Not in the approved 8.5 code catalogue.
   if (status === 503 && explicit === 'SERVICE_UNAVAILABLE') {
     return { status: 503, code: 'SERVICE_UNAVAILABLE' };
-  }
-
-  // PROPOSED transport amendment, emitted by the login JSON media-type guard.
-  if (status === 415 && explicit === 'UNSUPPORTED_MEDIA_TYPE') {
-    return { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' };
   }
 
   if (explicit !== null) {
