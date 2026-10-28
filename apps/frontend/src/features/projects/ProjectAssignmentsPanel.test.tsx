@@ -51,7 +51,7 @@ describe('SP-09 — month assignment (UX A09, real API source)', () => {
     const table = screen.getByRole('table', { name: 'Zugeordnet im Dezember 2026' });
     const rows = within(table).getAllByRole('row').slice(1);
     // An assignment of a now inactive person stays visible as history.
-    expect(rows.map((row) => row.textContent)).toEqual(['Lena MusterA-003Deaktiviert']);
+    expect(rows.map((row) => row.textContent)).toEqual(['Lena MusterA-003DeaktiviertKorrigieren']);
 
     expect(optionTexts(select)).toEqual([
       ['Bitte auswählen', false],

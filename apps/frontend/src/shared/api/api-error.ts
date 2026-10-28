@@ -38,6 +38,7 @@ export type KnownErrorCode =
   | 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH'
   | 'PROJECT_ASSIGNMENT_ALREADY_EXISTS'
   | 'PROJECT_ASSIGNMENT_CONFLICT'
+  | 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT'
   // SP-08b shift configuration (approved backend catalogue). SHIFT_CONFIGURATION_MISSING
   // is reserved for duty creation (SP-11) and deliberately NOT known here.
   | 'SHIFT_CONFIGURATION_INVALID'
@@ -94,6 +95,7 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   EMPLOYEE_NOT_EMPLOYED_FOR_MONTH: 409,
   PROJECT_ASSIGNMENT_ALREADY_EXISTS: 409,
   PROJECT_ASSIGNMENT_CONFLICT: 409,
+  PROJECT_ASSIGNMENT_CORRECTION_CONFLICT: 409,
   SHIFT_CONFIGURATION_INVALID: 400,
   SHIFT_CONFIGURATION_CONFLICT: 409,
 };
@@ -249,6 +251,11 @@ const EMPLOYEE_ERROR_TEXT: Partial<Record<string, { title: string; description: 
   INVALID_MONTH_START: {
     title: 'Monat ungültig',
     description: 'Bitte wählen Sie einen gültigen Kalendermonat.',
+  },
+  // Covers both server reasons without revealing plan details (missing employment evidence, planning data).
+  PROJECT_ASSIGNMENT_CORRECTION_CONFLICT: {
+    title: 'Korrektur nicht möglich',
+    description: 'Diese Korrektur ist derzeit nicht zulässig. Ein Personenwechsel im aktuellen oder einem vergangenen Monat setzt einen dokumentierten Beschäftigungszeitraum in diesem Monat voraus; außerdem können bestehende Planungsdaten eine Korrektur verhindern. Die Zuordnung wurde nicht geändert.',
   },
   // SP-08b shift configuration.
   SHIFT_CONFIGURATION_INVALID: {

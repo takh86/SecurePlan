@@ -1,6 +1,7 @@
 /**
- * SP-09 month-assignment API client (create/read). Uses only the endpoints the
- * backend provides; tenant and role are never sent. Responses are shape-checked.
+ * SP-09 month-assignment API client (create/read/correct). Uses only the
+ * endpoints the backend provides; tenant and role are never sent, and there is
+ * no DELETE (history stays). Responses are shape-checked.
  */
 import { ApiError } from '../../shared/api/api-error';
 import { MAX_PAGE_SIZE, loadAllPages } from '../../shared/data/load-all-pages';
@@ -19,10 +20,15 @@ export type ProjectAssignment = {
 
 export type CreateProjectAssignmentInput = Omit<ProjectAssignment, 'id'>;
 
+/** PATCH body: only the changed business dimensions. */
+export type UpdateProjectAssignmentInput = Partial<CreateProjectAssignmentInput>;
+
 export interface ProjectAssignmentsApi {
   /** All assignments of the company for one month (every page). */
   listMonth(month: MonthKey, signal?: AbortSignal): Promise<ProjectAssignment[]>;
   create(input: CreateProjectAssignmentInput): Promise<ProjectAssignment>;
+  /** Corrects one assignment; the server re-validates the complete result. */
+  update(assignmentId: string, changes: UpdateProjectAssignmentInput): Promise<ProjectAssignment>;
 }
 
 /** API month value for a `YYYY-MM` month: its first calendar day. */
@@ -81,6 +87,19 @@ export function createProjectAssignmentsApi(api: SessionApi): ProjectAssignments
     async create(input) {
       const { employeeId, projectId, monthStart } = input;
       return toAssignment(await api.request<unknown>(BASE, { method: 'POST', body: { employeeId, projectId, monthStart } }));
+    },
+    async update(assignmentId, changes) {
+      // Only the three allowed fields, and only those that were given.
+      const body: UpdateProjectAssignmentInput = {};
+      if (changes.employeeId !== undefined) body.employeeId = changes.employeeId;
+      if (changes.projectId !== undefined) body.projectId = changes.projectId;
+      if (changes.monthStart !== undefined) body.monthStart = changes.monthStart;
+      const saved = toAssignment(
+        await api.request<unknown>(`${BASE}/${encodeURIComponent(assignmentId)}`, { method: 'PATCH', body }),
+      );
+      // An answer for another record would be a contract defect.
+      if (saved.id !== assignmentId) invalid();
+      return saved;
     },
   };
 }

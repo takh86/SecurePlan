@@ -9,6 +9,7 @@ import { addMonths, currentMonth, formatMonthLabel, parseMonth, type MonthKey } 
 import { ApiErrorAlert } from '../../shared/ui/ApiErrorAlert';
 import { StatusBadge } from '../../shared/ui/StatusBadge';
 import { ErrorState, LoadingState } from '../../shared/ui/ViewStates';
+import type { EditState } from './edit-state';
 import { ProjectAssignmentsPanel, type AssignmentApis } from './ProjectAssignmentsPanel';
 import type { ProjectNotice } from './ProjectCreatePage';
 import { ProjectNameForm } from './ProjectNameForm';
@@ -52,20 +53,22 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
   const noticeRef = useRef<HTMLParagraphElement>(null);
   const [focusNotice, setFocusNotice] = useState<object | null>(null);
   const [shiftEdit, setShiftEdit] = useState<ShiftEditState>('clean');
+  const [assignmentEdit, setAssignmentEdit] = useState<EditState>('clean');
 
   /**
+   * The page's only navigation blocker (a data router supports one at a time).
    * Any SPA navigation away from the current URL (links, sidebar, Back/Forward,
-   * programmatic, REPLACE included) waits for a decision while shift times are
-   * unsaved or a save is unconfirmed. Only the session boundary's marked
-   * REPLACE to `/` after sign-out or session loss passes (UX exception, not
-   * an authorization mechanism).
+   * programmatic, REPLACE included) waits for a decision while shift times or
+   * an assignment correction are unsaved or a save is unconfirmed. Only the
+   * session boundary's marked REPLACE to `/` after sign-out or session loss
+   * passes (UX exception, not an authorization mechanism).
    */
   const shouldBlock = useCallback<BlockerFunction>(
     ({ currentLocation, nextLocation, historyAction }) =>
-      shiftEdit !== 'clean' &&
+      (shiftEdit !== 'clean' || assignmentEdit !== 'clean') &&
       !isSessionRedirectNavigation(historyAction, nextLocation) &&
       (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search),
-    [shiftEdit],
+    [shiftEdit, assignmentEdit],
   );
   const blocker = useBlocker(shouldBlock);
 
@@ -88,9 +91,9 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
       <div className="employees employees--narrow">
         <Link className="employees__back" to={basePath}>Zurück zur Übersicht</Link>
         {blocker.state === 'blocked' && (
-          <UnsavedShiftsPrompt
+          <UnsavedChangesPrompt
             monthLabel={formatMonthLabel(requestedMonth)}
-            editState={shiftEdit}
+            edits={{ shifts: shiftEdit, assignment: assignmentEdit }}
             onLeave={() => blocker.proceed()}
             onStay={() => blocker.reset()}
           />
@@ -115,7 +118,12 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
               clock={clock}
               onEditStateChange={setShiftEdit}
             />
-            <AssignmentSection project={project} month={requestedMonth} apis={apis} />
+            <AssignmentSection
+              project={project}
+              month={requestedMonth}
+              apis={apis}
+              onEditStateChange={setAssignmentEdit}
+            />
           </>
         ) : state.status === 'error' ? (
           <ErrorState
@@ -333,52 +341,85 @@ function MonthSection({ month, monthPath }: MonthSectionProps) {
   );
 }
 
-type UnsavedShiftsPromptProps = {
+/** Edit states of the two forms on this page that can hold unsaved input. */
+type PendingEdits = { shifts: ShiftEditState; assignment: EditState };
+
+type UnsavedChangesPromptProps = {
   monthLabel: string;
-  editState: ShiftEditState;
+  edits: PendingEdits;
   onLeave: () => void;
   onStay: () => void;
 };
 
-function promptText(state: ShiftEditState, monthLabel: string) {
-  switch (state) {
-    case 'saving':
-      // A running save is neither safely discarded nor cancelled by leaving.
-      return {
-        title: 'Speichern läuft noch',
-        text: `Die Schichtzeiten ab ${monthLabel} werden gerade gespeichert. Ein Wechsel bricht das Speichern nicht ab: Die Änderung kann trotzdem gespeichert werden oder fehlschlagen, Sie sehen das Ergebnis aber nicht. Prüfen Sie die Schichtzeiten danach.`,
-        leave: 'Trotzdem wechseln',
-        stay: 'Hier bleiben',
-      };
-    case 'dirty':
-      return {
-        title: 'Ungespeicherte Schichtzeiten',
-        text: `Die Änderungen an den Schichtzeiten ab ${monthLabel} sind noch nicht gespeichert. Wenn Sie die Ansicht wechseln, werden sie verworfen.`,
-        leave: 'Änderungen verwerfen und wechseln',
-        stay: 'Weiter bearbeiten',
-      };
-    default:
-      return {
-        title: 'Keine ungespeicherten Schichtzeiten mehr',
-        text: 'Es gibt keine ungespeicherten Änderungen mehr. Sie können die Ansicht jetzt wechseln.',
-        leave: 'Jetzt wechseln',
-        stay: 'Hier bleiben',
-      };
+const SAVING_TEXT: Record<keyof PendingEdits, (monthLabel: string) => string> = {
+  shifts: (monthLabel) => `Die Schichtzeiten ab ${monthLabel} werden gerade gespeichert.`,
+  assignment: (monthLabel) => `Die Korrektur einer Zuordnung im ${monthLabel} wird gerade gespeichert.`,
+};
+const DIRTY_TEXT: Record<keyof PendingEdits, (monthLabel: string) => string> = {
+  shifts: (monthLabel) => `Die Änderungen an den Schichtzeiten ab ${monthLabel} sind noch nicht gespeichert.`,
+  assignment: (monthLabel) => `Die Korrektur einer Zuordnung im ${monthLabel} ist noch nicht gespeichert.`,
+};
+const CHECK_AFTERWARDS: Record<keyof PendingEdits, string> = { shifts: 'die Schichtzeiten', assignment: 'die Zuordnungen' };
+
+/** `involved`: the forms that held changes while the prompt was open. */
+function promptText(edits: PendingEdits, involved: (keyof PendingEdits)[], monthLabel: string) {
+  const saving = involved.filter((area) => edits[area] === 'saving');
+  const dirty = involved.filter((area) => edits[area] === 'dirty');
+  if (saving.length > 0) {
+    // A running save is neither safely discarded nor cancelled by leaving.
+    return {
+      title: 'Speichern läuft noch',
+      text: [
+        ...saving.map((area) => SAVING_TEXT[area](monthLabel)),
+        `Ein Wechsel bricht das Speichern nicht ab: Die Änderung kann trotzdem gespeichert werden oder fehlschlagen, Sie sehen das Ergebnis aber nicht. Prüfen Sie ${saving.map((area) => CHECK_AFTERWARDS[area]).join(' und ')} danach.`,
+        ...dirty.map((area) => DIRTY_TEXT[area](monthLabel)),
+        ...(dirty.length > 0 ? ['Ungespeicherte Änderungen werden beim Wechsel verworfen.'] : []),
+      ].join(' '),
+      leave: 'Trotzdem wechseln',
+      stay: 'Hier bleiben',
+    };
   }
+  if (dirty.length > 0) {
+    return {
+      title: dirty.length > 1
+        ? 'Ungespeicherte Änderungen'
+        : dirty[0] === 'shifts' ? 'Ungespeicherte Schichtzeiten' : 'Ungespeicherte Zuordnungskorrektur',
+      text: [...dirty.map((area) => DIRTY_TEXT[area](monthLabel)), 'Wenn Sie die Ansicht wechseln, werden sie verworfen.'].join(' '),
+      leave: 'Änderungen verwerfen und wechseln',
+      stay: 'Weiter bearbeiten',
+    };
+  }
+  return {
+    title: involved.length > 1
+      ? 'Keine ungespeicherten Änderungen mehr'
+      : involved[0] === 'assignment' ? 'Keine ungespeicherte Zuordnungskorrektur mehr' : 'Keine ungespeicherten Schichtzeiten mehr',
+    text: 'Es gibt keine ungespeicherten Änderungen mehr. Sie können die Ansicht jetzt wechseln.',
+    leave: 'Jetzt wechseln',
+    stay: 'Hier bleiben',
+  };
 }
+
+/** First control of the form that still holds changes, for "stay" when the trigger is gone. */
+const FORM_FOCUS: Record<keyof PendingEdits, string> = {
+  shifts: '.shift-config__form input',
+  assignment: '.assignment-correction select',
+};
 
 /**
  * Inline confirmation (no browser dialog) for a navigation held back by the
  * blocker. Exactly one decision per held navigation: proceed() or reset().
  */
-function UnsavedShiftsPrompt({ monthLabel, editState, onLeave, onStay }: UnsavedShiftsPromptProps) {
+function UnsavedChangesPrompt({ monthLabel, edits, onLeave, onStay }: UnsavedChangesPromptProps) {
   const container = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
   const decided = useRef(false);
   const [deciding, setDeciding] = useState(false);
   const returnFocus = useRef<HTMLElement | null>(null);
-  const copy = promptText(editState, monthLabel);
+  // Remembered from the held navigation on: a save that completes meanwhile still names its form.
+  const [heldWith] = useState(() => ({ shifts: edits.shifts !== 'clean', assignment: edits.assignment !== 'clean' }));
+  const involved = (['shifts', 'assignment'] as const).filter((area) => heldWith[area] || edits[area] !== 'clean');
+  const copy = promptText(edits, involved, monthLabel);
 
   useEffect(() => {
     // Remember the control that triggered the navigation (e.g. the month link).
@@ -405,7 +446,8 @@ function UnsavedShiftsPrompt({ monthLabel, editState, onLeave, onStay }: Unsaved
     if (target?.isConnected && (stay || !target.closest('form'))) {
       target.focus();
     } else if (stay) {
-      document.querySelector<HTMLElement>('.shift-config__form input')?.focus();
+      const area = involved.find((candidate) => edits[candidate] !== 'clean') ?? involved[0];
+      if (area) document.querySelector<HTMLElement>(FORM_FOCUS[area])?.focus();
     }
     action();
   }
@@ -435,13 +477,20 @@ type AssignmentSectionProps = {
   project: Project;
   month: MonthKey;
   apis: AssignmentApis;
+  onEditStateChange: (state: EditState) => void;
 };
 
-function AssignmentSection({ project, month, apis }: AssignmentSectionProps) {
+function AssignmentSection({ project, month, apis, onEditStateChange }: AssignmentSectionProps) {
   return (
     <section className="employees-card" aria-labelledby="project-assignments-title">
       <h2 id="project-assignments-title">Mitarbeiterzuordnung</h2>
-      <ProjectAssignmentsPanel key={month} project={project} month={month} apis={apis} />
+      <ProjectAssignmentsPanel
+        key={month}
+        project={project}
+        month={month}
+        apis={apis}
+        onEditStateChange={onEditStateChange}
+      />
     </section>
   );
 }
