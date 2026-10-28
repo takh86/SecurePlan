@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 
-/** PROPOSED Issue #51 transport amendment: login bodies must be JSON. */
+/** APPROVED Issue #51 transport amendment: nonempty login bodies must be JSON. */
 @Injectable()
 export class LoginJsonGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
