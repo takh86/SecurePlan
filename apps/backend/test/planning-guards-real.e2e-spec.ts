@@ -258,6 +258,10 @@ describe('E-10 — real services: true no-op passes, every effective change fail
         .rejects.toMatchObject({ status: 409, response: { code: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' } });
       await expect(shifts.replace(tenant, north.projectId, { effectiveFromMonth: '2027-01-01', shifts: [DAY] }, randomUUID()))
         .rejects.toMatchObject({ status: 409, response: { code: 'SHIFT_CONFIGURATION_CONFLICT' } });
+      // #64 case 1: missing employment evidence is refused before the guard is consulted; still a 409.
+      await probe.query("UPDATE employees SET employment_end = '2027-01-31' WHERE id = $1", [employee.employeeId]);
+      await expect(assignments.correct(tenant, assignmentId, { monthStart: '2027-02-01' }, randomUUID()))
+        .rejects.toMatchObject({ status: 409, response: { code: 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH' } });
 
       // ... without any write or audit entry.
       expect(await snapshot()).toEqual(before);
