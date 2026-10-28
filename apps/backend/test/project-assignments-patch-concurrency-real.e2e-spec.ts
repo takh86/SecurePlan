@@ -5,6 +5,8 @@
  * Proves the deterministic lock order (employees by id, then projects, then
  * the assignment row), so opposing employee corrections cannot deadlock, and
  * that the employee/month invariant survives concurrent corrections/creates.
+ * #64 case 1: employment dates changed concurrently are judged under the
+ * correction's employee lock, in both orders.
  */
 import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
@@ -118,6 +120,13 @@ async function rows(month: string) {
     `SELECT employee_id, project_id FROM project_assignments WHERE company_id = $1 AND planning_month = $2::date`,
     [tenant.companyId, month],
   )).rows;
+}
+
+async function auditCount(): Promise<number> {
+  return (await db().query<{ n: number }>(
+    'SELECT count(*)::int AS n FROM audit_event WHERE company_id = $1',
+    [tenant.companyId],
+  )).rows[0].n;
 }
 
 const codes = (responses: { status: number; body: { code?: string } }[]) =>
@@ -272,5 +281,72 @@ describe('SP-09 PATCH — lifecycle changes are observed', () => {
     const response = await attempt;
     expect([response.status, response.body.code]).toEqual([409, 'PROJECT_INACTIVE']);
     expect((await rows('2027-03-01'))[0].project_id).toBe(north.projectId);
+  });
+});
+
+describe('#64 case 1 — employment changes and FUTURE corrections are serialized on the employee row', () => {
+  const corrections = {
+    'project only': () => ({ projectId: south.projectId }),
+    'month only': () => ({ monthStart: '2027-04-01' }),
+    'employee only': () => ({ employeeId: jonas.employeeId }),
+  };
+
+  it.each([
+    ['project only', 'mira', "employment_end = '2027-02-28'"],
+    ['month only', 'mira', "employment_end = '2027-03-31'"],
+    ['employee only', 'jonas', "employment_start = '2027-04-01'"],
+    ['employee only', 'jonas', 'employment_start = NULL'],
+  ] as const)('%s: %s\'s employment changed (%s) and committed while the correction waits: 409, nothing written', async (kind, who, set) => {
+    const x = await seed(mira, north, '2027-03-01');
+    const audits = await auditCount();
+    const change = await begin();
+    await change.client.query(`UPDATE employees SET ${set} WHERE id = $1`, [(who === 'mira' ? mira : jonas).employeeId]);
+    const attempt = send('patch', `${BASE}/${x}`, admins[0], corrections[kind]());
+    await waitForBlocked(change.pid);
+    await finish(change, 'COMMIT');
+
+    const response = await attempt;
+    expect([response.status, response.body.code]).toEqual([409, 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH']);
+    expect(await rows('2027-03-01')).toEqual([{ employee_id: mira.employeeId, project_id: north.projectId }]);
+    expect(await auditCount()).toBe(audits);
+  });
+
+  it.each([
+    ['evidence added and committed', 'COMMIT', "employment_start = '2027-03-31'", null],
+    ['evidence removed but rolled back', 'ROLLBACK', 'employment_start = NULL', '2026-01-01'],
+  ] as const)('%s while the correction waits: only committed dates count (200)', async (_label, command, set, initialStart) => {
+    const x = await seed(mira, north, '2027-03-01');
+    await db().query('UPDATE employees SET employment_start = $2::date WHERE id = $1', [mira.employeeId, initialStart]);
+    const change = await begin();
+    await change.client.query(`UPDATE employees SET ${set} WHERE id = $1`, [mira.employeeId]);
+    const attempt = send('patch', `${BASE}/${x}`, admins[0], { projectId: south.projectId });
+    await waitForBlocked(change.pid);
+    await finish(change, command);
+
+    expect((await attempt).status).toBe(200);
+    expect(await rows('2027-03-01')).toEqual([{ employee_id: mira.employeeId, project_id: south.projectId }]);
+  });
+
+  it('other order: a change arriving while the correction holds the employee lock waits for it; no deadlock', async () => {
+    const x = await seed(mira, north, '2027-03-01');
+    // Gate on the stored project: the correction takes it (FOR SHARE) only AFTER locking the employees.
+    const gate = await begin();
+    await gate.client.query('SELECT 1 FROM projects WHERE id = $1 FOR UPDATE', [north.projectId]);
+    const attempt = send('patch', `${BASE}/${x}`, admins[0], { projectId: south.projectId });
+    await waitForBlocked(gate.pid);
+    const change = await begin();
+    const changed = change.client.query("UPDATE employees SET employment_end = '2027-02-28' WHERE id = $1", [mira.employeeId]);
+    void changed.catch(() => {});
+    await waitForBlocked(gate.pid, 2); // the change queues behind the correction, not beside it
+    await finish(gate, 'ROLLBACK');
+
+    // Decided on the dates committed when the correction took the lock.
+    const response = await attempt;
+    expect(response.status).toBe(200);
+    expect(await rows('2027-03-01')).toEqual([{ employee_id: mira.employeeId, project_id: south.projectId }]);
+    // The change proceeds only afterwards. Whether it may commit against a future row is #64 case 2
+    // (not part of this slice; raw SQL here bypasses the employee service anyway).
+    await changed;
+    await finish(change, 'COMMIT');
   });
 });

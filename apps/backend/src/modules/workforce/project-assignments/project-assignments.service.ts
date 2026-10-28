@@ -181,12 +181,17 @@ export class ProjectAssignmentsService {
    * Correction of an existing assignment (Phase 8.4 5.3). Rules:
    * - the complete resulting employee/project/month tuple is validated again;
    * - FUTURE correction (old and new month after the company's current month):
-   *   the resulting employee and project must be ACTIVE;
+   *   the resulting employee and project must be ACTIVE, and the resulting
+   *   employee needs the same employment evidence for the resulting month as
+   *   POST (#64 case 1, owner decision 1a of 28.10.2026), whichever field changed;
    * - HISTORICAL correction (old or new month is the current or a past month,
    *   in the company's IANA time zone): an already referenced inactive employee
    *   or project may stay, but a NEWLY referenced one must be ACTIVE, and a newly
    *   referenced employee needs documented employment covering that month
    *   (missing evidence is never treated as valid);
+   * - error precedence after the no-op check: EMPLOYEE_INACTIVE ->
+   *   PROJECT_INACTIVE -> missing employment evidence -> planning guard ->
+   *   target month taken;
    * - planning data: see assertPlanningDependencyCheckImplemented (fail closed);
    * - lock order (deterministic, independent of the change direction): actor ->
    *   employees by id -> projects by id -> assignment row; the row is re-read
@@ -279,6 +284,7 @@ export class ProjectAssignmentsService {
         ),
       ).current_month;
       const historical = current.month_start <= zone || next.monthStart <= zone;
+      const scope = historical ? 'HISTORICAL' : 'FUTURE';
 
       // Status rules (D2): future = everything ACTIVE; historical = nothing NEW may be inactive.
       if ((!historical || employeeChanged) && nextEmployee.status !== 'ACTIVE') {
@@ -287,9 +293,9 @@ export class ProjectAssignmentsService {
       if ((!historical || projectChanged) && nextProject.status !== 'ACTIVE') {
         throw new ConflictException({ code: 'PROJECT_INACTIVE' });
       }
-      if (historical && employeeChanged && !employmentCovers(nextEmployee, next.monthStart)) {
-        throw new ConflictException({ code: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' });
-      }
+      // Read from the employee row locked above, so a concurrent change of the dates is serialized.
+      const employmentConflict = correctionEmploymentConflict(scope, employeeChanged, nextEmployee, next.monthStart);
+      if (employmentConflict !== null) throw new ConflictException({ code: employmentConflict });
 
       await assertPlanningDependencyCheckImplemented(client);
 
@@ -323,7 +329,7 @@ export class ProjectAssignmentsService {
       }
 
       const oldValues: Record<string, unknown> = {};
-      const newValues: Record<string, unknown> = { scope: historical ? 'HISTORICAL' : 'FUTURE' };
+      const newValues: Record<string, unknown> = { scope };
       if (employeeChanged) {
         oldValues.employeeId = current.employee_id;
         newValues.employeeId = updated.employee_id;
@@ -365,4 +371,22 @@ export function employmentCovers(
   const monthEnd = `${monthStart.slice(0, 8)}${String(lastDay).padStart(2, '0')}`;
   // YYYY-MM-DD strings compare chronologically.
   return employee.employment_start <= monthEnd && (employee.employment_end === null || employee.employment_end >= monthStart);
+}
+
+/**
+ * The 409 code for a correction whose resulting employee lacks employment
+ * evidence for the resulting month, or null when no evidence check applies:
+ * - FUTURE (#64 case 1, owner decision 1a): always, with POST's code, even if
+ *   only the project or only the month changes;
+ * - HISTORICAL (D2, unchanged): only for a newly referenced employee.
+ */
+export function correctionEmploymentConflict(
+  scope: 'FUTURE' | 'HISTORICAL',
+  employeeChanged: boolean,
+  employee: { employment_start: string | null; employment_end: string | null },
+  monthStart: string,
+): 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH' | 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' | null {
+  if (scope === 'HISTORICAL' && !employeeChanged) return null;
+  if (employmentCovers(employee, monthStart)) return null;
+  return scope === 'FUTURE' ? 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH' : 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT';
 }

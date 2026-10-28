@@ -1,12 +1,12 @@
 # Korrektur von Monatszuordnungen: Regeln und Übergabe an SP-11
 
-Stand: 26.10.2026. Betrifft `PATCH /api/v1/project-assignments/{assignmentId}` (SP-09, Stand PARTIAL).
+Stand: 26.10.2026, ergänzt am 28.10.2026 um #64 Fall 1. Betrifft `PATCH /api/v1/project-assignments/{assignmentId}` (SP-09, Stand PARTIAL).
 
 ## Umgesetzte Regeln (Owner-Entscheidungen D1–D5)
 
 - **Wer, was:** Nur `COMPANY_ADMIN` des eigenen Unternehmens. Korrigierbar sind `employeeId`, `projectId` und `monthStart`; mindestens ein Feld (`EMPTY_PATCH`). Das vollständige Ergebnis-Tupel wird neu validiert. Eine Korrektur ohne Änderung antwortet 200, ohne Schreibzugriff und ohne Audit.
 - **Aktueller Monat (D3):** wird in der IANA-Zeitzone des Unternehmens (`companies.time_zone`) bestimmt, nie in UTC. Die Uhr ist über das Token `WALL_CLOCK` austauschbar, damit Monatsgrenzen deterministisch getestet werden (Europe/Berlin und America/New_York, auch am Jahreswechsel).
-- **Zukünftige Korrektur (D1):** alter und neuer Monat liegen nach dem aktuellen Monat. Der Ergebnis-Mitarbeiter und das Ergebnis-Projekt müssen `ACTIVE` sein.
+- **Zukünftige Korrektur (D1):** alter und neuer Monat liegen nach dem aktuellen Monat. Der Ergebnis-Mitarbeiter und das Ergebnis-Projekt müssen `ACTIVE` sein. Seit #64 Fall 1 braucht der Ergebnis-Mitarbeiter außerdem einen Beschäftigungsnachweis für den Ergebnis-Monat, wie beim POST (`409 EMPLOYEE_NOT_EMPLOYED_FOR_MONTH`, siehe Abschnitt „#64 Fall 1“).
 - **Historische Korrektur (D1/D2):** alter oder neuer Monat ist der aktuelle oder ein vergangener Monat. Eine bereits referenzierte inaktive Person oder ein bereits referenziertes inaktives Projekt darf bleiben. **Neu referenziert** werden darf nur Aktives. Wird die Person getauscht, muss ein dokumentierter Beschäftigungszeitraum den Monat überlappen; ein fehlender Beschäftigungsbeginn gilt als **kein Nachweis** (`409 PROJECT_ASSIGNMENT_CORRECTION_CONFLICT`). **Neue Owner-Festlegung (26.10.2026, MVP-Business-Rule):** Beim historischen Wechsel auf einen anderen Mitarbeiter muss eine dokumentierte Beschäftigungsperiode den betroffenen Kalendermonat überlappen; fehlt der Nachweis, wird mit `PROJECT_ASSIGNMENT_CORRECTION_CONFLICT` abgelehnt. Die Regel ist umgesetzt und getestet und muss mit der formellen Baseline-Fortschreibung dokumentiert werden. Grenzfälle (jeweils inklusiv): Beschäftigungsbeginn am Monatsletzten zählt, am Folgetag nicht; Beschäftigungsende am Monatsersten zählt, am Vortag nicht; geprüft wird immer der **Zielmonat** der Korrektur; der Schaltjahr-Februar ist abgedeckt.
 - **Mitarbeiterwechsel (D4):** erlaubt. Sperrreihenfolge unabhängig von der Änderungsrichtung: handelnder Admin → Mitarbeiter nach aufsteigender ID → Projekte nach aufsteigender ID → Zuordnungszeile. Die Zeile wird unter der Sperre erneut gelesen; eine zwischenzeitliche Änderung ergibt `409 PROJECT_ASSIGNMENT_CONFLICT`, kein stilles Überschreiben.
 - **Archivierte Projekte (F-3):** als Ziel `404`. Eine bestehende Zuordnung auf ein archiviertes Projekt bleibt lesbar.
@@ -57,7 +57,7 @@ Es gibt bewusst kein periodisches `GET /me`, weil jeder Aufruf die Leerlaufzeit 
 
 ## F-1: Beschäftigung muss den Zielmonat überlappen (Owner-Entscheidung Option A, 27.10.2026)
 
-Betrifft `POST /api/v1/project-assignments`. `PATCH` bleibt unverändert (Regeln siehe oben).
+Betrifft `POST /api/v1/project-assignments`. Für `PATCH` galt die Regel zunächst nicht; für zukünftige Korrekturen gilt sie seit #64 Fall 1 (nächster Abschnitt).
 
 - **Regel:** Ein dokumentierter Beschäftigungszeitraum (`employment_start`, `employment_end`) muss den Zielmonat an mindestens einem Kalendertag überlappen. Ein fehlender Beschäftigungsbeginn gilt als fehlender Nachweis. Die Regel gilt für historische, aktuelle und zukünftige Monate; für Zukunftsmonate gibt es kein künstliches Zeitlimit. Grenzfälle sind inklusiv: Beginn am Monatsletzten zählt, Ende am Monatsersten zählt.
 - **Begründung:** Eine Zuordnung ist Grundlage der späteren Planung. Ohne Beschäftigungsnachweis für den Monat dürfte die Person dort nicht eingeplant werden. Dieselbe Evidenzregel gilt bereits beim historischen Personenwechsel per PATCH.
@@ -66,3 +66,17 @@ Betrifft `POST /api/v1/project-assignments`. `PATCH` bleibt unverändert (Regeln
 - **Auswirkung auf optionale Beschäftigungsdaten:** `employment_start` ist für Stammdaten weiterhin optional. Wer keinen Beschäftigungsbeginn hat, kann aber keinem Monat zugeordnet werden, bis der Beginn gepflegt ist.
 - **Bestand:** Keine rückwirkende Migration und keine Neubewertung bestehender Zuordnungen.
 - **Offen (formell):** Die privaten Phase-8-Baselines (API-Vertrag, Fehlerkatalog, Validierungs- und Testvertrag) müssen diese Entscheidung formell fortschreiben. Sie wurden hier nicht verändert.
+
+## #64 Fall 1: Beschäftigungsnachweis bei zukünftigen Korrekturen (Owner-Entscheidung 1a, 28.10.2026)
+
+Entscheidung: [#64, Kommentar vom 28.10.2026](https://github.com/takh86/SecurePlan/issues/64#issuecomment-6474708196). Die Fälle 2–5 desselben Issues sind hier **nicht** umgesetzt.
+
+- **Regel:** Bei einer zukünftigen Korrektur (alter **und** neuer Monat nach dem aktuellen Monat) muss die resultierende Kombination aus Mitarbeiter und Monat dieselbe Beschäftigungsregel erfüllen wie der POST (F-1). Das gilt auch, wenn der PATCH nur das Projekt ändert. Geprüft wird nur das Ergebnis; ob die gespeicherte Zuordnung den Nachweis hatte, spielt keine Rolle.
+- **Fehlercode:** `409 EMPLOYEE_NOT_EMPLOYED_FOR_MONTH`, mit derselben Bedeutung wie beim POST. Es gibt keinen neuen Code und keine neue Bedeutung eines bestehenden Codes. Abgelehnt wird vor UPDATE und Audit.
+- **Prüfungsreihenfolge:** (1) 404 für Zuordnung, Mitarbeiter oder Projekt, (2) Sperren und erneutes Lesen der Zeile (`PROJECT_ASSIGNMENT_CONFLICT` bei zwischenzeitlicher Änderung), (3) No-op, (4) `EMPLOYEE_INACTIVE`, (5) `PROJECT_INACTIVE`, (6) fehlender Beschäftigungsnachweis, (7) Planungsschutz (fail closed, unverändert), (8) `PROJECT_ASSIGNMENT_ALREADY_EXISTS` bzw. `PROJECT_ASSIGNMENT_CONFLICT`.
+- **No-op:** Ein PATCH ohne Änderung bleibt 200, ohne Schreibzugriff und ohne Audit. Das gilt auch, wenn die gespeicherte Zuordnung keinen Nachweis mehr hat: Es entsteht kein neuer Zustand, der zu prüfen wäre. Dasselbe gilt schon für die Statusregeln.
+- **Historische Korrekturen bleiben unverändert (D2):** Ohne Personenwechsel wird kein Nachweis geprüft. Beim Personenwechsel bleibt es bei `409 PROJECT_ASSIGNMENT_CORRECTION_CONFLICT`. Es gibt keine neue rückwirkende Einschränkung.
+- **Sperren:** Die Beschäftigungsdaten stammen aus der bereits mit `FOR NO KEY UPDATE` gesperrten Mitarbeiterzeile. Eine gleichzeitige Änderung der Beschäftigungsdaten wird dadurch serialisiert. Es gibt keine neue Sperre und keine geänderte Sperrreihenfolge.
+- **Bestand:** Bestehende Zuordnungen werden weder migriert noch neu bewertet. Eine zukünftige Zuordnung ohne Nachweis, etwa nach einer späteren Änderung der Beschäftigungsdaten (Fall 2, noch nicht umgesetzt), lässt sich erst wieder korrigieren, wenn das Ergebnis den Nachweis hat.
+- **Offen, nicht entschieden:** Wird eine Zuordnung aus dem aktuellen oder einem vergangenen Monat in einen Zukunftsmonat verschoben, ist das per Definition (D1) eine historische Korrektur. Ohne Personenwechsel wird dann nicht geprüft. Auf diesem Weg kann weiterhin eine Zukunftszuordnung ohne Nachweis entstehen, die der POST ablehnen würde. Ob hier geprüft wird, braucht eine eigene Owner-Entscheidung.
+- **Tests:** Unit-Matrix `employment-covers.spec.ts`. Real-PostgreSQL: `project-assignments-patch-real.e2e-spec.ts` (nur Projekt, nur Monat, nur Mitarbeiter, kombiniert, Grenzfälle, Schaltjahr, Reihenfolge, No-op, Tenant-Isolation, historische Fälle, Zeitzonen), `project-assignments-patch-concurrency-real.e2e-spec.ts` (gleichzeitige Änderung der Beschäftigungsdaten in beiden Sperrreihenfolgen) und `planning-guards-real.e2e-spec.ts` (Reihenfolge vor dem Planungsschutz).

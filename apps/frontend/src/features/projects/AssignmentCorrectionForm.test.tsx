@@ -306,6 +306,8 @@ describe('SP-09 correction — saving (PATCH, persisted state)', () => {
 describe('SP-09 correction — failures keep the input', () => {
   it.each([
     ['PROJECT_ASSIGNMENT_CORRECTION_CONFLICT', 409, 'Korrektur nicht möglich'],
+    // #64 case 1: a FUTURE correction now gets POST's code when employment evidence is missing.
+    ['EMPLOYEE_NOT_EMPLOYED_FOR_MONTH', 409, 'Nicht beschäftigt in diesem Monat'],
     ['PROJECT_ASSIGNMENT_CONFLICT', 409, 'Bereits einem anderen Projekt zugeordnet'],
     ['PROJECT_ASSIGNMENT_ALREADY_EXISTS', 409, 'Zuordnung besteht bereits'],
     ['EMPLOYEE_INACTIVE', 409, 'Bereits deaktiviert'],
