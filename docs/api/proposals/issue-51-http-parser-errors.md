@@ -30,7 +30,7 @@ JSON with invalid DTO fields retains its existing validation code. No 422 is
 introduced. Existing approved error pairs remain unchanged. The two approved codes are registered in `isApprovedErrorCode`; parser handling
 is restricted to the documented type/status combinations.
 
-## Candidate implementation and scope
+## Implemented transport behavior and scope
 
 The existing 100 KiB JSON parser limit is pinned to **102400 bytes**, without
 increasing it. The limit counts bytes, includes JSON syntax/whitespace, and also
@@ -68,7 +68,7 @@ parsers, business rules and SP-10 contracts are outside this amendment.
 
 ## RFC 9457 and data exposure
 
-All candidate errors retain `application/problem+json` and exactly the existing
+All approved transport errors retain `application/problem+json` and exactly the existing
 required fields: `type`, `title`, `status`, `detail`, `instance`, `code` and
 `correlationId`. The server-generated `X-Correlation-ID` matches the body and
 `/problems/occurrences/{correlationId}`; caller-supplied correlation IDs are ignored.
