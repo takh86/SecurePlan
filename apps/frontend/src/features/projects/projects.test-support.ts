@@ -76,7 +76,7 @@ function versionResponse(projectId: string, version: ShiftVersion | undefined) {
 
 /**
  * In-memory company behind the documented endpoints. Business outcomes of
- * POST /project-assignments and the SP-08b shift configuration follow the API
+ * POST/PATCH /project-assignments and the SP-08b shift configuration follow the API
  * contract (codes, versions, full replacement, no-op) so screens can be tested
  * end to end; `fail` lets a test inject an error for one request.
  * `currentMonthStart` is the company's current month for the past-month rule.
@@ -188,6 +188,34 @@ export function fakeCompany(initial: Partial<CompanyState> & { currentMonthStart
       const created = { id: `a-${nextId++}`, ...body };
       state.assignments.push(created);
       return created;
+    }
+    const assignmentMatch = /^\/api\/v1\/project-assignments\/([^/]+)$/.exec(pathname);
+    if (assignmentMatch && request.method === 'PATCH') {
+      // Simplified correction contract: no time-zone/historical scope and no planning guard
+      // (tests inject those answers with `fail`).
+      const index = state.assignments.findIndex((item) => item.id === decodeURIComponent(assignmentMatch[1]));
+      if (index < 0) throw httpError(404, 'RESOURCE_NOT_FOUND');
+      const body = request.body as Partial<Omit<ProjectAssignment, 'id'>>;
+      if (Object.keys(body).length === 0) throw httpError(400, 'EMPTY_PATCH');
+      if (body.monthStart !== undefined && !/^\d{4}-\d{2}-01$/.test(body.monthStart)) throw httpError(400, 'INVALID_MONTH_START');
+      const current = state.assignments[index];
+      const next = { ...current, ...body };
+      const person = state.employees.find((item) => item.id === next.employeeId);
+      const target = state.projects.find((item) => item.id === next.projectId);
+      if (!person || !target) throw httpError(404, 'RESOURCE_NOT_FOUND');
+      if (next.employeeId === current.employeeId && next.projectId === current.projectId && next.monthStart === current.monthStart) {
+        return current;
+      }
+      if (next.employeeId !== current.employeeId && person.status !== 'ACTIVE') throw httpError(409, 'EMPLOYEE_INACTIVE');
+      if (next.projectId !== current.projectId && target.status !== 'ACTIVE') throw httpError(409, 'PROJECT_INACTIVE');
+      const existing = state.assignments.find(
+        (item) => item.id !== current.id && item.employeeId === next.employeeId && item.monthStart === next.monthStart,
+      );
+      if (existing) {
+        throw httpError(409, existing.projectId === next.projectId ? 'PROJECT_ASSIGNMENT_ALREADY_EXISTS' : 'PROJECT_ASSIGNMENT_CONFLICT');
+      }
+      state.assignments[index] = next;
+      return next;
     }
     throw new Error(`Unexpected request ${request.method} ${request.path}`);
   };

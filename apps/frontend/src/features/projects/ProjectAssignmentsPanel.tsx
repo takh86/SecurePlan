@@ -8,6 +8,8 @@ import { StatusBadge } from '../../shared/ui/StatusBadge';
 import { EmptyState, ErrorState, LoadingState } from '../../shared/ui/ViewStates';
 import { EMPLOYEE_STATUS, fullName, type Employee } from '../employees/employee-types';
 import type { EmployeesApi } from '../employees/employees-api';
+import { AssignmentCorrectionForm } from './AssignmentCorrectionForm';
+import type { EditState } from './edit-state';
 import { monthStartOf, type ProjectAssignment, type ProjectAssignmentsApi } from './project-assignments-api';
 import type { Project } from './project-types';
 import type { ProjectsApi } from './projects-api';
@@ -25,12 +27,14 @@ type MonthData = {
 };
 
 /** Feedback of the last write; kept outside the form so it survives the reload. */
-type Outcome = { kind: 'success'; text: string } | { kind: 'error'; error: Error };
+type Outcome = { kind: 'success' | 'info'; text: string } | { kind: 'error'; error: Error };
 
 type PanelProps = {
   project: Project;
   month: MonthKey;
   apis: AssignmentApis;
+  /** Reports the state of an open correction, so leaving the page can be confirmed first. */
+  onEditStateChange: (state: EditState) => void;
 };
 
 /**
@@ -38,9 +42,12 @@ type PanelProps = {
  * month. The pool is the company's employees; the server decides (one project
  * per employee and month, active employee and project). After every write the
  * month is read again, so the view always shows the persisted state.
+ * Existing assignments can be corrected (employee, project, month); a
+ * corrected assignment that now belongs elsewhere leaves this view only
+ * through that reload, never optimistically.
  * Mount with `key={month}`: a new month starts without old feedback.
  */
-export function ProjectAssignmentsPanel({ project, month, apis }: PanelProps) {
+export function ProjectAssignmentsPanel({ project, month, apis, onEditStateChange }: PanelProps) {
   const source = useMemo<ReadSource<MonthKey, MonthData>>(
     () => ({
       kind: 'api',
@@ -65,11 +72,11 @@ export function ProjectAssignmentsPanel({ project, month, apis }: PanelProps) {
     if (focusOutcome) outcomeRef.current?.focus();
   }, [focusOutcome]);
 
-  function report(next: Outcome) {
+  function report(next: Outcome, reload = true) {
     setOutcome(next);
     setFocusOutcome({});
     // Success or conflict: show the server's current state, not a guess.
-    retry();
+    if (reload) retry();
   }
 
   return (
@@ -78,6 +85,7 @@ export function ProjectAssignmentsPanel({ project, month, apis }: PanelProps) {
       <div ref={outcomeRef} tabIndex={-1} className="assignments__outcome">
         <div role="status" aria-live="polite">
           {outcome?.kind === 'success' && <p className="employees__notice">{outcome.text}</p>}
+          {outcome?.kind === 'info' && <p className="employees-card__hint">{outcome.text}</p>}
         </div>
         {outcome?.kind === 'error' && <ApiErrorAlert error={outcome.error} />}
       </div>
@@ -98,7 +106,9 @@ export function ProjectAssignmentsPanel({ project, month, apis }: PanelProps) {
             text: `${fullName(employee)} ist dem Projekt ${project.name} für ${monthLabel} zugeordnet.`,
           })}
           onFailed={(error) => report({ kind: 'error', error })}
+          onCorrectionOutcome={report}
           onFeedbackCleared={() => setOutcome(null)}
+          onEditStateChange={onEditStateChange}
         />
       )}
     </div>
@@ -113,11 +123,20 @@ type ContentProps = {
   apis: AssignmentApis;
   onSaved: (employee: Employee) => void;
   onFailed: (error: Error) => void;
+  /** Feedback of a closed correction; `reload` reads the month again. */
+  onCorrectionOutcome: (outcome: Outcome, reload: boolean) => void;
   onFeedbackCleared: () => void;
+  onEditStateChange: (state: EditState) => void;
 };
 
-function MonthContent({ project, month, monthLabel, data, apis, onSaved, onFailed, onFeedbackCleared }: ContentProps) {
+function MonthContent({
+  project, month, monthLabel, data, apis, onSaved, onFailed, onCorrectionOutcome, onFeedbackCleared, onEditStateChange,
+}: ContentProps) {
   const captionId = useId();
+  // At most one correction at a time; the other rows' actions wait until it is closed.
+  const [correcting, setCorrecting] = useState<string | null>(null);
+  const editButtons = useRef(new Map<string, HTMLButtonElement>());
+  const returnFocusTo = useRef<string | null>(null);
   const employeesById = new Map(data.employees.map((employee) => [employee.id, employee]));
   const projectsById = new Map(data.projects.map((item) => [item.id, item]));
   const assignedHere = data.assignments.filter((assignment) => assignment.projectId === project.id);
@@ -129,6 +148,29 @@ function MonthContent({ project, month, monthLabel, data, apis, onSaved, onFaile
   const assignedIds = new Set(assignedHere.map((assignment) => assignment.employeeId));
   // Pool: active employees not yet in this project for the month.
   const pool = data.employees.filter((employee) => employee.status === 'ACTIVE' && !assignedIds.has(employee.id));
+  const correction = assignedHere.find((assignment) => assignment.id === correcting);
+
+  // After "Abbrechen" the form is gone: continue on the row's edit button instead of <body>.
+  useEffect(() => {
+    if (correcting === null && returnFocusTo.current !== null) {
+      editButtons.current.get(returnFocusTo.current)?.focus();
+      returnFocusTo.current = null;
+    }
+  }, [correcting]);
+
+  function nameOf(employeeId: string) {
+    const employee = employeesById.get(employeeId);
+    return employee ? fullName(employee) : 'Unbekannte Person';
+  }
+
+  /** Describes the stored result (the server's answer), not the submitted input. */
+  function correctedText(saved: ProjectAssignment) {
+    const target = projectsById.get(saved.projectId)?.name ?? 'einem anderen Projekt';
+    const text = `Die Zuordnung wurde korrigiert: ${nameOf(saved.employeeId)} ist dem Projekt ${target} für ${formatMonthLabel(saved.monthStart.slice(0, 7))} zugeordnet.`;
+    return saved.projectId === project.id && saved.monthStart === monthStartOf(month)
+      ? text
+      : `${text} Sie wird deshalb hier für ${monthLabel} nicht mehr angezeigt.`;
+  }
 
   return (
     <>
@@ -146,6 +188,7 @@ function MonthContent({ project, month, monthLabel, data, apis, onSaved, onFaile
                 <th scope="col">Name</th>
                 <th scope="col">Mitarbeiter-ID</th>
                 <th scope="col">Status</th>
+                <th scope="col">Aktion</th>
               </tr>
             </thead>
             <tbody>
@@ -154,9 +197,28 @@ function MonthContent({ project, month, monthLabel, data, apis, onSaved, onFaile
                 const status = employee ? EMPLOYEE_STATUS[employee.status] : null;
                 return (
                   <tr key={assignment.id}>
-                    <th scope="row">{employee ? fullName(employee) : 'Unbekannte Person'}</th>
+                    <th scope="row">{nameOf(assignment.employeeId)}</th>
                     <td data-label="Mitarbeiter-ID">{employee?.employeeCode ?? '–'}</td>
                     <td data-label="Status">{status && <StatusBadge tone={status.tone}>{status.label}</StatusBadge>}</td>
+                    <td data-label="Aktion">
+                      <button
+                        ref={(node) => {
+                          if (node) editButtons.current.set(assignment.id, node);
+                          else editButtons.current.delete(assignment.id);
+                        }}
+                        type="button"
+                        className="employees-button"
+                        aria-label={`Zuordnung von ${nameOf(assignment.employeeId)} korrigieren`}
+                        aria-expanded={correcting === assignment.id}
+                        disabled={correcting !== null}
+                        onClick={() => {
+                          onFeedbackCleared();
+                          setCorrecting(assignment.id);
+                        }}
+                      >
+                        Korrigieren
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -165,7 +227,32 @@ function MonthContent({ project, month, monthLabel, data, apis, onSaved, onFaile
         </div>
       )}
 
-      {project.status === 'ACTIVE' ? (
+      {correction ? (
+        <AssignmentCorrectionForm
+          key={correction.id}
+          assignment={correction}
+          employees={data.employees}
+          projects={data.projects}
+          api={apis.assignments}
+          onSaved={(saved) => {
+            setCorrecting(null);
+            onCorrectionOutcome({ kind: 'success', text: correctedText(saved) }, true);
+          }}
+          onUnchanged={() => {
+            setCorrecting(null);
+            onCorrectionOutcome({ kind: 'success', text: 'Es gab keine Änderungen zu speichern.' }, false);
+          }}
+          onCancel={() => {
+            returnFocusTo.current = correction.id;
+            setCorrecting(null);
+          }}
+          onDiscardAndReload={() => {
+            setCorrecting(null);
+            onCorrectionOutcome({ kind: 'info', text: 'Die Korrektur wurde verworfen. Der aktuelle Stand wird neu geladen.' }, true);
+          }}
+          onEditStateChange={onEditStateChange}
+        />
+      ) : project.status === 'ACTIVE' ? (
         <AssignForm
           project={project}
           month={month}

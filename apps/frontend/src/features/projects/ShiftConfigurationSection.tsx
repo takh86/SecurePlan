@@ -8,6 +8,7 @@ import { formatMonthLabel, type MonthKey } from '../../shared/time/month';
 import { ApiErrorAlert } from '../../shared/ui/ApiErrorAlert';
 import { StatusBadge } from '../../shared/ui/StatusBadge';
 import { EmptyState, ErrorState, LoadingState } from '../../shared/ui/ViewStates';
+import type { EditState } from './edit-state';
 import type { Project } from './project-types';
 import {
   SHIFT_KINDS,
@@ -30,7 +31,7 @@ import {
 } from './shift-configuration-form';
 
 /** `dirty`: unsaved input; `saving`: a save whose outcome is not yet confirmed. */
-export type ShiftEditState = 'clean' | 'dirty' | 'saving';
+export type ShiftEditState = EditState;
 
 type SectionProps = {
   project: Project;
