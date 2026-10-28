@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { LoginAbuseService, LoginRateLimitedError, type LoginAttemptReservation } from './login-abuse.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { LoginOriginGuard } from './login-origin.guard.js';
+import { LoginJsonGuard } from './login-json.guard.js';
 import { LoginService, type LoginResult } from './login.service.js';
 import { Public } from './authorization/access-metadata.js';
 
@@ -17,7 +18,7 @@ export class LoginController {
   @Post('login')
   @HttpCode(200)
   @Public()
-  @UseGuards(LoginOriginGuard)
+  @UseGuards(LoginOriginGuard, LoginJsonGuard)
   async login(
     @Body() dto: LoginDto,
     @Req() request: Request,
