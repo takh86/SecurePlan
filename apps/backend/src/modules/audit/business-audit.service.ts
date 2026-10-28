@@ -10,14 +10,21 @@ import type { PoolClient } from 'pg';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
-/** Action names chosen for SP-07..SP-08b; no approved audit-action catalogue exists yet. */
+/** Action names chosen for SP-04..SP-08b; no approved audit-action catalogue exists yet. */
 export type BusinessAuditAction =
+  /** SP-04 account activation (self-service; the actor is the activated account). */
+  | 'ACCOUNT_ACTIVATED'
   | 'EMPLOYEE_CREATED'
   | 'EMPLOYEE_UPDATED'
   | 'EMPLOYEE_DEACTIVATED'
   | 'ACCOUNT_PROVISIONED'
   | 'ACCOUNT_DEACTIVATED'
   | 'ACCOUNT_ACTIVATION_DELIVERY_FAILED'
+  /**
+   * Development-only: written solely by scripts/reissue-employee-activation.mjs
+   * (local recovery tool, NODE_ENV=development and local database only); no HTTP
+   * route produces it.
+   */
   | 'ACCOUNT_ACTIVATION_REISSUED'
   | 'PROJECT_CREATED'
   | 'PROJECT_UPDATED'

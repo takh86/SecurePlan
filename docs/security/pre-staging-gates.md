@@ -13,7 +13,7 @@ Stand: 26.10.2026, aus dem Review von PR #57 (SP-07). Diese Punkte blockieren de
 - **R-1:** `companies.time_zone` wird nicht validiert. Ein ungültiger Zonenname würde Korrekturen von Monatszuordnungen mit 500 abbrechen (fail closed). Validierung gehört in den Anlege-Pfad für Unternehmen.
 - **SP-11-Planungsschutz:** Der Guard der Zuordnungs-Korrektur muss durch die echte Prüfung ersetzt werden (siehe `docs/datenbank/project-assignment-correction-handoff.md`).
 - **Sitzungsablauf ohne Aktivität:** kein periodisches Polling (würde den Idle-Timeout verlängern); ein untätiger Tab zeigt nach serverseitigem Ablauf zuletzt geladene Daten bis zur nächsten Aktion.
-- **Audit-Aktionsnamen** sind Annahmen ohne freigegebenen Katalog.
+- **Audit-Aktionsnamen** sind Annahmen ohne freigegebenen Katalog. Alle Aktionen laufen über `BusinessAuditService` mit der serverseitig erzeugten Request-Correlation-ID, seit E-15T auch `ACCOUNT_ACTIVATED`. `ACCOUNT_ACTIVATION_REISSUED` ist ein **reines Entwicklungsereignis**: Es wird nur vom lokalen Wiederherstellungsskript `scripts/reissue-employee-activation.mjs` geschrieben (nur `NODE_ENV=development`, nur lokale Datenbank), von keinem HTTP-Pfad, und hat eine eigene, skriptinterne Correlation-ID.
 - **Formelle Fortschreibung** der privaten Baselines (siehe ADR-0002 und die Übergabedatei).
 
 ## Behoben im Review
