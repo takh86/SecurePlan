@@ -8,13 +8,19 @@
  * `duty`, `duty_assignment`) bypassed the SP-09 guard, and both guards missed
  * "plan entry" names and tables outside schema `public`.
  *
- * Defense in two layers, neither of which creates or names a business table:
+ * Defense in three layers, none of which creates or names a business table:
  * 1. Runtime: every guard counts relations from PLANNING_GUARD_TABLES in ANY
  *    non-system schema. Stricter than before (fail-closed direction only).
- * 2. CI: planning-table-classification.spec.ts requires every relation created
- *    by a migration to be classified here, either as a known non-planning table
- *    or as a planning table. An unclassified name, a new schema or a schema
- *    other than `public` fails the build before the migration can run anywhere.
+ * 2. CI, static tripwire: planning-table-classification.spec.ts scans the
+ *    migration files without a database and fails on a visible unclassified
+ *    relation or schema change. It is a regex scan, not a SQL parser: DDL built
+ *    at run time (EXECUTE strings, SELECT INTO) is invisible to it.
+ * 3. CI, post-migration catalog check: test/planning-classification-catalog-real.e2e-spec.ts
+ *    compares pg_catalog of the migrated database with this classification.
+ *    Every table, view, materialized view or foreign table the executed SQL
+ *    created must be classified and live in schema `public`; no schema besides
+ *    `public` and `information_schema` may exist; every non-planning and ledger
+ *    entry must exist. Nothing unknown counts as safe.
  *
  * The guards stay fail-closed until SP-11 replaces them with the real
  * dependency checks (docs/datenbank/*-handoff.md). SP-11 must add its table
@@ -59,6 +65,9 @@ export const KNOWN_NON_PLANNING_TABLES = [
   'project_assignments',
   'shift_configurations',
 ] as const;
+
+/** Created by the migration runner itself (scripts/migrate.mjs, applied-migration ledger), not by a migration file. */
+export const MIGRATION_LEDGER_TABLES = ['schema_migrations'] as const;
 
 /**
  * Number of relations (any kind) named like a planning table in any

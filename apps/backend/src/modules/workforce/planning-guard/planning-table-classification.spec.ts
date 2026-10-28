@@ -1,8 +1,11 @@
 /**
- * E-10 static CI gate: every relation a migration creates must be classified,
- * and both temporary planning guards must use the same central list. This test
- * needs no database; the real-PostgreSQL behavior is covered by
- * test/planning-guards-real.e2e-spec.ts.
+ * E-10 static CI tripwire: every relation a migration visibly creates must be
+ * classified, and both temporary planning guards must use the same central
+ * list. This test needs no database and fails fast, but it scans text with
+ * regular expressions: DDL built at run time (EXECUTE strings, SELECT INTO) is
+ * out of its reach. What the executed migrations really created is checked
+ * against pg_catalog in test/planning-classification-catalog-real.e2e-spec.ts;
+ * the guards' real-PostgreSQL behavior in test/planning-guards-real.e2e-spec.ts.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +13,7 @@ import { assertPlanningDependencyCheckImplemented } from '../project-assignments
 import { assertShiftConfigurationPlanningCheckImplemented } from '../shift-configurations/shift-configuration-planning-guard.js';
 import {
   KNOWN_NON_PLANNING_TABLES,
+  MIGRATION_LEDGER_TABLES,
   PLANNING_GUARD_TABLES,
   countPlanningRelations,
 } from './planning-table-classification.js';
@@ -158,10 +162,9 @@ describe('E-10 - every relation created by a migration is classified', () => {
     expect(violations).toEqual([]);
   });
 
-  it('the two classifications are disjoint and free of duplicates', () => {
-    expect(new Set(PLANNING_GUARD_TABLES).size).toBe(PLANNING_GUARD_TABLES.length);
-    expect(new Set(KNOWN_NON_PLANNING_TABLES).size).toBe(KNOWN_NON_PLANNING_TABLES.length);
-    expect(PLANNING_GUARD_TABLES.filter((name) => nonPlanning.has(name))).toEqual([]);
+  it('the classifications (planning, non-planning, migration ledger) are disjoint and free of duplicates', () => {
+    const all: string[] = [...PLANNING_GUARD_TABLES, ...KNOWN_NON_PLANNING_TABLES, ...MIGRATION_LEDGER_TABLES];
+    expect(all.filter((name, index) => all.indexOf(name) !== index)).toEqual([]);
   });
 
   it('every planning name is listed in its singular and its plural form', () => {

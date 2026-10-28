@@ -18,7 +18,9 @@ Monatspläne, Dienste und Plan-Zuordnungen (`monthly_plans`, `duties`, `plan_ass
 
 - `planning-dependency-guard.ts` prüft zur Laufzeit, ob eine Relation mit einem Namen aus der zentralen Liste `PLANNING_GUARD_TABLES` (`planning-guard/planning-table-classification.ts`, Singular- und Pluralformen inklusive „plan entry“) in irgendeinem Nicht-System-Schema existiert. Existiert eine, schlagen alle Korrekturen mit `409 PROJECT_ASSIGNMENT_CORRECTION_CONFLICT` fehl, bis der Guard ersetzt ist. Der SP-08b-Guard verwendet dieselbe Liste und dieselbe Abfrage.
 - Real-PostgreSQL-Tests legen jeden Namen als Tabelle, als View und in einem fremden Schema innerhalb zurückgerollter Transaktionen an. Committete gegenüber nicht committeter DDL zweier Sessions wird in einer eigenen temporären Datenbank geprüft (`planning-guards-real.e2e-spec.ts`).
-- Ein CI-Test (`planning-table-classification.spec.ts`) verlangt, dass jede von einer Migration angelegte Tabelle klassifiziert ist, und verbietet fremde Schemas.
+- Zwei CI-Prüfungen halten die Klassifikation vollständig:
+  - Der statische Tripwire `planning-table-classification.spec.ts` liest die Migrationsdateien. Er ist schnell und braucht keine Datenbank, sieht aber keine erst zur Laufzeit gebaute DDL (`EXECUTE`, `SELECT INTO`).
+  - Die Post-Migration-Prüfung `planning-classification-catalog-real.e2e-spec.ts` vergleicht nach allen Migrationen `pg_catalog` mit der Klassifikation. Unklassifizierte Relationen, fremde Schemas und Einträge ohne Relation schlagen fehl.
 
 ### SP-11-Integrationsaufgabe: Planungsschutz der Korrektur (Gate vor Auslieferung von SP-11)
 
