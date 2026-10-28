@@ -9,34 +9,17 @@
  * (docs/datenbank/shift-configuration-sp11-handoff.md). GET and true no-op
  * PATCHes never reach this guard.
  *
- * Deliberately conservative: both the plural (physical design) and the singular
- * (logical design) table names count. The SP-09 guard is intentionally separate
- * and unchanged.
+ * The table names are classified centrally (planning-table-classification.ts)
+ * and shared with the SP-09 guard, so the two guards cannot diverge again.
  */
 import { ConflictException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
+import { countPlanningRelations } from '../planning-guard/planning-table-classification.js';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
-export const SHIFT_GUARD_PLANNING_TABLES = [
-  'monthly_plans',
-  'monthly_plan',
-  'duties',
-  'duty',
-  'plan_assignments',
-  'plan_assignment',
-  'duty_assignments',
-  'duty_assignment',
-] as const;
-
 export async function assertShiftConfigurationPlanningCheckImplemented(client: Queryable): Promise<void> {
-  const present = await client.query<{ n: number }>(
-    `SELECT count(*)::int AS n
-     FROM unnest($1::text[]) AS t(name)
-     WHERE to_regclass('public.' || t.name) IS NOT NULL`,
-    [[...SHIFT_GUARD_PLANNING_TABLES]],
-  );
-  if (present.rows[0].n > 0) {
+  if (await countPlanningRelations(client) > 0) {
     throw new ConflictException({ code: 'SHIFT_CONFIGURATION_CONFLICT' });
   }
 }

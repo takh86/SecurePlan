@@ -16,8 +16,9 @@ Stand: 26.10.2026. Betrifft `PATCH /api/v1/project-assignments/{assignmentId}` (
 
 Monatspläne, Dienste und Plan-Zuordnungen (`monthly_plans`, `duties`, `plan_assignments`) existieren erst ab SP-10/SP-11. Dass sie fehlen, gilt **nicht** als Nachweis, dass eine Korrektur sicher ist.
 
-- `planning-dependency-guard.ts` prüft zur Laufzeit, ob eine dieser Tabellen existiert. Existiert eine, schlagen alle Korrekturen mit `409 PROJECT_ASSIGNMENT_CORRECTION_CONFLICT` fehl, bis der Guard ersetzt ist.
-- Ein Real-PostgreSQL-Test legt jede der drei Tabellen innerhalb einer zurückgerollten Transaktion an und weist dieses Verhalten nach.
+- `planning-dependency-guard.ts` prüft zur Laufzeit, ob eine Relation mit einem Namen aus der zentralen Liste `PLANNING_GUARD_TABLES` (`planning-guard/planning-table-classification.ts`, Singular- und Pluralformen inklusive „plan entry“) in irgendeinem Nicht-System-Schema existiert. Existiert eine, schlagen alle Korrekturen mit `409 PROJECT_ASSIGNMENT_CORRECTION_CONFLICT` fehl, bis der Guard ersetzt ist. Der SP-08b-Guard verwendet dieselbe Liste und dieselbe Abfrage.
+- Real-PostgreSQL-Tests legen jeden Namen als Tabelle, als View und in einem fremden Schema innerhalb zurückgerollter Transaktionen an. Committete gegenüber nicht committeter DDL zweier Sessions wird in einer eigenen temporären Datenbank geprüft (`planning-guards-real.e2e-spec.ts`).
+- Ein CI-Test (`planning-table-classification.spec.ts`) verlangt, dass jede von einer Migration angelegte Tabelle klassifiziert ist, und verbietet fremde Schemas.
 
 ### SP-11-Integrationsaufgabe: Planungsschutz der Korrektur (Gate vor Auslieferung von SP-11)
 
