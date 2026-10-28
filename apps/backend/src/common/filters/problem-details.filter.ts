@@ -22,10 +22,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** Only documented parser type/status pairs; never trust an arbitrary status. */
+function resolveParserError(exception: unknown): ErrorResolution | undefined {
+  if (!(exception instanceof Error) || !isRecord(exception)) return undefined;
+  if (exception.status !== exception.statusCode) return undefined;
+
+  // 413/415 codes are PROPOSED, not additions to the approved code catalogue.
+  // See docs/api/proposals/issue-51-http-parser-errors.md (human approval gate).
+  if (exception.type === 'entity.too.large' && exception.status === 413) {
+    return { status: 413, code: 'REQUEST_BODY_TOO_LARGE' };
+  }
+  if ((exception.type === 'charset.unsupported' || exception.type === 'encoding.unsupported')
+    && exception.status === 415) {
+    return { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' };
+  }
+  if (exception.type === 'entity.parse.failed' && exception.status === 400) {
+    return { status: 400, code: 'INVALID_REQUEST_BODY' };
+  }
+  return undefined;
+}
+
 /** Unclassified 409 is NOT silently claimed to be a known business conflict. */
 function resolveError(exception: unknown): ErrorResolution {
   if (!(exception instanceof HttpException)) {
-    return { status: 500, code: 'INTERNAL_ERROR' };
+    return resolveParserError(exception) ?? { status: 500, code: 'INTERNAL_ERROR' };
   }
 
   const status = exception.getStatus();
@@ -38,6 +58,11 @@ function resolveError(exception: unknown): ErrorResolution {
   // Provisional operational readiness exception. Not in the approved 8.5 code catalogue.
   if (status === 503 && explicit === 'SERVICE_UNAVAILABLE') {
     return { status: 503, code: 'SERVICE_UNAVAILABLE' };
+  }
+
+  // PROPOSED transport amendment, emitted by the login JSON media-type guard.
+  if (status === 415 && explicit === 'UNSUPPORTED_MEDIA_TYPE') {
+    return { status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' };
   }
 
   if (explicit !== null) {
@@ -68,6 +93,8 @@ function safeTitle(status: number): string {
     case 403: return 'Forbidden';
     case 404: return 'Not Found';
     case 409: return 'Conflict';
+    case 413: return 'Content Too Large';
+    case 415: return 'Unsupported Media Type';
     case 429: return 'Too Many Requests';
     case 503: return 'Service Unavailable';
     default: return 'Internal Server Error';
@@ -77,6 +104,8 @@ function safeTitle(status: number): string {
 function safeDetail(status: number, code: string): string {
   if (status === 500) return 'An unexpected error occurred. Please try again later.';
   if (status === 503) return 'The service is temporarily unavailable. Please try again later.';
+  if (status === 413) return 'The request body exceeds the permitted size.';
+  if (status === 415) return 'The request media type, charset or content encoding is not supported.';
   if (code === 'VALIDATION_FAILED' || code === 'UNKNOWN_FIELD') return 'One or more fields are invalid.';
   if (status === 404) return 'The requested resource was not found.';
   if (code === 'PLAN_CONCURRENT_MODIFICATION') return 'The plan has changed. Reload the current state and try again.';
