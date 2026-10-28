@@ -44,6 +44,30 @@ describe('SP-09 — project assignments API client', () => {
     await expect(otherMonth.listMonth('2027-01')).rejects.toMatchObject({ kind: 'invalid-response' });
   });
 
+  it('corrects with PATCH on the record and sends only the given allowed fields', async () => {
+    const { api, requests } = fakeSessionApi(() => assignment('a/1', '2027-02-01'));
+    const client = createProjectAssignmentsApi(api);
+    // Extra keys (e.g. tenant or role smuggled in by a caller) are never sent.
+    const smuggled = { monthStart: '2027-02-01', companyId: 'c-1', role: 'COMPANY_ADMIN' } as Parameters<typeof client.update>[1];
+    expect(await client.update('a/1', smuggled)).toEqual(assignment('a/1', '2027-02-01'));
+    await client.update('a/1', { employeeId: 'e-2', projectId: 'p-2', monthStart: '2027-02-01' });
+    expect(requests).toEqual([
+      { path: '/api/v1/project-assignments/a%2F1', method: 'PATCH', body: { monthStart: '2027-02-01' } },
+      {
+        path: '/api/v1/project-assignments/a%2F1',
+        method: 'PATCH',
+        body: { employeeId: 'e-2', projectId: 'p-2', monthStart: '2027-02-01' },
+      },
+    ]);
+  });
+
+  it('rejects a malformed correction answer and an answer for another record', async () => {
+    for (const body of [assignment('a-1', '2027-01-15'), { ...assignment('a-1'), projectId: null }, assignment('a-2'), []]) {
+      const client = createProjectAssignmentsApi(fakeSessionApi(() => body).api);
+      await expect(client.update('a-1', { monthStart: '2027-01-01' })).rejects.toMatchObject({ kind: 'invalid-response' });
+    }
+  });
+
   it('maps a month key to its first day', () => {
     expect(monthStartOf('2026-12')).toBe('2026-12-01');
     expect(monthStartOf('2027-01')).toBe('2027-01-01');
