@@ -8,6 +8,7 @@ import {
 
 import { ThrottlerGuard } from '@nestjs/throttler';
 
+import { CorrelationId } from '../common/http/correlation-id.decorator.js';
 import { ActivateAccountDto } from './dto/activate-account.dto.js';
 import { AuthService } from './auth.service.js';
 import { Public } from './authorization/access-metadata.js';
@@ -20,7 +21,10 @@ export class AuthController {
   @HttpCode(200)
   @Public()
   @UseGuards(ThrottlerGuard)
-  activate(@Body() activateAccountDto: ActivateAccountDto) {
-    return this.authService.activate(activateAccountDto);
+  activate(
+    @Body() activateAccountDto: ActivateAccountDto,
+    @CorrelationId() correlationId: string,
+  ) {
+    return this.authService.activate(activateAccountDto, correlationId);
   }
 }

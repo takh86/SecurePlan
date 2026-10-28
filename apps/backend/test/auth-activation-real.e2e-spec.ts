@@ -15,6 +15,7 @@ import { vi } from 'vitest';
 import { PasswordPolicyService } from '../src/auth/password-policy.service.js';
 import { ServiceUnavailableException } from '@nestjs/common';
 import { PASSWORD_DENYLIST } from '../src/auth/local-password-denylist.js';
+import { BusinessAuditService, type BusinessAuditEntry } from '../src/modules/audit/business-audit.service.js';
 
 const PASSWORD = 'SecurePlan Strong Test Passphrase 2026!';
 
@@ -45,7 +46,7 @@ describe('SP-04 — Real account activation integration', () => {
 
     passwordPolicy.assertAllowed = assertAllowed;
 
-    authService = new AuthService(database, passwordPolicy);
+    authService = new AuthService(database, passwordPolicy, new BusinessAuditService());
   });
 
   afterEach(async () => {
@@ -181,6 +182,29 @@ describe('SP-04 — Real account activation integration', () => {
     });
   }
 
+  /** Complete audit rows of the fixture account, for correlation and privacy checks. */
+  async function auditRows(fixture: { companyId: string; accountId: string }) {
+    const result = await database.withTransaction((client) =>
+      client.query<{
+        company_id: string;
+        actor_account_id: string | null;
+        action: string;
+        resource_type: string;
+        resource_id: string;
+        old_values: unknown;
+        new_values: unknown;
+        correlation_id: string;
+      }>(
+        `SELECT company_id, actor_account_id, action, resource_type, resource_id,
+                old_values, new_values, correlation_id
+         FROM audit_event
+         WHERE company_id = $1 AND resource_id = $2`,
+        [fixture.companyId, fixture.accountId],
+      ),
+    );
+    return result.rows;
+  }
+
   const activationRequest = (token: string) => ({
     token,
     password: PASSWORD,
@@ -195,7 +219,7 @@ describe('SP-04 — Real account activation integration', () => {
   it('activates an account and consumes its token with an audit event', async () => {
     const fixture = await createFixture();
 
-    await authService.activate(activationRequest(fixture.rawToken));
+    await authService.activate(activationRequest(fixture.rawToken), randomUUID());
 
     const state = await getState(fixture);
 
@@ -221,13 +245,71 @@ describe('SP-04 — Real account activation integration', () => {
     ]);
   });
 
+  it('records the activation through the audit service with the request correlation ID and no secrets', async () => {
+    const fixture = await createFixture();
+    const correlationId = randomUUID();
+
+    await authService.activate(activationRequest(fixture.rawToken), correlationId);
+
+    const rows = await auditRows(fixture);
+    expect(rows).toEqual([
+      {
+        company_id: fixture.companyId,
+        actor_account_id: fixture.accountId,
+        action: 'ACCOUNT_ACTIVATED',
+        resource_type: 'ACCOUNT',
+        resource_id: fixture.accountId,
+        old_values: { status: 'PENDING_ACTIVATION' },
+        new_values: { status: 'ACTIVE' },
+        correlation_id: correlationId,
+      },
+    ]);
+    // Privacy: neither the password, the raw token, its hash, the password hash nor the e-mail address.
+    const stored = JSON.stringify(rows);
+    const { account } = await getState(fixture);
+    for (const secret of [
+      PASSWORD,
+      fixture.rawToken,
+      account.password_hash!,
+      `${fixture.accountId}@secureplan.invalid`,
+    ]) {
+      expect(stored).not.toContain(secret);
+    }
+    expect(stored).not.toMatch(/argon2|token|password|email/i);
+  });
+
+  it('rolls back activation and token consumption when the audit service rejects', async () => {
+    const fixture = await createFixture();
+    class RejectingAudit extends BusinessAuditService {
+      override recordBusinessAction(_client: unknown, entry: BusinessAuditEntry): Promise<void> {
+        return Promise.reject(new Error(`Simulated ${entry.action} audit failure`));
+      }
+    }
+    const service = new AuthService(database, passwordPolicy, new RejectingAudit());
+
+    await expect(
+      service.activate(activationRequest(fixture.rawToken), randomUUID()),
+    ).rejects.toThrow('Simulated ACCOUNT_ACTIVATED audit failure');
+
+    const state = await getState(fixture);
+    expect(state.account.status).toBe('PENDING_ACTIVATION');
+    expect(state.account.password_hash).toBeNull();
+    expect(state.account.email_verified_at).toBeNull();
+    expect(state.token.used_at).toBeNull();
+    expect(state.auditCount).toBe(0);
+
+    // The token stays usable: a later activation with a working audit succeeds.
+    await authService.activate(activationRequest(fixture.rawToken), randomUUID());
+    expect((await getState(fixture)).account.status).toBe('ACTIVE');
+  });
+
   it('rejects replaying an already consumed token', async () => {
     const fixture = await createFixture();
 
-    await authService.activate(activationRequest(fixture.rawToken));
+    await authService.activate(activationRequest(fixture.rawToken), randomUUID());
 
     await expect(
-      authService.activate(activationRequest(fixture.rawToken)),
+      authService.activate(activationRequest(fixture.rawToken), randomUUID()),
     ).rejects.toMatchObject(invalidTokenError);
 
     const state = await getState(fixture);
@@ -253,7 +335,7 @@ describe('SP-04 — Real account activation integration', () => {
     const fixture = await createFixture(options);
 
     await expect(
-      authService.activate(activationRequest(fixture.rawToken)),
+      authService.activate(activationRequest(fixture.rawToken), randomUUID()),
     ).rejects.toMatchObject(invalidTokenError);
 
     const state = await getState(fixture);
@@ -279,7 +361,7 @@ describe('SP-04 — Real account activation integration', () => {
     const before = await getState(fixture);
 
     await expect(
-      authService.activate(activationRequest(fixture.rawToken)),
+      authService.activate(activationRequest(fixture.rawToken), randomUUID()),
     ).rejects.toMatchObject(invalidTokenError);
 
     const after = await getState(fixture);
@@ -291,7 +373,7 @@ describe('SP-04 — Real account activation integration', () => {
     'rejects an unknown or malformed token before checking the password',
     async (token) => {
       await expect(
-        authService.activate(activationRequest(token)),
+        authService.activate(activationRequest(token), randomUUID()),
       ).rejects.toMatchObject(invalidTokenError);
       expect(assertAllowed).not.toHaveBeenCalled();
     },
@@ -323,7 +405,7 @@ describe('SP-04 — Real account activation integration', () => {
       });
 
       await expect(
-        authService.activate(activationRequest(fixture.rawToken)),
+        authService.activate(activationRequest(fixture.rawToken), randomUUID()),
       ).rejects.toMatchObject(invalidTokenError);
       const state = await getState(fixture);
       expect(state.account.status).toBe(
@@ -342,7 +424,7 @@ describe('SP-04 — Real account activation integration', () => {
     );
 
     await expect(
-      authService.activate(activationRequest(fixture.rawToken)),
+      authService.activate(activationRequest(fixture.rawToken), randomUUID()),
     ).rejects.toMatchObject({ status: 503 });
     const state = await getState(fixture);
     expect(state.account.status).toBe('PENDING_ACTIVATION');
@@ -350,17 +432,19 @@ describe('SP-04 — Real account activation integration', () => {
     expect(state.token.used_at).toBeNull();
     expect(state.auditCount).toBe(0);
 
-    await authService.activate(activationRequest(fixture.rawToken));
+    await authService.activate(activationRequest(fixture.rawToken), randomUUID());
     expect((await getState(fixture)).account.status).toBe('ACTIVE');
   });
 
   it('allows exactly one concurrent activation', async () => {
     const fixture = await createFixture();
+    const correlationIds = [randomUUID(), randomUUID()];
 
-    const results = await Promise.allSettled([
-      authService.activate(activationRequest(fixture.rawToken)),
-      authService.activate(activationRequest(fixture.rawToken)),
-    ]);
+    const results = await Promise.allSettled(
+      correlationIds.map((correlationId) =>
+        authService.activate(activationRequest(fixture.rawToken), correlationId),
+      ),
+    );
 
     expect(results.map((result) => result.status).sort()).toEqual([
       'fulfilled',
@@ -380,6 +464,9 @@ describe('SP-04 — Real account activation integration', () => {
     expect(state.auditCount).toBe(1);
     expect(state.account.password_hash).toMatch(/^\$argon2id\$/);
     expect(state.token.revoked_at).toBeNull();
+    // The single audit row belongs to the request that won.
+    const winner = correlationIds[results.findIndex((result) => result.status === 'fulfilled')];
+    expect((await auditRows(fixture)).map((row) => row.correlation_id)).toEqual([winner]);
   });
   it('activates an account through the real HTTP API', async () => {
     const fixture = await createFixture();
@@ -399,8 +486,10 @@ describe('SP-04 — Real account activation integration', () => {
     try {
       await app.init();
 
-      await request(app.getHttpServer())
+      const spoofed = '00000000-0000-4000-8000-000000000000';
+      const response = await request(app.getHttpServer())
         .post('/api/v1/auth/activate')
+        .set('X-Correlation-ID', spoofed)
         .send(activationRequest(fixture.rawToken))
         .expect(200);
 
@@ -410,6 +499,13 @@ describe('SP-04 — Real account activation integration', () => {
       expect(state.account.password_hash).toMatch(/^\$argon2id\$/);
       expect(state.token.used_at).not.toBeNull();
       expect(state.auditCount).toBe(1);
+      // Public contract unchanged: 200 with an empty body. The audit row carries the
+      // server-generated request ID from the response header, never the client's value.
+      expect(response.text).toBe('');
+      const correlationId: unknown = response.headers['x-correlation-id'];
+      if (typeof correlationId !== 'string') throw new Error('Expected an X-Correlation-ID header');
+      expect(correlationId).not.toBe(spoofed);
+      expect((await auditRows(fixture)).map((row) => row.correlation_id)).toEqual([correlationId]);
     } finally {
       await app.close();
     }
@@ -446,10 +542,10 @@ describe('SP-04 — Real account activation integration', () => {
         }),
     } as unknown as DatabaseService;
 
-    const service = new AuthService(failingDatabase, passwordPolicy);
+    const service = new AuthService(failingDatabase, passwordPolicy, new BusinessAuditService());
 
     await expect(
-      service.activate(activationRequest(fixture.rawToken)),
+      service.activate(activationRequest(fixture.rawToken), randomUUID()),
     ).rejects.toThrow('Simulated audit write failure');
 
     const state = await getState(fixture);

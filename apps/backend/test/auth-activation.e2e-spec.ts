@@ -15,7 +15,7 @@ describe('Auth Activation — HTTP wiring', () => {
   let app: INestApplication<App>;
 
   const authServiceMock = {
-    activate: vi.fn<(dto: ActivateAccountDto) => void>(),
+    activate: vi.fn<(dto: ActivateAccountDto, correlationId: string) => void>(),
   };
 
   const validRequest = {
@@ -63,14 +63,30 @@ describe('Auth Activation — HTTP wiring', () => {
     expect(authServiceMock.activate).not.toHaveBeenCalled();
   });
 
-  it('forwards a valid activation request to AuthService', async () => {
-    await request(app.getHttpServer())
+  it('forwards a valid activation request and the request correlation ID to AuthService', async () => {
+    const response = await request(app.getHttpServer())
       .post('/api/v1/auth/activate')
       .send(validRequest)
       .expect(200);
 
+    const correlationId: unknown = response.headers['x-correlation-id'];
+    if (typeof correlationId !== 'string') throw new Error('Expected an X-Correlation-ID header');
     expect(authServiceMock.activate).toHaveBeenCalledTimes(1);
-    expect(authServiceMock.activate).toHaveBeenCalledWith(validRequest);
+    expect(authServiceMock.activate).toHaveBeenCalledWith(validRequest, correlationId);
+  });
+
+  it('never forwards a client-supplied correlation ID', async () => {
+    const spoofed = '00000000-0000-4000-8000-000000000000';
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/activate')
+      .set('X-Correlation-ID', spoofed)
+      .send(validRequest)
+      .expect(200);
+
+    const correlationId: unknown = response.headers['x-correlation-id'];
+    if (typeof correlationId !== 'string') throw new Error('Expected an X-Correlation-ID header');
+    expect(correlationId).not.toBe(spoofed);
+    expect(authServiceMock.activate).toHaveBeenCalledWith(validRequest, correlationId);
   });
 
   it('allows five requests and returns a safe HTTP 429 without another service call', async () => {

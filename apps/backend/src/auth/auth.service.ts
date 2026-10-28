@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import { PasswordPolicyService } from './password-policy.service.js';
 import { DatabaseService } from '../database/database.service.js';
+import { BusinessAuditService } from '../modules/audit/business-audit.service.js';
 import { ActivateAccountDto } from './dto/activate-account.dto.js';
 import { hashAccountToken } from './account-token.js';
 import { hashPassword } from './password-hasher.js';
@@ -11,9 +11,11 @@ export class AuthService {
   constructor(
     private readonly database: DatabaseService,
     private readonly passwordPolicy: PasswordPolicyService,
+    private readonly audit: BusinessAuditService,
   ) {}
 
-  async activate(dto: ActivateAccountDto): Promise<void> {
+  /** `correlationId` is the server-generated request ID (never client input). */
+  async activate(dto: ActivateAccountDto, correlationId: string): Promise<void> {
     const invalidToken = (): never => {
       throw new BadRequestException({
         code: 'ACTIVATION_TOKEN_INVALID_OR_EXPIRED',
@@ -138,37 +140,18 @@ export class AuthService {
         invalidToken();
       }
 
+      // Same transaction client: a failed audit write rolls the activation back.
       // Only non-sensitive state changes are recorded.
-      await client.query(
-        `
-        INSERT INTO audit_event (
-          company_id,
-          actor_account_id,
-          action,
-          resource_type,
-          resource_id,
-          old_values,
-          new_values,
-          correlation_id
-        )
-        VALUES (
-          $1, $2,
-          'ACCOUNT_ACTIVATED',
-          'ACCOUNT',
-          $2,
-          $3::jsonb,
-          $4::jsonb,
-          $5
-        )
-        `,
-        [
-          owner.company_id,
-          owner.account_id,
-          JSON.stringify({ status: 'PENDING_ACTIVATION' }),
-          JSON.stringify({ status: 'ACTIVE' }),
-          randomUUID(),
-        ],
-      );
+      await this.audit.recordBusinessAction(client, {
+        companyId: owner.company_id,
+        actorAccountId: owner.account_id,
+        action: 'ACCOUNT_ACTIVATED',
+        resourceType: 'ACCOUNT',
+        resourceId: owner.account_id,
+        oldValues: { status: 'PENDING_ACTIVATION' },
+        newValues: { status: 'ACTIVE' },
+        correlationId,
+      });
     });
   }
 }
