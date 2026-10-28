@@ -1,18 +1,18 @@
-# PROPOSED API amendment — Issue #51 HTTP parser errors
+# APPROVED API amendment — Issue #51 HTTP parser errors
 
-**Status: PROPOSED — requires explicit API-owner approval before merge.**
+**Status: APPROVED by Product/API Owner on 2026-10-28 (decisions A, B and C).**
 Date: 2026-10-28. Related work: [Issue #51](https://github.com/takh86/SecurePlan/issues/51).
-This draft implements a candidate transport amendment. It does not approve it,
-extend the approved Phase 8.5/8.11 catalogue, or release any deployment gate.
+This amendment records the owner's approval of the transport errors and login JSON-only rule.
+It extends the API error catalogue only for the exact cases described here; it does not release any deployment gate.
 The full private API baseline is not published in this repository; the checked-in
 `error-contract.ts`, existing HTTP contract tests and ADR-0001 are the available
 contract evidence. The owner must reconcile this proposal with that baseline.
 
-## Approval requested
+## Approved decisions
 
 1. Add the following stable transport error pairs, with their problem types:
 
-   | HTTP status | Proposed code | Proposed `type` |
+   | HTTP status | Approved code | Approved `type` |
    |---|---|---|
    | 413 Content Too Large | `REQUEST_BODY_TOO_LARGE` | `/problems/request-body-too-large` |
    | 415 Unsupported Media Type | `UNSUPPORTED_MEDIA_TYPE` | `/problems/unsupported-media-type` |
@@ -27,9 +27,8 @@ contract evidence. The owner must reconcile this proposal with that baseline.
 
 Malformed supported JSON retains approved 400 `INVALID_REQUEST_BODY`. Parsed
 JSON with invalid DTO fields retains its existing validation code. No 422 is
-introduced. Existing approved error pairs remain unchanged. The two proposed
-codes are deliberately absent from `isApprovedErrorCode`; candidate handling is
-explicitly identified in the filter and login guard.
+introduced. Existing approved error pairs remain unchanged. The two approved codes are registered in `isApprovedErrorCode`; parser handling
+is restricted to the documented type/status combinations.
 
 ## Candidate implementation and scope
 
@@ -102,9 +101,10 @@ versions alone is not proof of current behavior.
 
 ## Remaining human and deployment gates
 
-The draft PR must remain unmerged until the API owner approves or revises both
-new error pairs and login's media-type behavior, the private baseline is updated
-as appropriate, and required review/CI gates pass. Do not close Issue #51.
+The API owner approved both new error pairs and login's media-type behavior on
+2026-10-28 (PR #69 decision record). The private normative Phase 8 baseline must
+also be reconciled through controlled internal documentation; this public amendment
+is the approval record for the limited protocol extension. Review/CI gates still apply. Do not close Issue #51.
 
 Issue #51 still requires a trusted proxy/client-IP contract and its tests;
 bounded login-counter retention, pending-reservation crash handling and documented
