@@ -12,10 +12,8 @@ import type { App } from 'supertest/types.js';
 import type { SessionService } from '../src/auth/session.service.js';
 import type { DatabaseService } from '../src/database/database.service.js';
 import { BusinessAuditService } from '../src/modules/audit/business-audit.service.js';
-import {
-  SHIFT_GUARD_PLANNING_TABLES,
-  assertShiftConfigurationPlanningCheckImplemented,
-} from '../src/modules/workforce/shift-configurations/shift-configuration-planning-guard.js';
+import { assertShiftConfigurationPlanningCheckImplemented } from '../src/modules/workforce/shift-configurations/shift-configuration-planning-guard.js';
+import { PLANNING_GUARD_TABLES } from '../src/modules/workforce/planning-guard/planning-table-classification.js';
 import { ShiftConfigurationsService } from '../src/modules/workforce/shift-configurations/shift-configurations.service.js';
 import {
   createSyntheticProject,
@@ -533,7 +531,7 @@ describe('SP-08b — tenant isolation, integrity, rollback and planning guard', 
     try {
       // Today none of the planning tables exists; that alone is not treated as proof of safety.
       await expect(assertShiftConfigurationPlanningCheckImplemented(probe)).resolves.toBeUndefined();
-      for (const table of SHIFT_GUARD_PLANNING_TABLES) {
+      for (const table of PLANNING_GUARD_TABLES) {
         // DDL inside a transaction is invisible to every other connection and rolled back afterwards.
         await probe.query('BEGIN');
         try {

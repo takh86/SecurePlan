@@ -27,7 +27,8 @@ import {
   type SyntheticTenant,
   type TestPool,
 } from './helpers/synthetic-tenants.js';
-import { assertPlanningDependencyCheckImplemented, PLANNING_TABLES } from '../src/modules/workforce/project-assignments/planning-dependency-guard.js';
+import { assertPlanningDependencyCheckImplemented } from '../src/modules/workforce/project-assignments/planning-dependency-guard.js';
+import { PLANNING_GUARD_TABLES } from '../src/modules/workforce/planning-guard/planning-table-classification.js';
 import { FailingAudit, ORIGIN, RecordingDelivery, bootEmployeesApp } from './helpers/employees-test-app.js';
 
 const BASE = '/api/v1/project-assignments';
@@ -423,7 +424,7 @@ describe('SP-09 PATCH — rollback and planning protection', () => {
     const probe = await db().connect();
     try {
       await expect(assertPlanningDependencyCheckImplemented(probe)).resolves.toBeUndefined();
-      for (const table of PLANNING_TABLES) {
+      for (const table of PLANNING_GUARD_TABLES) {
         // DDL inside a transaction is invisible to every other connection and rolled back afterwards.
         await probe.query('BEGIN');
         try {

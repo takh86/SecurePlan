@@ -57,7 +57,7 @@ Keine Logik darf annehmen, dass eine Nachtschicht 12 reale Stunden dauert. Stund
 5. Die Prüfung läuft in derselben Transaktion unter der Projektsperre (`FOR NO KEY UPDATE`). Alle Dienst-Schreiber nehmen vorher das Projekt mit `FOR SHARE`, sodass während der Prüfung kein neuer Dienst entsteht.
 6. Code und Text bleiben katalogkonform (keine neuen Codes) und geben keine Plandetails preis.
 7. Der Tripwire-Test wird durch fachliche Integrationstests ersetzt, nicht gelöscht.
-8. Verwendet SP-11 andere Tabellennamen als die Guard-Liste, wird die Liste bis zur Ablösung im selben PR angepasst.
+8. Beide temporären Guards nutzen die zentrale Klassifikation `planning-guard/planning-table-classification.ts` (`PLANNING_GUARD_TABLES`, jedes Schema außer den reservierten Systemschemas `pg_*`, also auch `information_schema`). Jede neue Tabelle einer Migration muss dort als Planungs- oder Nicht-Planungstabelle eingetragen werden. Sonst schlägt der statische CI-Test `planning-table-classification.spec.ts` fehl, spätestens aber die Post-Migration-Prüfung `planning-classification-catalog-real.e2e-spec.ts`; sie gleicht `pg_catalog` ab und erfasst auch dynamisch erzeugte DDL. Fremde Schemas sind für Migrationen gesperrt.
 
 **Integrationstests (Real-PostgreSQL, synthetische Daten)**
 
