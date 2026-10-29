@@ -115,13 +115,22 @@ readiness. These migrations ran previously in isolated CI, never in this audit.
 The main log still reports **10 dependency findings: 6 moderate, 4 high**. This
 records that run's findings, not a fresh package-level vulnerability assessment.
 
-This documentation branch uses `[skip ci]` because the existing push/PR workflow
-writes to its ephemeral database, prohibited during this audit. Local checks are
-publication scan, whitespace/scope and relative Markdown links. New branch
-lint/typecheck/build/unit/frontend/scripts/DB/E2E: **NOT_RUN**. Required workflow
-checks may stay pending as described by [GitHub](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs).
-Do not treat the draft as merge-ready or bypass required checks. A later isolated
-CI run requires a separate authorized review stage.
+The initial documentation commit used `[skip ci]` to enforce the original
+read-only audit boundary: it had no branch-level runtime checks. Publication,
+whitespace/scope and relative Markdown link checks were run locally by the author.
+The independent reviewer subsequently fetched all 14 changed Markdown files at
+`52e92190437e52c45ae2270d2424b8d8759d5e8d` and checked 84/84 relative
+links against the complete Git tree, with zero missing targets or trailing
+whitespace; see [the independent verification](https://github.com/takh86/SecurePlan/pull/77#issuecomment-6504093335).
+
+A separate closeout-validation commit must undergo normal PR-head CI before merge.
+The published workflow provisions PostgreSQL 17 as a service inside an isolated
+GitHub-hosted runner and copies `.env.example` with a loopback database URL;
+this does **not** authorize running the same fixture-writing tests against a
+locally configured development database. Current check conclusions belong in the
+[PR checks](https://github.com/takh86/SecurePlan/pull/77/checks), not this historical
+audit report. Do not bypass any required checks or conflate CI with private
+canonical-document acceptance.
 
 Audit-only checks completed locally: publication scan PASS (initial sandbox
 subprocess restriction resolved by the authorized read-only rerun), whitespace
