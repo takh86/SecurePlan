@@ -1,6 +1,6 @@
 # Schichtkonfiguration: Übergabe an SP-11
 
-Stand: 27.10.2026. Betrifft `GET`/`PATCH /api/v1/projects/{projectId}/shift-configuration` (SP-08b, Backend-Slice, Stand PARTIAL) und die Monatsplanung SP-11. Entscheidungsgrundlage: [ADR-0003](../architektur/adr/0003-schichtkonfiguration-monatsversioniert.md).
+Stand: 29.10.2026. Betrifft `GET`/`PATCH /api/v1/projects/{projectId}/shift-configuration` (SP-08b, Backend und React-Oberfläche mit #62 implementiert) und die noch offene Monatsplanung SP-11. Entscheidungsgrundlage: [ADR-0003](../architektur/adr/0003-schichtkonfiguration-monatsversioniert.md) mit datiertem Nachtrag, [PO-D1–D6](https://github.com/takh86/SecurePlan/issues/64#issuecomment-6502123168) und der [verbindliche SP-11-Handoff in #25](sp11-integrity-handoff.md). Business-Regeln sind freigegeben; detaillierte Implementierungsverträge und unabhängige Abnahme bleiben offen. Browsernachweis bleibt NOT_RUN.
 
 ## Was SP-08b liefert
 
@@ -8,6 +8,7 @@ Stand: 27.10.2026. Betrifft `GET`/`PATCH /api/v1/projects/{projectId}/shift-conf
 - **Wirksame Konfiguration für Monat X:** alle Zeilen des jüngsten `effective_from_month ≤ X`. Fehlende Arten werden nicht aus älteren Versionen übernommen. Die Leseabfrage steht in `ShiftConfigurationsService.getEffective` (wählt erst den Monat, dann alle Zeilen genau dieses Monats).
 - **Keine Defaults:** Ein Projekt ohne Version hat keine Schichtkonfiguration.
 - **Temporärer Planungsschutz:** `shift-configuration-planning-guard.ts` sperrt jede tatsächliche Konfigurationsänderung (`409 SHIFT_CONFIGURATION_CONFLICT`), sobald eine Tabelle mit einem bekannten Planungsnamen existiert. `GET` und echte No-op-`PATCH`es bleiben erlaubt.
+- **React-Oberfläche:** `ShiftConfigurationSection` ist im Projekt-Detail eingebunden. `ShiftConfigurationSection.test.tsx` prüft Vererbung/Full Replacement, Fehler mit erhaltenen Eingaben, INACTIVE/read-only, Fokus und Navigation. Das sind jsdom-Regressionsnachweise, kein Browser-E2E.
 
 ## Pflichten von SP-11
 
@@ -22,13 +23,11 @@ Stand: 27.10.2026. Betrifft `GET`/`PATCH /api/v1/projects/{projectId}/shift-conf
 - `duty_date` ist der Kalendertag, an dem die Schicht beginnt. Ende am Folgetag genau dann, wenn `end_local < start_local` (nur NACHT).
 - Auflösung ausschließlich mit `companies.time_zone`; es gibt keine Projekt-Zeitzone. `ends_at > starts_at` wird an den realen Zeitpunkten geprüft.
 
-### 3. DST-Regel N-1 vorher entscheiden
+### 3. DST-Regel N-1 durch PO-D6 entschieden, Umsetzung offen
 
-Vor der Implementierung legt der Owner fest, wie lokale Uhrzeiten aufgelöst werden, die an Umstellungstagen nicht existieren oder doppelt vorkommen. Das implizite Verhalten von PostgreSQL oder JS-Bibliotheken darf nicht stillschweigend die Regel sein. Optionen:
+Am 29.10.2026 hat der PO die frühere Option (a) freigegeben: nicht existierende lokale Uhrzeit um die genaue Offset-Lücke vorwärts verschieben; doppelte Uhrzeit auf das erste Vorkommen in Echtzeit, also den früheren UTC-Zeitpunkt, auflösen. Start/Ende auf ihren richtigen Kalendertagen auflösen und exakte UTC-Snapshots speichern. Keine implizite PostgreSQL-/JS-Standardeinstellung darf die Entscheidung ersetzen. Resolver, Zeitzonendaten-/Präzisions- und Fehlervertrag sind vor SP-11 noch technisch freizugeben; vollständige Abnahmefälle stehen im D6-Handoff.
 
-- **(a)** Deterministische Auflösung (nicht existierend → vorwärts um die Lücke; doppelt → erste Ausprägung).
-- **(b)** Dienst an diesen Tagen ablehnen; dafür gibt es heute keinen passenden Code.
-- **(c)** Solche Uhrzeiten schon beim Konfigurieren ablehnen; das wäre eine neue, zeitzonenabhängige Regel in SP-08b.
+Die früher betrachteten Alternativen (b), betroffene Dienste generell abzulehnen, und (c), solche Konfigurationszeiten generell zu verbieten, wurden mit der Auswahl von (a) nicht übernommen. Das ist keine neue Einschränkung des Schichtkonfigurations-PATCH.
 
 Pflicht-Testfälle (synthetisch, Real-PostgreSQL):
 
@@ -37,8 +36,9 @@ Pflicht-Testfälle (synthetisch, Real-PostgreSQL):
 | Europe/Berlin | 29.03.2026, 02:00 → 03:00 | NACHT 18:00–06:00 mit `duty_date` 28.03. | 17:00Z → 04:00Z, real 11 h |
 | Europe/Berlin | 25.10.2026, 03:00 → 02:00 | NACHT 18:00–06:00 mit `duty_date` 24.10. | 16:00Z → 05:00Z, real 13 h |
 | Europe/Berlin | 29.03.2026 | TAG 06:00–18:00 | 04:00Z → 16:00Z, 12 h |
-| Europe/Berlin | beide Tage | Start oder Ende zwischen 02:00 und 02:59 | gemäß N-1 |
-| America/New_York | 08.03.2026 und 01.11.2026, je 02:00 | NACHT über die Umstellung | gemäß N-1 |
+| Europe/Berlin | beide Tage | 02:30 als Start oder Ende | Frühjahr 03:30 → 01:30Z; Herbst erstes 02:30 → 00:30Z |
+| America/New_York | 08.03.2026 | nicht existentes 02:30 | 03:30 → 07:30Z |
+| America/New_York | 01.11.2026 | doppeltes 01:30 | erstes Vorkommen → 05:30Z; 02:30 ist hier eindeutig |
 
 Keine Logik darf annehmen, dass eine Nachtschicht 12 reale Stunden dauert. Stunden werden, falls je benötigt, nur als `ends_at − starts_at` berechnet. Die MVP-Statistik zählt Schichten und Tage, keine Stunden.
 
@@ -46,7 +46,7 @@ Keine Logik darf annehmen, dass eine Nachtschicht 12 reale Stunden dauert. Stund
 
 **Ziel:** `assertShiftConfigurationPlanningCheckImplemented` durch die echte projekt- und monatsbezogene Prüfung ersetzen. Der Guard darf nicht umgangen, auskommentiert oder durch „Tabelle existiert, also egal“ ersetzt werden. Legt SP-11 die Planungstabellen an, ohne den Guard zu ersetzen, sind Schichtänderungen absichtlich gesperrt. Der SP-09-Guard (`planning-dependency-guard.ts`) ist eine eigene, gleichartige Aufgabe ([Übergabe Zuordnungen](project-assignment-correction-handoff.md)).
 
-**Regelvorschlag (Owner-Entscheidung bei SP-11):** Ein `PATCH` mit tatsächlicher Änderung für Projekt P und Wirkmonat M wird mit `409 SHIFT_CONFIGURATION_CONFLICT` abgelehnt, wenn Dienste von P mit `duty_date` im betroffenen Bereich existieren. Der Bereich reicht von M bis vor den nächsten späteren Wirkmonat von P, ohne spätere Version offen nach oben. Das gilt unabhängig davon, ob der Plan veröffentlicht ist, solange der Owner für unveröffentlichte Pläne nichts anderes festlegt.
+**Freigegebene Business-Regel PO-D3:** Ein `PATCH` mit tatsächlicher Änderung für Projekt P und Wirkmonat M wird mit `409 SHIFT_CONFIGURATION_CONFLICT` abgelehnt, wenn gespeicherte Dienste von P von der geänderten Konfiguration im Bereich `[M, nächster späterer Wirkmonat von P)` abhängen; ohne spätere Version offen nach oben. DRAFT und PUBLISHED sind gleich geschützt. Lifecycle, exakte relationale Prädikate und Sperrprotokoll sind noch als Implementierungsvertrag freizugeben, einschließlich einer neu zwischen vorhandenen Versionen eingefügten Version.
 
 **Acceptance Criteria**
 
@@ -62,7 +62,7 @@ Keine Logik darf annehmen, dass eine Nachtschicht 12 reale Stunden dauert. Stund
 **Integrationstests (Real-PostgreSQL, synthetische Daten)**
 
 - Veröffentlichter Plan mit Diensten im Bereich: Zeitänderung, Weglassen einer Art und neue Version ergeben je `409`, Zustand unverändert, kein Audit.
-- Unveröffentlichter Plan: gleiche Fälle nach der dann gültigen Owner-Regel.
+- DRAFT/unveröffentlichter Plan: dieselben ablehnenden Fälle wie PUBLISHED nach PO-D3.
 - Dienste nur vor M oder nur ab dem nächsten späteren Wirkmonat: `200`.
 - No-op mit vorhandenen Diensten: `200`, kein Audit.
 - Nebenläufigkeit: Schicht-`PATCH` gegen gleichzeitige Dienstanlage für dasselbe Projekt, in beiden Sperrreihenfolgen, ohne Deadlock; danach passt jeder Dienst zur zum Anlagezeitpunkt wirksamen Version.
@@ -71,7 +71,7 @@ Keine Logik darf annehmen, dass eine Nachtschicht 12 reale Stunden dauert. Stund
 
 ### 5. Sperrreihenfolge
 
-Heute: Actor (`accounts`, `companies` `FOR SHARE`) → Mitarbeiter (`FOR NO KEY UPDATE`, aufsteigende ID) → Projekt (Zuordnungen `FOR SHARE`, Schicht-`PATCH` und Projekt-`PATCH` `FOR NO KEY UPDATE`) → Zuordnungszeile. SP-11 ordnet Planungssperren danach ein: Actor → Mitarbeiter → Projekt → Monatsplan → Dienste → Plan-Zuordnungen. Die Reihenfolge wird mit dem Planungs-Concurrency-Konzept abgeglichen, dokumentiert und per Nebenläufigkeitstest belegt; kein neuer Deadlock-Pfad.
+Heute: Actor (`accounts`, `companies` `FOR SHARE`) → Mitarbeiter (`FOR NO KEY UPDATE`, aufsteigende ID) → Projekt (Zuordnungen `FOR SHARE`, Schicht-`PATCH` und Projekt-`PATCH` `FOR NO KEY UPDATE`) → Monatszuordnungszeile. Der Schicht-PATCH benötigt selbst keine Mitarbeiter-/Zuordnungssperre. Die frühere pauschale Erweiterung um Planungssperren ist **kein freigegebener globaler Vertrag**: ihre Position relativ zur Monatszuordnung und die Duty-first-Workflow-Regel müssen zusammen mit Publish-/Mitgliedschaftsschreibern aufgelöst werden. Siehe LOCK-01 im SP-11-Handoff. Vor Implementierung einheitlichen Sperrgraph freigeben und konkurrierende Inserts, beide Reihenfolgen, COMMIT/ROLLBACK sowie Auditfehler mit Real-PG nachweisen.
 
 ### 6. Revalidierung beim Veröffentlichen
 
@@ -79,4 +79,4 @@ Die Revalidierung der Schichtkonfiguration beim Veröffentlichen ist bei Snapsho
 
 ## Nicht enthalten
 
-React-Oberfläche für Schichtzeiten, DST-Auflösung, Dienste, BR-SHIFT-03 (Ruhezeit, Production-Follow-up) und ein freigegebener Audit-Aktionskatalog.
+Implementierte DST-Auflösung/Dienste und BR-SHIFT-03 (Ruhezeit, Production-Follow-up). Die frühere Aussage, die React-Oberfläche fehle, ist durch #62 überholt. PO-D1 ratifiziert den bestehenden Namen `SHIFT_CONFIGURATION_UPDATED`; [ADR-0004](../architektur/adr/0004-related-business-audit-catalogue.md) beschreibt die begrenzte Semantik. Unabhängige kontrollierte Dokumentabnahme und Audit-Betriebskontrollen bleiben offen.

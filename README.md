@@ -2,9 +2,9 @@
 
 B2B-SaaS für Personal- und Einsatzplanung in Sicherheitsunternehmen. Praxisphase im B.Sc. Informatik an der THM; Fokus auf Backend Engineering mit nachvollziehbaren Anforderungen, Architekturentscheidungen und Tests.
 
-**Stand: 07.10.2026 · SP-01 Foundation VERIFIED · G0: DESIGN READY FOR FIRST IDENTITY SLICE**
+**Stand: 29.10.2026 · geprüfte Baseline `7107781` · SP-09-Abschlussreview offen**
 
-Der Repository-Stand enthält ein NestJS-Backend und ein React-Frontend. Die lokale Foundation ist unter Windows und in Linux-CI reproduzierbar nachgewiesen. Die Benutzeroberfläche ist noch der Starter. Auth, Mitarbeiterverwaltung und Planung sind entworfen, aber noch nicht implementiert. Build- und Foundationtests belegen keine fertigen Produktfunktionen.
+NestJS-Backend und React-Frontend enthalten Account-Aktivierung, Login/Sessions, Rollen-/Tenant-Schutz, Mitarbeiter, Projekte, Monatszuordnungen und deren freigegebene Korrektur-/Entfernungsabläufe. PRs #70–#76 ergänzen Zukunftsregeln, S-9-Discovery und Beschäftigungszeitraum-Konsistenz. Die [Abschlussmatrizen #64/#73](docs/reviews/sp09-closeout-64-73.md) trennen implementierte SP-09-Regeln, offene Dokumentabnahme, SP-11-Übergaben und Release-Gates. Planung/Dienste sind noch nicht implementiert; Browser-Smoke und Browser-E2E bleiben NOT_RUN.
 
 ## Produkt und verbindlicher MVP
 
@@ -23,8 +23,8 @@ Excel-Import ist Stretch. Tagesplan, Lohnabrechnung und vollständige Notificati
 | --- | --- |
 | Backend | TypeScript, NestJS, Node.js 24, ESM |
 | Frontend | React, TypeScript, Vite |
-| Persistenz | PostgreSQL 17; `pg` als Foundation-Verbindung, SQL-first Migrationen |
-| Architekturziel | Tenant-aware Modular Monolith; fachliche Module noch aufzubauen |
+| Persistenz | PostgreSQL 17; `pg`, SQL-first Migrationen und Domain-Persistenz bis SP-09 |
+| Architekturziel | Tenant-aware Modular Monolith; Identity/Workforce/Audit vorhanden, Planning folgt separat |
 | Qualität | Oxlint, Backend Vitest/Supertest, TypeScript Builds, GitHub Actions |
 
 Company = Tenant; jedes Account gehört einer Company. TenantContext wird aus der serverseitigen Identität abgeleitet. Nach dem ersten Publish wirken berechtigte Änderungen direkt nach erfolgreichem Commit; es gibt keinen parallelen Draft/Re-Publish. CR-01 entfernt das frühere Ersatzkontingent.
@@ -55,13 +55,13 @@ npm run dev:backend
 npm run dev:frontend
 ```
 
-Frontend: http://localhost:5173. Backend: http://127.0.0.1:3000.
+Frontend: HTTPS gemäß `vite.config.ts`, mit den dort referenzierten lokalen Zertifikaten. Backend: http://127.0.0.1:3000. Lokale Konfiguration und Voraussetzungen der [Frontend-](apps/frontend/README.md) und [Backend-README](apps/backend/README.md) beachten.
 
 - `GET /` – Starterantwort.
 - `GET /api/v1/health/live` – Prozess erreichbar.
 - `GET /api/v1/health/ready` – Verbindung und Foundation-Migration vorhanden; sonst HTTP 503.
 
-Health-Endpunkte sind technische Betriebsendpunkte, zusätzlich zu den entworfenen MVP-Endpunkten. Sie prüfen keine fertig implementierte Business-Domäne.
+Health-Endpunkte sind technische Betriebsendpunkte zusätzlich zu den implementierten Business-Routen. Readiness allein prüft keine vollständige fachliche Abnahme.
 
 ```bash
 npm run lint
@@ -72,7 +72,7 @@ npm run test:e2e
 npm run start:backend
 ```
 
-`start:backend` benötigt einen vorherigen Build. Die E2E-Startertests ersetzen den DB-Provider durch einen Test-Double; echte PostgreSQL-Evidenz kommt separat aus `db:verify`, lokalem Runtime-Check und CI.
+`start:backend` benötigt einen vorherigen Build. Backend-HTTP/E2E umfasst sowohl Test-Doubles als auch echte PostgreSQL-Integrations-/Concurrency-Suites. DB- und Skripttests schreiben Fixtures: ausschließlich eine ausdrücklich verifizierte isolierte Testinstanz verwenden, nie eine geteilte oder produktive Datenbank. Die [Abschlussevidenz](docs/reviews/sp09-closeout-64-73.md) verlinkt bestehende CI-Läufe; während des Dokumentationsaudits wurden keine DB-Tests ausgeführt.
 
 ## Datenbank und Migrationen
 
@@ -80,14 +80,14 @@ npm run start:backend
 
 Migrationen liegen in `apps/backend/migrations`. Der Runner serialisiert Aufrufe über einen Advisory Lock, prüft SHA-256-Prüfsummen und führt jede neue Datei samt Ledger-Eintrag atomar aus. Bereits angewendete Dateien nicht verändern; neue Änderungen erhalten eine neue Migration. Ein zweiter Lauf muss ohne erneuten Effekt funktionieren.
 
-`0001_foundation.sql` ist eine kleine Infrastrukturprobe. Produkt-, Account-, Session- und Workflowtabellen sind noch nicht migriert. Die nächste Arbeit betrifft Identity und die fachliche Persistenz; genaue interne Spezifikationen werden separat gepflegt.
+Migrationen bis `0009` enthalten Foundation, Identity/Sessions/Audit und Workforce-/Projekt-/Monatszuordnungs-/Schichtkonfigurations-Persistenz. Planungstabellen fehlen noch. Ihr Einführen erfordert die gleichzeitige freigegebene Integration beider [SP-11-Abhängigkeitsprüfungen](docs/datenbank/sp11-integrity-handoff.md); die temporären Guards bleiben bis dahin fail closed. Interne Spezifikationen werden separat gepflegt.
 
 ## Repository-Struktur
 
 | Pfad | Verantwortung |
 | --- | --- |
 | `apps/backend` | API, Backendtests, Migrationen |
-| `apps/frontend` | Webclient – aktuell Starter |
+| `apps/frontend` | React-Webclient für die implementierten Auth-/Verwaltungsabläufe |
 | `infra/docker` | Lokale PostgreSQL-Instanz |
 | `scripts` | Migration und DB-Verifikation |
 | `.github/workflows` | Build, Lint, Tests, PostgreSQL-Smoke-Checks |
@@ -104,7 +104,7 @@ Migrationen liegen in `apps/backend/migrations`. Der Runner serialisiert Aufrufe
 - [Öffentliche Reviewübersicht](docs/reviews/g0-handoff.md)
 - [Aktueller Arbeitsabschnitt](docs/planung/aktuelle-woche.md)
 
-G0 ist als Design-/Handoff-Gate für den ersten Identity-Slice abgeschlossen. Nächster Schritt: Validation/Errorhandling, danach Activation/Reset → Login/Logout/Session → Tenant/RBAC implementieren und testen. E-Mail-Zustellung und Deployment sind noch nicht nachgewiesen. [Contribution Guide](CONTRIBUTING.md) beschreibt Branches und Review.
+Nächster Schritt ist die unabhängige Abnahme des #64/#73-Abschlussnachweises; danach die getrennte SP-10-/#24- und SP-11-/#25-Arbeit mit vorheriger Vertragsfreigabe. E-Mail-Produktion, Browserabnahme und [Security-/Operations-Gates #51](docs/security/pre-staging-gates.md) sind weiter offen. Kein automatisches Issue-Schließen, Merge oder Deployment. [Contribution Guide](CONTRIBUTING.md) beschreibt Branches und Review.
 
 **Nachweisregel:** DOCUMENTED ≠ IMPLEMENTED ≠ VERIFIED ≠ PRODUCTION READY.
 
