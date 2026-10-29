@@ -30,6 +30,7 @@ export type KnownErrorCode =
   | 'EMAIL_ALREADY_IN_USE'
   | 'EMPLOYEE_INACTIVE'
   | 'EMPLOYEE_HAS_FUTURE_ASSIGNMENTS'
+  | 'EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_PROJECT_ASSIGNMENTS'
   // SP-08 projects (approved backend catalogue).
   | 'PROJECT_NAME_ALREADY_EXISTS'
   | 'PROJECT_INACTIVE'
@@ -89,6 +90,7 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   EMAIL_ALREADY_IN_USE: 409,
   EMPLOYEE_INACTIVE: 409,
   EMPLOYEE_HAS_FUTURE_ASSIGNMENTS: 409,
+  EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_PROJECT_ASSIGNMENTS: 409,
   PROJECT_NAME_ALREADY_EXISTS: 409,
   PROJECT_INACTIVE: 409,
   INVALID_MONTH_START: 400,
@@ -147,6 +149,7 @@ export class ApiError extends Error {
   readonly correlationId: string | null;
   /** Only for 400 VALIDATION_FAILED: which fields failed, as safe subcodes. */
   readonly fieldErrors: readonly FieldError[];
+  readonly employmentPeriodConflict: EmploymentPeriodConflict | undefined;
 
   constructor(
     kind: ApiErrorKind,
@@ -154,6 +157,7 @@ export class ApiError extends Error {
     code: KnownErrorCode | null,
     correlationId: string | null,
     fieldErrors: readonly FieldError[] = [],
+    employmentPeriodConflict?: EmploymentPeriodConflict,
   ) {
     super('API request failed');
     this.name = 'ApiError';
@@ -162,6 +166,7 @@ export class ApiError extends Error {
     this.code = code;
     this.correlationId = correlationId;
     this.fieldErrors = fieldErrors;
+    this.employmentPeriodConflict = employmentPeriodConflict;
   }
 }
 
@@ -185,7 +190,36 @@ export async function parseApiError(response: Response): Promise<ApiError> {
     safeCorrelationId(details?.correlationId);
 
   const fieldErrors = code === 'VALIDATION_FAILED' ? safeFieldErrors(details?.errors) : [];
-  return new ApiError('http', response.status, code, correlationId, fieldErrors);
+  const conflict = code === 'EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_PROJECT_ASSIGNMENTS'
+    ? safeEmploymentPeriodConflict(details) : undefined;
+  return new ApiError('http', response.status, code, correlationId, fieldErrors, conflict);
+}
+
+export type EmploymentPeriodConflict = Readonly<{
+  conflictCount: number;
+  conflictingAssignments: readonly Readonly<{ assignmentId: string; monthStart: string }>[];
+}>;
+
+/** An optional hint only. Reject malformed summaries as a unit; ignore additive fields. */
+function safeEmploymentPeriodConflict(value: unknown): EmploymentPeriodConflict | undefined {
+  if (!isRecord(value)) return undefined;
+  const { conflictCount, conflictingAssignments } = value;
+  if (typeof conflictCount !== 'number' || !Number.isSafeInteger(conflictCount) || conflictCount < 1
+    || !Array.isArray(conflictingAssignments) || conflictingAssignments.length !== Math.min(conflictCount, 25)) return undefined;
+  const refs: { assignmentId: string; monthStart: string }[] = [];
+  const ids = new Set<string>();
+  let previous = '';
+  for (const item of conflictingAssignments) {
+    if (!isRecord(item) || typeof item.assignmentId !== 'string' || typeof item.monthStart !== 'string'
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(item.assignmentId)
+      || !/^(?!0000)\d{4}-(?:0[1-9]|1[0-2])-01$/.test(item.monthStart)) return undefined;
+    const key = `${item.monthStart}/${item.assignmentId}`;
+    if (key <= previous || ids.has(item.assignmentId)) return undefined;
+    previous = key;
+    ids.add(item.assignmentId);
+    refs.push({ assignmentId: item.assignmentId, monthStart: item.monthStart });
+  }
+  return { conflictCount, conflictingAssignments: refs };
 }
 
 export interface UserFacingError {
@@ -201,6 +235,10 @@ export interface UserFacingError {
  * already registered.
  */
 const EMPLOYEE_ERROR_TEXT: Partial<Record<string, { title: string; description: string }>> = {
+  EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_PROJECT_ASSIGNMENTS: {
+    title: 'Beschäftigungszeitraum steht im Konflikt mit Projektzuordnungen',
+    description: 'Der geänderte Zeitraum würde bisher abgedeckte zukünftige Projektzuordnungen ausschließen. Prüfen Sie die betroffenen Zuordnungen und korrigieren oder entfernen Sie diese bei Bedarf einzeln. Speichern Sie Ihre Änderungen anschließend erneut.',
+  },
   EMPLOYEE_CODE_ALREADY_EXISTS: {
     title: 'Mitarbeiter-ID bereits vergeben',
     description: 'Diese Mitarbeiter-ID wird in Ihrem Unternehmen bereits verwendet. Bitte wählen Sie eine andere.',

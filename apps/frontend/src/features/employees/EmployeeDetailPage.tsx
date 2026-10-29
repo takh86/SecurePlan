@@ -20,7 +20,7 @@ import {
 } from './employee-types';
 import type { EmployeesApi } from './employees-api';
 import type { EmployeeFutureAssignmentsApi } from './employee-future-assignments-api';
-import { EmployeeFutureAssignmentsSection } from './EmployeeFutureAssignmentsSection';
+import { EmployeeFutureAssignmentsSection, type FutureAssignmentsHandle } from './EmployeeFutureAssignmentsSection';
 
 type DetailProps = { employeeId: string; basePath: string; employees: EmployeesApi; assignments: EmployeeFutureAssignmentsApi };
 
@@ -69,6 +69,7 @@ export function EmployeeDetailPage({ employeeId, basePath, employees, assignment
         </div>
         {employee ? (
           <EmployeeDetails
+            key={employee.id}
             employee={employee}
             employees={employees}
             assignments={assignments}
@@ -101,6 +102,7 @@ function EmployeeDetails({ employee, employees, assignments, onChanged, onStale 
   const [editing, setEditing] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
   const dataSection = useRef<HTMLElement>(null);
+  const futureAssignments = useRef<FutureAssignmentsHandle>(null);
   const returnFocusToEdit = useRef(false);
   const status = EMPLOYEE_STATUS[employee.status];
 
@@ -161,6 +163,7 @@ function EmployeeDetails({ employee, employees, assignments, onChanged, onStale 
             submitLabel="Änderungen speichern"
             pendingLabel="Wird gespeichert …"
             onSubmit={save}
+            onReviewFutureAssignments={() => futureAssignments.current?.review()}
             cancel={
               <button
                 type="button"
@@ -192,7 +195,7 @@ function EmployeeDetails({ employee, employees, assignments, onChanged, onStale 
         )}
       </section>
 
-      <EmployeeFutureAssignmentsSection key={employee.id} employee={employee} api={assignments} />
+      <EmployeeFutureAssignmentsSection ref={futureAssignments} key={employee.id} employee={employee} api={assignments} />
 
       {employee.status === 'ACTIVE' && (
         <DeactivationSection

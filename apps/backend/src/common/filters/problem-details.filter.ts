@@ -15,6 +15,7 @@ import {
   validationSubcodeDetails,
 } from '../errors/error-contract.js';
 import type { CorrelatedRequest } from '../middleware/correlation-id.middleware.js';
+import { EMPLOYMENT_PERIOD_CONFLICT, safeEmploymentPeriodConflict } from '../errors/employment-period-conflict.js';
 
 type ErrorResolution = { status: number; code: string };
 
@@ -103,6 +104,7 @@ function safeDetail(status: number, code: string): string {
   if (code === 'VALIDATION_FAILED' || code === 'UNKNOWN_FIELD') return 'One or more fields are invalid.';
   if (status === 404) return 'The requested resource was not found.';
   if (code === 'PLAN_CONCURRENT_MODIFICATION') return 'The plan has changed. Reload the current state and try again.';
+  if (code === EMPLOYMENT_PERIOD_CONFLICT) return 'The changed employment period would no longer cover existing future monthly project assignments. Review and correct or remove the conflicting assignments first.';
   if (status === 401) return 'Authentication is required or no longer valid.';
   if (status === 403) return 'You are not permitted to perform this action.';
   if (status === 429) return 'Too many requests. Please try again later.';
@@ -133,12 +135,19 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     const http = host.switchToHttp();
     const request = http.getRequest<CorrelatedRequest>();
     const response = http.getResponse<Response>();
-    const { status, code } = resolveError(exception);
+    let { status, code } = resolveError(exception);
+    const conflict = code === EMPLOYMENT_PERIOD_CONFLICT && exception instanceof HttpException
+      ? safeEmploymentPeriodConflict(exception.getResponse()) : undefined;
+    if (code === EMPLOYMENT_PERIOD_CONFLICT && conflict === undefined) {
+      status = 500;
+      code = 'INTERNAL_ERROR';
+    }
     const correlationId = request.correlationId ?? randomUUID();
     const errors = safeValidationErrors(exception, code);
 
     // The middleware should already have set this on successful requests.
     response.setHeader('X-Correlation-ID', correlationId);
+    if (conflict !== undefined) response.setHeader('Cache-Control', 'no-store');
 
     const problemDetails = {
       type: problemType(code),
@@ -149,6 +158,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       code,
       correlationId,
       ...(errors !== undefined ? { errors } : {}),
+      ...(conflict !== undefined ? conflict : {}),
     };
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {

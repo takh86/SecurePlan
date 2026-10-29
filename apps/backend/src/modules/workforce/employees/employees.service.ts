@@ -27,6 +27,8 @@ import { assertActorInTransaction } from '../../../auth/authorization/actor-in-t
 import { requireRow } from '../../../auth/authorization/require-row.js';
 import type { TenantContext } from '../../../auth/authorization/tenant-context.js';
 import { uniqueViolationConstraint } from '../../../common/database/unique-violation.js';
+import { WALL_CLOCK, type WallClock } from '../../../common/time/wall-clock.js';
+import { checkEmploymentPeriodImpact, type EmploymentPeriodImpact } from './employment-period-impact.js';
 import {
   AccountLifecycleService,
   type PendingActivation,
@@ -76,6 +78,7 @@ export class EmployeesService {
     private readonly accounts: AccountLifecycleService,
     private readonly audit: BusinessAuditService,
     @Inject(ACTIVATION_DELIVERY) private readonly delivery: ActivationDelivery,
+    @Inject(WALL_CLOCK) private readonly clock: WallClock,
   ) {}
 
   async list(tenant: TenantContext, query: ListEmployeesQueryDto): Promise<EmployeePage> {
@@ -276,6 +279,11 @@ export class EmployeesService {
         if (taken.rowCount !== 0) codeTaken();
       }
 
+      const datesChanged = changed.includes('employment_start') || changed.includes('employment_end');
+      const impact = datesChanged
+        ? await checkEmploymentPeriodImpact(client, tenant.companyId, employeeId, current, next, this.clock().toISOString())
+        : undefined;
+
       let updated: EmployeeRow;
       try {
         const result = await client.query<EmployeeRow>(
@@ -308,7 +316,7 @@ export class EmployeesService {
         action: 'EMPLOYEE_UPDATED',
         resourceType: 'EMPLOYEE',
         resourceId: employeeId,
-        ...auditDiff(current, updated, changed),
+        ...auditDiff(current, updated, changed, impact),
         correlationId,
       });
       return this.respond(client, tenant, updated);
@@ -433,7 +441,7 @@ export class EmployeesService {
 }
 
 /** Old/new values for audit. Personal names are recorded as "changed" only (no PII copies). */
-function auditDiff(before: EmployeeRow, after: EmployeeRow, changed: (keyof EmployeeChanges)[]) {
+function auditDiff(before: EmployeeRow, after: EmployeeRow, changed: (keyof EmployeeChanges)[], impact?: EmploymentPeriodImpact) {
   const oldValues: Record<string, unknown> = {};
   const newValues: Record<string, unknown> = {};
   const changedFields: string[] = [];
@@ -466,6 +474,13 @@ function auditDiff(before: EmployeeRow, after: EmployeeRow, changed: (keyof Empl
         changedFields.push('lastName');
         break;
     }
+  }
+  if (impact !== undefined) {
+    oldValues.employmentStart = before.employment_start;
+    oldValues.employmentEnd = before.employment_end;
+    newValues.employmentStart = after.employment_start;
+    newValues.employmentEnd = after.employment_end;
+    newValues.employmentPeriodImpact = impact;
   }
   return { oldValues, newValues: { ...newValues, changedFields } };
 }

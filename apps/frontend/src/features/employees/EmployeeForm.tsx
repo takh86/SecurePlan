@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiErrorAlert } from '../../shared/ui/ApiErrorAlert';
+import { ApiError } from '../../shared/api/api-error';
 import {
   FIELD_ORDER,
   validateEmployeeForm,
@@ -21,12 +22,13 @@ type EmployeeFormProps = {
   onSubmit: (values: EmployeeFormValues) => Promise<SubmitOutcome>;
   /** Secondary action (link or button) rendered next to submit. */
   cancel: ReactNode;
+  onReviewFutureAssignments?: () => void;
 };
 
 const ELIGIBILITIES: readonly ShiftEligibility[] = ['DAY', 'NIGHT', 'BOTH'];
 
 /** Shared create/edit form. Labels, hints and errors are programmatically linked. */
-export function EmployeeForm({ mode, initialValues, submitLabel, pendingLabel, onSubmit, cancel }: EmployeeFormProps) {
+export function EmployeeForm({ mode, initialValues, submitLabel, pendingLabel, onSubmit, cancel, onReviewFutureAssignments }: EmployeeFormProps) {
   const [values, setValues] = useState(initialValues);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<Error | null>(null);
@@ -37,6 +39,9 @@ export function EmployeeForm({ mode, initialValues, submitLabel, pendingLabel, o
   const formRef = useRef<HTMLFormElement>(null);
   const prefix = useId();
   const id = (field: FieldName, suffix = '') => `${prefix}-${field}${suffix}`;
+  const employmentConflict = formError instanceof ApiError && formError.status === 409
+    && formError.code === 'EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_PROJECT_ASSIGNMENTS';
+  const summary = employmentConflict ? formError.employmentPeriodConflict : undefined;
 
   // Runs after commit, i.e. once inputs are enabled again after a submit.
   useEffect(() => {
@@ -46,6 +51,7 @@ export function EmployeeForm({ mode, initialValues, submitLabel, pendingLabel, o
   }, [focusRequest]);
 
   function update(field: FieldName, value: string) {
+    if (employmentConflict) setFormError(null);
     setValues((current) => ({ ...current, [field]: value }));
     // Editing a field clears its message; the next submit re-validates everything.
     setErrors((current) => {
@@ -157,6 +163,21 @@ export function EmployeeForm({ mode, initialValues, submitLabel, pendingLabel, o
         )}
       </fieldset>
       <ApiErrorAlert error={formError} />
+      {employmentConflict && onReviewFutureAssignments && (
+        <div>
+          {summary && (
+            <>
+              <p>{summary.conflictingAssignments.length} von {summary.conflictCount} betroffenen Projektzuordnungen (Hinweis):</p>
+              <ul aria-label="Betroffene Zuordnungsmonate">
+                {summary.conflictingAssignments.map((assignment) => <li key={assignment.assignmentId}>{assignment.monthStart}</li>)}
+              </ul>
+            </>
+          )}
+          <button type="button" className="employees-button" onClick={onReviewFutureAssignments}>
+            Zukünftige Projektzuordnungen prüfen
+          </button>
+        </div>
+      )}
       <div className="employee-form__actions">
         <button type="submit" className="employees-button employees-button--primary" disabled={submitting}>
           {submitting ? pendingLabel : submitLabel}
