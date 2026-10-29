@@ -1,6 +1,6 @@
 # Offene Security- und Production-Gates vor Staging/Produktion
 
-Stand: 26.10.2026, aus dem Review von PR #57 (SP-07). Diese Punkte blockieren den Merge in den Entwicklungs-MVP mit synthetischen Daten nicht, **müssen aber vor jedem Staging mit echten Nutzern und vor Produktion geschlossen oder ausdrücklich freigegeben werden.**
+Stand: 29.10.2026; ursprüngliche SP-07-Gates vom 26.10. bleiben erhalten. Koordination: [#51](https://github.com/takh86/SecurePlan/issues/51), Verantwortlicher [@takh86](https://github.com/takh86). Diese Punkte blockieren den Merge in den Entwicklungs-MVP mit synthetischen Daten nicht, **müssen aber vor jedem Staging mit echten Nutzern und vor Produktion geschlossen oder ausdrücklich freigegeben werden.** Öffentliche Bereitstellung bleibt durch die zusätzlichen #51-Gates gesperrt.
 
 | ID | Gate | Stand | Wo |
 |---|---|---|---|
@@ -10,14 +10,24 @@ Stand: 26.10.2026, aus dem Review von PR #57 (SP-07). Diese Punkte blockieren de
 
 ## Weitere bekannte offene Punkte
 
-- **R-1:** `companies.time_zone` wird nicht validiert. Ein ungültiger Zonenname würde Korrekturen und (seit #73) das Entfernen von Monatszuordnungen mit 500 abbrechen (fail closed). Validierung gehört in den Anlege-Pfad für Unternehmen.
-- **SP-11-Planungsschutz:** Die Guards der Zuordnungs-Korrektur und (seit #73) des Entfernens müssen in derselben Slice, die Planungstabellen anlegt, durch die echte Prüfung ersetzt werden (siehe `docs/datenbank/project-assignment-correction-handoff.md`).
+- **R-1:** Der Anlege-/Änderungspfad für `companies.time_zone` braucht verbindliche IANA-Validierung. S-9 und Fall 2 prüfen inzwischen den benannten Zonen-Katalog; vorhandene Korrektur-/DELETE-Pfade bleiben unverändert. Keine stille UTC-Ersatzannahme; ungültige Konfiguration muss fail closed bleiben.
+- **SP-11-Planungsschutz:** Beide Guards für Zuordnungs-PATCH/DELETE und Schicht-PATCH müssen mit der Planungstabellen-Integration durch echte Prüfungen ersetzt werden. Business D2/D3 sind genehmigt; relationale Prädikate und LOCK-01 bleiben vor Implementierung offen. Tracking: [#25/#26](../datenbank/sp11-integrity-handoff.md), kein Bypass.
 - **#73 Audit-Härtung:** Nach dem physischen Entfernen einer Zukunftszuordnung ist das Audit-Ereignis `PROJECT_ASSIGNMENT_REMOVED` der einzige Nachweis. `audit_event` ist nur per Konvention append-only (kein `REVOKE`, kein Trigger). Aufbewahrungsfrist, Zugriffskontrolle (Mitarbeiter-IDs sind pseudonyme personenbezogene Daten) sowie Backup und Wiederherstellung sind nicht festgelegt und werden nicht stillschweigend als unbegrenzt angenommen.
 - **#73 Versions-Invariante nicht DB-erzwungen:** Die `version` einer Monatszuordnung ist `updated_at` in Epoch-Mikrosekunden. Ein Schreibzugriff per SQL außerhalb der Anwendung, der `updated_at` nicht nach der `GREATEST`-Regel fortschreibt, würde eine veraltete Bestätigung nicht erkennen. Betriebsregel: keine unreviewten Schreibzugriffe auf `project_assignments`. Erzwingung in der Datenbank (Trigger oder Revisionsspalte) wäre eine eigene, freizugebende Schemaänderung.
 - **#73 Proxy und doppelte Header:** Der Backend-Parser lehnt ein mehrfach gesendetes `Expected-Version` ab, solange es zusammengefügt ankommt. Ein vorgeschalteter Proxy darf Duplikate nicht stillschweigend verwerfen; das ist in der Deploy-Konfiguration zu prüfen.
 - **Sitzungsablauf ohne Aktivität:** kein periodisches Polling (würde den Idle-Timeout verlängern); ein untätiger Tab zeigt nach serverseitigem Ablauf zuletzt geladene Daten bis zur nächsten Aktion.
-- **Audit-Aktionsnamen** sind Annahmen ohne freigegebenen Katalog. Alle Aktionen laufen über `BusinessAuditService` mit der serverseitig erzeugten Request-Correlation-ID, seit E-15T auch `ACCOUNT_ACTIVATED`. `ACCOUNT_ACTIVATION_REISSUED` ist ein **reines Entwicklungsereignis**: Es wird nur vom lokalen Wiederherstellungsskript `scripts/reissue-employee-activation.mjs` geschrieben (nur `NODE_ENV=development`, nur lokale Datenbank), von keinem HTTP-Pfad, und hat eine eigene, skriptinterne Correlation-ID.
+- **Audit-Aktionsnamen:** PO-D1 genehmigt genau `PROJECT_ASSIGNMENT_CREATED`, `PROJECT_ASSIGNMENT_CORRECTED`, `PROJECT_ASSIGNMENT_REMOVED` und `SHIFT_CONFIGURATION_UPDATED` mit ihren bisherigen Bedeutungen. [ADR-0004](../architektur/adr/0004-related-business-audit-catalogue.md) dokumentiert den begrenzten Katalog; unabhängige kontrollierte Dokumentabnahme steht aus. Andere provisorische Namen werden nicht mitratifiziert. HTTP-Aktionen verwenden `BusinessAuditService` und serverseitige Request-Correlation-ID, seit E-15T auch `ACCOUNT_ACTIVATED`. `ACCOUNT_ACTIVATION_REISSUED` ist ein **reines Entwicklungsereignis** des lokalen Wiederherstellungsskripts `scripts/reissue-employee-activation.mjs`, ohne HTTP-Pfad und mit eigener skriptinterner Correlation-ID.
 - **Formelle Fortschreibung** der privaten Baselines (siehe ADR-0002 und die Übergabedatei).
+
+## Explizite Übergabe aus #64/#73
+
+- **Browserabnahme:** manueller Smoke und automatisierte Browser-E2E weiterhin **NOT_RUN**. Vor integrierter UX-/Staging-Abnahme den echten Browser→API→isolierte-PG-Ablauf für Korrektur, Zukunfts-DELETE, S-9, Beschäftigungs-Konflikt und Recovery prüfen; keine DB-Fixtures ohne vorher bestätigte Testidentität.
+- **Audit-Betrieb:** Retention mit Eigentümer/Frist, DB-Rollen gegen UPDATE/DELETE, berechtigter Audit-Zugriff, Backup und Restore-Nachweis festlegen und testen. Entfernte Zukunftslinks haben nur noch den Audit-Nachweis. Namensratifizierung allein erfüllt keine dieser Kontrollen.
+- **Abhängigkeiten:** [main-CI 40899445571](https://github.com/takh86/SecurePlan/actions/runs/40899445571) meldet 10 Befunde (6 moderate, 4 high). Paket-/Transitivpfade, Produktions-Erreichbarkeit, Ausnutzbarkeit und kompatible Abhilfe oder ausdrückliche Security-Risikoentscheidung unter #51 dokumentieren. Kein Upgrade im Dokumentationsaudit.
+- **Testziel vor jedem Write:** vor Fixtures die Identität einer ausdrücklich isolierten, wegwerfbaren Instanz/Datenbank/Schema verifizieren; bei Unsicherheit vor dem ersten Write stoppen. Tests dürfen nicht unbeabsichtigt die Entwicklungskonfiguration erben. Das frühere Fixture-Cleanup ist vom Autor berichtet und **hier nicht unabhängig DB-seitig verifiziert**; notwendige Nachprüfung nur separat autorisiert und zunächst lesend. Cleanup-Hooks ersetzen keinen Schutz vor dem Write.
+- **Weitere #51-Gates:** Trusted Proxy/Client-IP, Spoofing/Rate-Limit, Counter-Retention/Pending/Crash/HMAC-Rotation, Edge-Grenzen, konsistente Session-Identität, Cookie/Logout/Revocation, Security Review/Alerts und explizite Release-Freigabe bleiben offen. Parser-Härtung (#69) und CI-Key-Masking (#55) sind bereits erledigte Teilnachweise.
+
+SP-09 administrative Schließung, SP-11-Funktionsabnahme und Betriebsfreigabe sind getrennt. [Abschlussmatrizen](../reviews/sp09-closeout-64-73.md) geben weder einen Browser-PASS noch eine Bereitstellungsfreigabe.
 
 ## Behoben im Review
 

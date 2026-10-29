@@ -1,6 +1,6 @@
 # Projektdokumentation
 
-Stand: 07.10.2026. Einstieg: [Projektstatus](project-status.md) und [G0-Review](reviews/g0-handoff.md).
+Stand: 29.10.2026. Einstieg: [Projektstatus](project-status.md), [SP-09-Abschluss #64/#73](reviews/sp09-closeout-64-73.md) und [SP-11-Handoff](datenbank/sp11-integrity-handoff.md). Der [G0-Review](reviews/g0-handoff.md) bleibt ein historischer Design-/Handoff-Nachweis.
 
 | Bereich | Einstieg |
 | --- | --- |
@@ -13,7 +13,7 @@ Stand: 07.10.2026. Einstieg: [Projektstatus](project-status.md) und [G0-Review](
 | Security | [Auth-Handoff](security/auth-handoff.md), [Veröffentlichungsregeln](public-documentation.md) |
 | Planung | [Aktuelle Woche](planung/aktuelle-woche.md), [Backlogkorrektur](planung/g0-backlog.md) |
 | Quellen | [Veröffentlichungsregeln](public-documentation.md), [historische Originalauswahl](sources/README.md) |
-| Review / Nachweise | [G0](reviews/g0-handoff.md), [Setup](reviews/setup-evidence.md) |
+| Review / Nachweise | [SP-09-Abschluss/CI](reviews/sp09-closeout-64-73.md), [G0](reviews/g0-handoff.md), [Setup](reviews/setup-evidence.md) |
 
 ## Source of Truth
 

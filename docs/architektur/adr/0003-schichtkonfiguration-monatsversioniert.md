@@ -7,6 +7,17 @@
 - **Betroffene Anforderungen:** FR-SHIFT-01, FR-SHIFT-02, BR-SHIFT-01, BR-SHIFT-02 (BR-SHIFT-03 ausdrücklich nicht)
 - **Referenzen:** Interne Baselines Phase 2 (Anforderungen), Phase 7 / 7.2 / 7.3 (DB-Design), Phase 8.3/8.4/8.5/8.8/8.9/8.10/8.11 (API-Vertrag); SP-08b, Issue #22; ADR-0002.
 
+## Datierter Nachtrag 29.10.2026
+
+Der ursprüngliche Entscheidungsstand vom 27.10. bleibt unten erhalten. Die späteren [PO-Entscheidungen D1–D6](https://github.com/takh86/SecurePlan/issues/64#issuecomment-6502123168) übersteuern die damaligen offenen Business-Entscheidungen gezielt:
+
+- **D6 / N-1:** nicht existente lokale Zeit um die genaue Offset-Lücke vorwärts verschieben; doppelte lokale Zeit auf das erste Vorkommen (früherer UTC-Zeitpunkt) auflösen. Richtige lokale Start-/Enddaten und gespeicherte UTC-Snapshots bleiben verbindlich; die Implementierung ist offen.
+- **D3:** gespeicherte DRAFT- und PUBLISHED-Dienste im tatsächlichen Intervall `[M, nächster späterer Wirkmonat)` schützen; unabhängige Projekte/Versionen blockieren nicht. `SHIFT_CONFIGURATION_CONFLICT`, No-op und unveränderte Dienst-Snapshots bleiben erhalten.
+- **D1:** `SHIFT_CONFIGURATION_UPDATED` gehört zu genau vier freigegebenen verwandten Audit-Namen. [ADR-0004](0004-related-business-audit-catalogue.md) dokumentiert die bestehende Full-set-/Ressourcen-/Audit-Semantik; andere provisorische Aktionen werden nicht mitratifiziert.
+- **Implementierungsstand:** Backend und React-Abschnitt `ShiftConfigurationSection` wurden mit #62 geliefert und sind in `7107781` vorhanden. Die unten historische Aussage „React-UI fehlt“ ist überholt; Browser-Smoke/E2E bleibt NOT_RUN.
+
+Relationale Prädikate, Resolver-/Fehlerdetails, globale Sperrreihenfolge (LOCK-01) und kontrollierte Dokumentabnahme bleiben vor Implementierung bzw. administrativer Schließung zu prüfen. Die [SP-11-Übergabe in #25](../../datenbank/sp11-integrity-handoff.md) und [Abschlussmatrizen](../../reviews/sp09-closeout-64-73.md) sind der aktuelle Nachweis. Beide temporären Guards bleiben unverändert fail closed; ihr Ersatz muss mit der Planungstabellen-Integration freigegeben und getestet werden. Kein Release- oder Implementierungs-PASS durch diesen Nachtrag.
+
 ## Kontext
 
 SP-08 ist PARTIAL: Projekte haben bisher nur Name und Status. Für die Monatsplanung (SP-11) braucht jedes Projekt konfigurierbare Schichten TAG und NACHT mit Start- und Endzeit; eine Nachtschicht darf über Mitternacht gehen. Die Zeiten des aktuellen Kundenprojekts (TAG 06:00–18:00, NACHT 18:00–06:00) gelten nur für dieses Projekt und sind keine Systemregel.

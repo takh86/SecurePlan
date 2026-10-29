@@ -6,6 +6,12 @@ following [Issue #73](https://github.com/takh86/SecurePlan/issues/73) and PR #74
 This slice adds discovery and reuses individual removal. Issue #64 Case 2,
 SP-10/SP-11 and deployment approval remain separate.
 
+Closeout update, 2026-10-29: PR #75 is independently reviewed and merged; PR #76
+separately implements Case 2 and its explicit S-9 recovery action. The runtime
+counts below describe the S-9 slice at that time. Current aggregate CI, pending
+documentary acceptance and [#64/#73 matrices](../reviews/sp09-closeout-64-73.md)
+remain distinct from the unimplemented [SP-11 handoff](../datenbank/sp11-integrity-handoff.md).
+
 ## API
 
 `GET /api/v1/employees/{employeeId}/future-project-assignments`

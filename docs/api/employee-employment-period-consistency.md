@@ -60,4 +60,4 @@ Administrators review assignments, explicitly remove selected rows using freshly
 - `problem-details.filter.spec.ts`: fail-closed extension projection and non-disclosure on other codes/statuses.
 - Frontend conflict parser/form tests plus existing S-9, removal and late-response regressions.
 
-Runtime results and unexecuted browser checks belong in the PR evidence; mocked component tests do not establish browser completion. SP-10/SP-11, real planning dependencies and DST duty decisions remain outside this change.
+Runtime results and unexecuted browser checks belong in the PR evidence; mocked component tests do not establish browser completion. SP-10/SP-11 and real planning dependencies remain outside this implementation. Later PO D1–D6 approves the duty/DST business rules, while their detailed contracts and implementation remain in the [SP-11 handoff](../datenbank/sp11-integrity-handoff.md). [Closeout evidence](../reviews/sp09-closeout-64-73.md) records merged PR #76, exact CI, pending controlled-document acceptance and browser NOT_RUN.
