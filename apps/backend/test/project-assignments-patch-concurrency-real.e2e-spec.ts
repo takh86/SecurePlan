@@ -8,6 +8,8 @@
  * #64 case 1: employment dates changed concurrently are judged under the
  * correction's employee lock, in both orders.
  * #64 decision B: the same holds for moving a historical row into a future month.
+ * #64 future-target status guard: status changes of the unchanged employee or
+ * project are judged under the correction's employee/project locks, in both orders.
  */
 import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
@@ -427,5 +429,74 @@ describe('#64 decision B — moving a historical row into a future month is judg
       .toEqual(['PROJECT_ASSIGNMENT_CONFLICT']);
     expect(await rows('2027-04-01')).toHaveLength(1);
     expect(await auditCount()).toBe(audits + 1);
+  });
+});
+
+describe('#64 future-target status guard — status changes of unchanged references are serialized on their rows', () => {
+  // The clock says December 2026: November is past, December current, January 2027 and later future.
+  const ref = (table: 'employees' | 'projects') => (table === 'employees' ? mira.employeeId : north.projectId);
+
+  it.each([
+    ['a past month', '2026-11-01', 'employees', 'DEACTIVATED', 'EMPLOYEE_INACTIVE'],
+    ['a past month', '2026-11-01', 'projects', 'INACTIVE', 'PROJECT_INACTIVE'],
+    ['a past month', '2026-11-01', 'projects', 'ARCHIVED', 'PROJECT_INACTIVE'],
+    ['the current month', '2026-12-01', 'employees', 'DEACTIVATED', 'EMPLOYEE_INACTIVE'],
+    ['the current month', '2026-12-01', 'projects', 'ARCHIVED', 'PROJECT_INACTIVE'],
+    ['a future month', '2027-01-01', 'employees', 'DEACTIVATED', 'EMPLOYEE_INACTIVE'],
+    ['a future month', '2027-01-01', 'projects', 'INACTIVE', 'PROJECT_INACTIVE'],
+  ] as const)('from %s (%s): %s set to %s and committed while the move waits: 409 %s, nothing written', async (_label, month, table, status, code) => {
+    const x = await seed(mira, north, month);
+    const audits = await auditCount();
+    const change = await begin();
+    await change.client.query(`UPDATE ${table} SET status = $2 WHERE id = $1`, [ref(table), status]);
+    const attempt = send('patch', `${BASE}/${x}`, admins[0], { monthStart: '2027-03-01' });
+    await waitForBlocked(change.pid);
+    await finish(change, 'COMMIT');
+
+    const response = await attempt;
+    expect([response.status, response.body.code]).toEqual([409, code]);
+    expect(await rows(month)).toEqual([{ employee_id: mira.employeeId, project_id: north.projectId }]);
+    expect(await rows('2027-03-01')).toEqual([]);
+    expect(await auditCount()).toBe(audits);
+  });
+
+  it.each([
+    ['employees', 'DEACTIVATED'],
+    ['projects', 'ARCHIVED'],
+  ] as const)('%s set to %s but rolled back while the move waits: only committed status counts (200, one audit entry)', async (table, status) => {
+    const x = await seed(mira, north, '2026-11-01');
+    const audits = await auditCount();
+    const change = await begin();
+    await change.client.query(`UPDATE ${table} SET status = $2 WHERE id = $1`, [ref(table), status]);
+    const attempt = send('patch', `${BASE}/${x}`, admins[0], { monthStart: '2027-03-01' });
+    await waitForBlocked(change.pid);
+    await finish(change, 'ROLLBACK');
+
+    expect((await attempt).status).toBe(200);
+    expect(await rows('2027-03-01')).toEqual([{ employee_id: mira.employeeId, project_id: north.projectId }]);
+    expect(await auditCount()).toBe(audits + 1);
+  });
+
+  it.each([
+    ['employees', 'DEACTIVATED'],
+    ['projects', 'INACTIVE'],
+  ] as const)('other order: %s set to %s while the move holds its locks waits for it; no deadlock', async (table, status) => {
+    const x = await seed(mira, north, '2026-11-01');
+    // Gate on the assignment row: the move locks it (FOR UPDATE) only AFTER the employee and the project.
+    const gate = await begin();
+    await gate.client.query('SELECT 1 FROM project_assignments WHERE id = $1 FOR UPDATE', [x]);
+    const attempt = send('patch', `${BASE}/${x}`, admins[0], { monthStart: '2027-03-01' });
+    await waitForBlocked(gate.pid);
+    const change = await begin();
+    const changed = change.client.query(`UPDATE ${table} SET status = $2 WHERE id = $1`, [ref(table), status]);
+    void changed.catch(() => {});
+    await waitForBlocked(gate.pid, 2); // the change queues behind the move, not beside it
+    await finish(gate, 'ROLLBACK');
+
+    // Decided on the status committed when the move took its locks.
+    expect((await attempt).status).toBe(200);
+    expect(await rows('2027-03-01')).toEqual([{ employee_id: mira.employeeId, project_id: north.projectId }]);
+    await changed;
+    await finish(change, 'COMMIT');
   });
 });
