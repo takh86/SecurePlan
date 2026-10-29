@@ -1,6 +1,6 @@
 # Korrektur von Monatszuordnungen: Regeln und Übergabe an SP-11
 
-Stand: 26.10.2026, ergänzt am 28.10.2026 um #64 Fall 1 und Owner-Entscheidung B sowie am 29.10.2026 um den #64-Status-Guard für Zukunftsmonate. Betrifft `PATCH /api/v1/project-assignments/{assignmentId}` (SP-09, Stand PARTIAL).
+Stand: 26.10.2026, ergänzt am 28.10.2026 um #64 Fall 1 und Owner-Entscheidung B sowie am 29.10.2026 um den #64-Status-Guard für Zukunftsmonate und um #73 (Entfernen von Zuordnungen künftiger Monate, `version`). Betrifft `PATCH` und seit #73 `DELETE /api/v1/project-assignments/{assignmentId}` (SP-09, Stand PARTIAL).
 
 ## Umgesetzte Regeln (Owner-Entscheidungen D1–D5)
 
@@ -49,7 +49,7 @@ Monatspläne, Dienste und Plan-Zuordnungen (`monthly_plans`, `duties`, `plan_ass
 
 ## Nicht enthalten
 
-Oberfläche für Korrekturen, Entfernen von Zuordnungen (der Vertrag sieht kein DELETE vor) und ein formell freigegebener Audit-Aktionskatalog.
+Entfernen von Zuordnungen des aktuellen oder eines vergangenen Monats (seit #73 gibt es `DELETE` nur für Zukunftsmonate, siehe Abschnitt „#73“) und ein formell freigegebener Audit-Aktionskatalog.
 
 ## Restrisiko Sitzungsablauf (kein Polling)
 
@@ -117,3 +117,67 @@ Entscheidung: [#64, Kommentar vom 28.10.2026](https://github.com/takh86/SecurePl
 - **Bestand:** keine rückwirkende Migration, keine automatische Löschung, kein Umschreiben bestehender Zuordnungen.
 - **Tests:** Unit-Matrix `correction-status-conflict.spec.ts`. Real-PostgreSQL: `project-assignments-patch-real.e2e-spec.ts` (vergangener und aktueller Monat in die Zukunft mit unveränderter deaktivierter Person, inaktivem oder archiviertem Projekt, jeweils nur Monat, mit ausdrücklich unveränderten IDs und mit Wechsel der anderen Referenz; Positivfall mit Audit `HISTORICAL`; Zukunft zu Zukunft; Zukunft zurück in die Historie; Reihenfolge inklusive No-op; Rollen, CSRF und Tenant-Isolation; Berlin gegen New York auch am Jahreswechsel), `project-assignments-patch-concurrency-real.e2e-spec.ts` (Statusänderung festgeschrieben oder zurückgerollt, während die Korrektur wartet, und die umgekehrte Sperrreihenfolge) und `planning-guards-real.e2e-spec.ts` (Statusablehnung vor Beschäftigungsprüfung und Planungsschutz).
 - **Offen:** Die privaten Phase-8-Baselines sind für diese Regel noch nicht formell fortgeschrieben.
+
+## #73: Entfernen von Zuordnungen künftiger Monate (29.10.2026)
+
+Entscheidungen: [PO-Freigabe D73-1 bis D73-5, D73-8, R1, R2](https://github.com/takh86/SecurePlan/issues/73#issuecomment-6491464511) und [finaler TL/API-Sign-off mit Revision R2](https://github.com/takh86/SecurePlan/issues/73#issuecomment-6492654582) (Delta: [Kommentar 6492472218](https://github.com/takh86/SecurePlan/issues/73#issuecomment-6492472218)). #64 Fall 2 ist hier **nicht** umgesetzt.
+
+### Vertrag
+
+- **Endpunkt:** `DELETE /api/v1/project-assignments/{assignmentId}`, nur `COMPANY_ADMIN`. Origin, Sitzung, CSRF und Rolle prüft der globale Guard; der Actor wird in der Transaktion erneut geprüft. Kein Body und keine Query werden gelesen.
+- **Pflicht-Header `Expected-Version`:** genau eine positive Dezimalzahl ohne Vorzeichen und führende Null, höchstens `9007199254740991`. Der Wert ist die `version` der Zuordnung, die der Admin bestätigt hat. `If-Match` wird nicht ausgewertet und hat keinen Vorrang; es gibt kein ETag, kein 412 und kein 428.
+- **Erfolg:** `204 No Content` mit `Cache-Control: no-store`. Die Zeile wird physisch gelöscht; in derselben Transaktion entsteht ein Audit-Ereignis `PROJECT_ASSIGNMENT_REMOVED` (vorläufiger MVP-Name) mit `old_values = { employeeId, projectId, monthStart }` (vollständiges entferntes Tupel), `new_values = null`, Unternehmen, Actor und Correlation-ID. Schlägt das Audit fehl, wird nichts gelöscht.
+- **Nur Zukunftsmonate:** `planning_month` muss nach dem aktuellen Monat des Unternehmens liegen (IANA-Zeitzone `companies.time_zone`, D3).
+- **Nicht geprüft (PO):** Status von Mitarbeiter und Projekt sowie Beschäftigungsnachweis. Eine unerwünschte Zukunftszuordnung einer deaktivierten Person ist entfernbar.
+- **Keine Kaskade:** kein Ersatz, keine Vakanz, keine Änderung von Beschäftigungsdaten oder Diensten. Der Monat ist danach für eine neue, bewusste Zuordnung (POST) frei.
+- **Schema:** keine Migration, kein neuer Fehlercode. Der Kommentar der bereits angewendeten Migration `0008` („no DELETE endpoint“) bleibt unverändert, weil angewendete Migrationen unveränderlich sind; maßgeblich ist dieser Abschnitt.
+
+| Status / Code | Wann |
+|---|---|
+| 401 / 403 | Guard (Origin → Sitzung → CSRF → Rolle), vor jeder Parameterprüfung; Actor-Recheck in der Transaktion |
+| 404 `RESOURCE_NOT_FOUND` | ID-Format ungültig (vor der Header-Prüfung); unbekannt, fremder Tenant oder bereits entfernt (nach der Header-Prüfung). Gleicher Body für alle Fälle; eine Wiederholung schreibt kein zweites Audit |
+| 400 `EXPECTED_VERSION_REQUIRED` | Header fehlt (auch wenn nur `If-Match` gesendet wird) |
+| 400 `INVALID_EXPECTED_VERSION` | leer, nicht dezimal, 0, Vorzeichen, führende Null, Nachkommastellen, Exponent, außerhalb des sicheren Bereichs oder mehrfach gesendet (Node fügt Duplikate zu `a, b` zusammen, auch bei gleichem Wert) |
+| 409 `PROJECT_ASSIGNMENT_CONFLICT` | Tupel unter der Zeilensperre geändert oder Version veraltet (auch nach A→B→A) |
+| 409 `PROJECT_ASSIGNMENT_CORRECTION_CONFLICT` | Monat ist der aktuelle oder ein vergangener (D73-2, ausdrücklich freigegebene Auslegung) oder der Planungsschutz E-10 greift |
+| 500 `INTERNAL_ERROR` | fail closed, z. B. Version außerhalb des unterstützten Bereichs |
+
+**Reihenfolge:** Guard → 404 ID-Format → 400 Header (erste Anweisung im Handler; NestJS führt an `@Headers()` keine Pipes aus, ein Pipe dort würde still übersprungen) → Actor-Recheck → 404 Lookup → Sperren Mitarbeiter (`FOR NO KEY UPDATE`) → Projekt (`FOR SHARE`) → Zeile (`FOR UPDATE`) → 404 verschwunden / 409 Tupel geändert → 409 Version → 409 Monat → 409 Planungsschutz → DELETE und Audit → 204. Jede Ablehnung schreibt nichts und kein Erfolgs-Audit.
+
+### `version` (S-2 Revision R2, ohne Migration)
+
+- **Wert:** `(extract(epoch FROM updated_at) * 1000000)::bigint`, also `updated_at` in Epoch-Mikrosekunden. Er steht in jeder Antwort von LIST, POST und PATCH, auch beim No-op. Clients behandeln ihn als opakes Token, nicht als Zeitstempel und nicht als Berechtigung.
+- **Umwandlung:** node-pg liefert den `bigint` als Dezimalstring. Der Mapper akzeptiert nur `^[1-9][0-9]{0,15}$`, einen sicheren Integer und eine exakte Rundreise; sonst 500. Nie über JS `Date` (nur Millisekunden) oder `date_part` (Gleitkomma).
+- **Unterstützter Bereich:** `1970-01-01T00:00:00.000001Z` (1) bis `2255-06-05T23:47:34.740991Z` (2^53 − 1). Außerhalb antworten LIST, No-op-PATCH und DELETE fail closed mit 500, ohne den Wert zu zeigen.
+- **Schreibinvariante:** Jeder **wirksame** UPDATE von `project_assignments` setzt `updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')` (`PROJECT_ASSIGNMENT_TOUCH`). Ein echtes No-op schreibt nichts. INSERT behält den Default. Damit steigt die Version je Zeile streng, auch bei eingefrorener oder zurückgestellter Uhr und innerhalb derselben Mikrosekunde; ein veraltetes Token kann nie einer späteren Version gleichen (kein ABA, keine Kollision).
+- **No-op-PATCH:** antwortet seit #73 mit der **gesperrten** Zeile statt mit dem ungesperrten Erstlesen, damit nach einem zwischenzeitlichen A→B→A keine veraltete Version ausgeliefert wird.
+- **Grenze (akzeptiert, nicht blockierend):** Die Invariante ist nicht in der Datenbank erzwungen. Ein Schreibzugriff per SQL außerhalb der Anwendung ohne diese Regel würde die Version nicht ändern. Abgesichert durch den statischen Tripwire `assignment-version-tripwire.spec.ts` und die Betriebsregel „keine unreviewten Schreibzugriffe“ (Pre-Staging-Gate).
+
+### Oberfläche (Projekt → Monatspanel)
+
+- „Entfernen“ steht neben „Korrigieren“. Ob die Aktion angeboten wird, hängt nur am Zeitpunkt, nicht an der Browser-Zeitzone: Alle unterstützten Zonen liegen zwischen UTC−12 und UTC+14. Ist der Monat in keiner Zone mehr künftig, fehlt die Aktion; im Fenster von etwa 26 Stunden um einen Monatswechsel wird sie mit dem Hinweis angeboten, dass die Zeitzone des Unternehmens entscheidet. Bei korrekter Geräteuhr wird nie eine entfernbare Zeile verborgen; der Server entscheidet immer.
+- Die Inline-Bestätigung ist an die angezeigte Zeile gebunden (ID, Version, Person, Projekt, Monat) und nennt, was **nicht** passiert. Jedes Ergebnis lädt den Monat neu und schließt die Bestätigung; eine abgelehnte Entfernung wird nie automatisch wiederholt. Eine neue Bestätigung verwendet die frisch geladene Version.
+- Ein Netzwerkfehler gilt als „Ergebnis unbekannt“: kein Retry, Neuladen zeigt den tatsächlichen Stand.
+
+### Tests (Real-PostgreSQL, synthetische Daten)
+
+- `project-assignments-remove-real.e2e-spec.ts`: Erfolg mit Audit-Inhalt und Correlation-ID, freier Monat danach; aktueller, vergangener, nächster Monat und Folgejahr; Berlin gegen New York am Monatsende und am Jahreswechsel; Statusunabhängigkeit; fehlende, ungültige, doppelte (Rohsocket und Array-Header) und nicht-ASCII-Header; `If-Match` ohne Wirkung; veraltete Version nach jeder Korrekturart, A→B→A, nie ausgegebene Version; exakte Mikrosekunden; LIST/POST/PATCH-Antwort gleich folgendem LIST; No-op, abgelehnter und zurückgerollter PATCH; eingefrorene Uhr (+1 µs je Schreibvorgang); Bereichsgrenzen fail closed; Reihenfolge Guard → ID → Header → Version → Monat; Wiederholung, unbekannt und fremder Tenant mit identischem 404; Rollen, abgelaufene und widerrufene Sitzung, CSRF, Origin; Actor-Recheck nach Rollen- bzw. Firmenänderung; ignorierte Tenant-Hinweise in Body und Query; Audit-Fehler rollt zurück.
+- `project-assignments-remove-concurrency-real.e2e-spec.ts` (deterministische Sperr-Barrieren, kein Sleep): zwei Entfernungen (COMMIT und Rollback der ersten); Entfernen gegen Korrektur (Personenwechsel, Zukunftsmonat, in die Historie) in beiden Reihenfolgen und mit zurückgerollter Korrektur; Änderung zwischen ungesperrtem Lesen und Sperre (anderes Tupel, A→B→A); No-op-PATCH liefert nach A→B→A die gesperrte Version; Entfernen gegen POST, Beschäftigungsänderung, Deaktivierung und Projektstatus in beiden Reihenfolgen; Stresslauf mit Tausch-Korrekturen ohne Deadlock und ohne 500; Touch-Regel unter Nebenläufigkeit und Uhrschiefe.
+- `planning-guards-real.e2e-spec.ts`: Mit einer Planungsrelation scheitert das Entfernen einer Zukunftszeile mit gültiger Version fail closed; veraltete Version und Nicht-Zukunftsmonat werden davor abgelehnt; nach dem Rollback funktioniert das Entfernen wieder.
+- `route-access-inventory.e2e-spec.ts`: genau eine zusätzliche Route `DELETE /api/v1/project-assignments/:assignmentId`, nur `COMPANY_ADMIN`.
+
+### SP-11-Übergabe (D73-6/D73-9, verbindlich)
+
+1. Das Entfernen ist der dritte Nutzer von `assertPlanningDependencyCheckImplemented` und ruft es nach den Sperren, der Versions- und der Monatsprüfung auf. Der Guard bleibt fail closed; es gibt keinen Bypass.
+2. Der erste PR, der echte Planungstabellen anlegt, ersetzt die anwendbaren temporären Guards (Korrektur **und** Entfernen) **in derselben Integrations-Slice** durch echte tenant-, monats- und zuordnungsbezogene Prüfungen. Sonst sind beide Operationen gesperrt; zusammen mit einem durchgesetzten #64 Fall 2 wäre ein vorzeitiger Austritt dann nicht mehr erfassbar.
+3. Tabellen aus SP-10 (Verfügbarkeit) werden nach ihrem tatsächlichen Schema klassifiziert, nicht nach der Phase.
+4. Vorschlag zur Ablehnungsregel (Entscheidung PO/TL bei SP-11): Entfernen von (Person, Projekt, Monat) wird abgelehnt, solange ein geplanter Dienst bzw. eine Plan-Zuordnung dieser Person auf diesem Projekt in diesem Monat existiert, veröffentlicht oder nicht. Code `409 PROJECT_ASSIGNMENT_CORRECTION_CONFLICT`, ohne Plandetails. Abhilfe: zuerst die Dienste im Planungsablauf ändern, dann die Monatszuordnung entfernen.
+5. Jeder künftige Schreiber, der eine Abhängigkeit von einer Monatszuordnung erzeugt, nimmt vor der Revalidierung die Mitarbeiterzeile mindestens `FOR SHARE` oder eine mit DELETE kollidierende Sperre bzw. einen FK auf die Zuordnungszeile. Beide Sperrreihenfolgen sind mit Real-PostgreSQL-Tests zu belegen.
+6. Jeder künftige Schreiber von `project_assignments` hält die Versions-Schreibinvariante ein (der Tripwire schlägt sonst an).
+
+### Offboarding-Ablauf und offene Punkte
+
+- **Ablauf:** künftige Zuordnungen der Person finden → jede unerwünschte einzeln entfernen (je ein Audit-Ereignis) → Beschäftigungsende im Mitarbeiterstamm setzen → optional deaktivieren → später und getrennt einen Ersatz zuordnen. Nichts wird automatisch angelegt.
+- **Offen (D73-7 / S-9):** Schritt 1 hat noch keinen eigenen Aufruf; das Monatspanel je Projekt reicht für das Offboarding nicht aus. Eine mitarbeiterbezogene Abfrage oder eine begrenzte Konfliktliste im 409 von #64 Fall 2 ist ein Gate vor #64 Fall 2.
+- **Offen (S-8):** Der Korrektur-PATCH hat weiterhin keine Vorbedingung; sein Lost-Update-Fall bleibt bewusst außerhalb von #73.
+- **Pre-Staging:** Audit-Unveränderlichkeit, Aufbewahrung und Zugriff sowie die Versionsgrenze, siehe `docs/security/pre-staging-gates.md`.

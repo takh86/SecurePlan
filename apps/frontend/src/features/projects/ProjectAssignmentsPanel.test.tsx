@@ -28,8 +28,8 @@ function company() {
     projects: [hafen, messe],
     employees: [jonas, mira, lena, tom],
     assignments: [
-      { id: 'a-lena', employeeId: lena.id, projectId: hafen.id, monthStart: DEC },
-      { id: 'a-tom', employeeId: tom.id, projectId: messe.id, monthStart: DEC },
+      { id: 'a-lena', employeeId: lena.id, projectId: hafen.id, monthStart: DEC, version: 1793260800000201 },
+      { id: 'a-tom', employeeId: tom.id, projectId: messe.id, monthStart: DEC, version: 1793260800000202 },
     ],
   });
 }
@@ -105,7 +105,7 @@ describe('SP-09 — month assignment (UX A09, real API source)', () => {
     // Meanwhile another admin assigned Jonas to Messe for December.
     server.fail((request) => {
       if (request.method !== 'POST') return undefined;
-      server.state.assignments.push({ id: 'a-race', employeeId: jonas.id, projectId: messe.id, monthStart: DEC });
+      server.state.assignments.push({ id: 'a-race', employeeId: jonas.id, projectId: messe.id, monthStart: DEC, version: 1793260800000203 });
       return httpError(409, 'PROJECT_ASSIGNMENT_CONFLICT');
     });
     await user.click(screen.getByRole('button', { name: 'Zuordnen' }));

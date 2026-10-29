@@ -1,7 +1,13 @@
 /**
  * SP-09 Workforce & Projects: month-scoped employee -> project assignment
- * (COMPANY_ADMIN only): create, read and the correction PATCH
- * (Phase 8.4 D-8.4-13/14; owner decisions D1-D5 of 26.10.2026).
+ * (COMPANY_ADMIN only): create, read, the correction PATCH
+ * (Phase 8.4 D-8.4-13/14; owner decisions D1-D5 of 26.10.2026) and the
+ * removal of FUTURE assignments (#73, PO decisions D73-1..8, TL sign-off R2).
+ *
+ * Version (#73 S-2 R2): every response carries `version`, the row's
+ * `updated_at` in epoch microseconds. Every effective UPDATE applies
+ * PROJECT_ASSIGNMENT_TOUCH and a genuine no-op writes nothing, so the version
+ * strictly increases with each committed change (no ABA, no collision).
  *
  * Tenant rules (SP-06), as in EmployeesService:
  * - companyId/accountId/role come ONLY from the trusted TenantContext;
@@ -17,6 +23,7 @@
  * concurrent switch to INACTIVE.
  */
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../../database/database.service.js';
 import { assertActorInTransaction } from '../../../auth/authorization/actor-in-transaction.js';
 import { requireRow } from '../../../auth/authorization/require-row.js';
@@ -32,7 +39,10 @@ import type {
 import { assertPlanningDependencyCheckImplemented } from './planning-dependency-guard.js';
 import {
   PROJECT_ASSIGNMENT_COLUMNS,
+  PROJECT_ASSIGNMENT_TOUCH,
+  assignmentVersionSql,
   isMonthStart,
+  toAssignmentVersion,
   toProjectAssignmentResponse,
   type ProjectAssignmentRow,
 } from './project-assignment.mapper.js';
@@ -79,7 +89,8 @@ export class ProjectAssignmentsService {
       const counted = await client.query<{ total: number }>(`SELECT count(*)::int AS total FROM ${from}`, params);
       const rows = await client.query<ProjectAssignmentRow>(
         `SELECT pa.id, pa.employee_id, pa.project_id,
-                to_char(pa.planning_month, 'YYYY-MM-DD') AS month_start
+                to_char(pa.planning_month, 'YYYY-MM-DD') AS month_start,
+                ${assignmentVersionSql('pa.updated_at')} AS version
          FROM ${from}
          ORDER BY e.employee_number ASC, pa.id ASC
          LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -206,7 +217,8 @@ export class ProjectAssignmentsService {
    * - lock order (deterministic, independent of the change direction): actor ->
    *   employees by id -> projects by id -> assignment row; the row is re-read
    *   under its lock and a concurrent change is a 409, never a blind retry.
-   * No-op corrections answer 200 without a write or audit entry.
+   * No-op corrections answer 200 without a write or audit entry, with the
+   * LOCKED row, so the version is current even after a concurrent A->B->A (#73).
    */
   async correct(
     tenant: TenantContext,
@@ -284,15 +296,9 @@ export class ProjectAssignmentsService {
       ) {
         throw new ConflictException({ code: 'PROJECT_ASSIGNMENT_CONFLICT' });
       }
-      if (!employeeChanged && !projectChanged && !monthChanged) return toProjectAssignmentResponse(current);
+      if (!employeeChanged && !projectChanged && !monthChanged) return toProjectAssignmentResponse(locked);
 
-      const zone = requireRow(
-        await client.query<{ current_month: string }>(
-          `SELECT to_char(date_trunc('month', $2::timestamptz AT TIME ZONE time_zone), 'YYYY-MM-DD') AS current_month
-           FROM companies WHERE id = $1`,
-          [tenant.companyId, this.clock().toISOString()],
-        ),
-      ).current_month;
+      const zone = await this.currentMonth(client, tenant.companyId);
       const historical = current.month_start <= zone || next.monthStart <= zone;
       const scope = historical ? 'HISTORICAL' : 'FUTURE';
 
@@ -322,7 +328,7 @@ export class ProjectAssignmentsService {
         updated = requireRow(
           await client.query<ProjectAssignmentRow>(
             `UPDATE project_assignments
-             SET employee_id = $3, project_id = $4, planning_month = $5::date, updated_at = clock_timestamp()
+             SET employee_id = $3, project_id = $4, planning_month = $5::date, ${PROJECT_ASSIGNMENT_TOUCH}
              WHERE company_id = $1 AND id = $2
              RETURNING ${PROJECT_ASSIGNMENT_COLUMNS}`,
             [tenant.companyId, assignmentId, next.employeeId, next.projectId, next.monthStart],
@@ -361,6 +367,116 @@ export class ProjectAssignmentsService {
       });
       return toProjectAssignmentResponse(updated);
     });
+  }
+
+  /**
+   * #73: physical removal of ONE assignment of a month after the company's
+   * current month (D73-1), with one PROJECT_ASSIGNMENT_REMOVED audit event in
+   * the same transaction. The caller must present the version it confirmed
+   * (R1); the controller has already parsed it. Precedence after the actor
+   * recheck: 404 unknown/foreign/already removed -> locks (employee NO KEY
+   * UPDATE -> project SHARE -> row FOR UPDATE, as in correct()) -> 404 vanished
+   * / 409 PROJECT_ASSIGNMENT_CONFLICT tuple changed -> 409
+   * PROJECT_ASSIGNMENT_CONFLICT stale version -> 409
+   * PROJECT_ASSIGNMENT_CORRECTION_CONFLICT current or past month (D73-2) -> 409
+   * planning guard (E-10, unchanged) -> DELETE + audit.
+   * Employee and project status and employment are deliberately NOT checked
+   * (PO): an unwanted future link of a deactivated person must be removable.
+   * Nothing cascades: no vacancy, no replacement, no employment-date change.
+   */
+  async remove(
+    tenant: TenantContext,
+    assignmentId: string,
+    expectedVersion: number,
+    correlationId: string,
+  ): Promise<void> {
+    await this.database.withTransaction(async (client) => {
+      await assertActorInTransaction(client, tenant, ADMIN_ONLY);
+      const current = requireRow(
+        await client.query<ProjectAssignmentRow>(
+          `SELECT ${PROJECT_ASSIGNMENT_COLUMNS} FROM project_assignments
+           WHERE company_id = $1 AND id = $2`,
+          [tenant.companyId, assignmentId],
+        ),
+      );
+
+      // The employee lock is what case 2 and every other assignment writer rely on;
+      // deleting a referencing row alone would not lock the parent.
+      const employeeLock = await client.query(
+        `SELECT 1 FROM employees WHERE company_id = $1 AND id = $2 FOR NO KEY UPDATE`,
+        [tenant.companyId, current.employee_id],
+      );
+      const projectLock = await client.query(
+        `SELECT 1 FROM projects WHERE company_id = $1 AND id = $2 FOR SHARE`,
+        [tenant.companyId, current.project_id],
+      );
+      // The composite FKs guarantee both rows; a miss would mean the lock protocol did not hold.
+      if (employeeLock.rowCount !== 1 || projectLock.rowCount !== 1) {
+        throw new Error('remove: referenced employee or project row is missing');
+      }
+
+      // Gone in between (a concurrent removal) -> 404; changed in between -> 409.
+      const locked = requireRow(
+        await client.query<ProjectAssignmentRow>(
+          `SELECT ${PROJECT_ASSIGNMENT_COLUMNS} FROM project_assignments
+           WHERE company_id = $1 AND id = $2
+           FOR UPDATE`,
+          [tenant.companyId, assignmentId],
+        ),
+      );
+      if (
+        locked.employee_id !== current.employee_id ||
+        locked.project_id !== current.project_id ||
+        locked.month_start !== current.month_start
+      ) {
+        throw new ConflictException({ code: 'PROJECT_ASSIGNMENT_CONFLICT' });
+      }
+      // R1: the admin confirmed exactly this state; any later change (A->B->A included) moved the version.
+      if (toAssignmentVersion(locked.version) !== expectedVersion) {
+        throw new ConflictException({ code: 'PROJECT_ASSIGNMENT_CONFLICT' });
+      }
+
+      // Month starts as YYYY-MM-DD strings compare chronologically.
+      if (locked.month_start <= (await this.currentMonth(client, tenant.companyId))) {
+        throw new ConflictException({ code: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' });
+      }
+
+      await assertPlanningDependencyCheckImplemented(client);
+
+      const deleted = await client.query(
+        'DELETE FROM project_assignments WHERE company_id = $1 AND id = $2',
+        [tenant.companyId, assignmentId],
+      );
+      // The row is locked by this transaction: anything but one row is a defect.
+      if (deleted.rowCount !== 1) throw new Error('remove: locked assignment row was not deleted exactly once');
+
+      await this.audit.recordBusinessAction(client, {
+        companyId: tenant.companyId,
+        actorAccountId: tenant.accountId,
+        action: 'PROJECT_ASSIGNMENT_REMOVED',
+        resourceType: 'PROJECT_ASSIGNMENT',
+        resourceId: assignmentId,
+        // The complete removed tuple: the row itself no longer exists afterwards.
+        oldValues: { employeeId: locked.employee_id, projectId: locked.project_id, monthStart: locked.month_start },
+        newValues: null,
+        correlationId,
+      });
+    });
+  }
+
+  /**
+   * The company's current month (YYYY-MM-01) in its IANA time zone (D3), from
+   * one wall-clock read. The actor check holds the company row FOR SHARE, so
+   * the time zone stays stable for the rest of the transaction.
+   */
+  private async currentMonth(client: Pick<PoolClient, 'query'>, companyId: string): Promise<string> {
+    return requireRow(
+      await client.query<{ current_month: string }>(
+        `SELECT to_char(date_trunc('month', $2::timestamptz AT TIME ZONE time_zone), 'YYYY-MM-DD') AS current_month
+         FROM companies WHERE id = $1`,
+        [companyId, this.clock().toISOString()],
+      ),
+    ).current_month;
   }
 }
 

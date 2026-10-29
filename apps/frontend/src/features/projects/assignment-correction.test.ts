@@ -10,7 +10,7 @@ import {
 } from './assignment-correction';
 
 // Synthetic example values, not business rules.
-const december = { id: 'a-1', employeeId: 'e-1', projectId: 'p-1', monthStart: '2026-12-01' };
+const december = { id: 'a-1', employeeId: 'e-1', projectId: 'p-1', monthStart: '2026-12-01', version: 1793260800000001 };
 
 describe('SP-09 — assignment correction values', () => {
   it('starts from the persisted assignment', () => {

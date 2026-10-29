@@ -4,7 +4,9 @@ import { fakeSessionApi } from '../employees/employees.test-support';
 import { createProjectAssignmentsApi, monthStartOf } from './project-assignments-api';
 
 // Synthetic example values.
-const assignment = (id: string, monthStart = '2027-01-01') => ({ id, employeeId: 'e-1', projectId: 'p-1', monthStart });
+const assignment = (id: string, monthStart = '2027-01-01', version = 1793260800123456) => ({
+  id, employeeId: 'e-1', projectId: 'p-1', monthStart, version,
+});
 const page = (items: unknown[], pageNumber: number, totalPages: number) => ({
   items,
   pagination: { page: pageNumber, pageSize: 100, totalItems: items.length, totalPages },
@@ -66,6 +68,34 @@ describe('SP-09 — project assignments API client', () => {
       const client = createProjectAssignmentsApi(fakeSessionApi(() => body).api);
       await expect(client.update('a-1', { monthStart: '2027-01-01' })).rejects.toMatchObject({ kind: 'invalid-response' });
     }
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['zero', 0],
+    ['negative', -1],
+    ['fraction', 1.5],
+    ['unsafe', Number.MAX_SAFE_INTEGER + 1],
+    ['a string', '1793260800123456'],
+    ['null', null],
+  ])('#73 rejects an answer whose version is %s', async (_label, version) => {
+    const client = createProjectAssignmentsApi(fakeSessionApi(() => ({ ...assignment('a-1'), version })).api);
+    await expect(client.update('a-1', { monthStart: '2027-01-01' })).rejects.toMatchObject({ kind: 'invalid-response' });
+  });
+
+  it('#73 keeps the exact version; the largest safe integer is valid', async () => {
+    const client = createProjectAssignmentsApi(fakeSessionApi(() => page([assignment('a-1', '2027-01-01', Number.MAX_SAFE_INTEGER)], 1, 1)).api);
+    expect((await client.listMonth('2027-01'))[0].version).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it('#73 removes with DELETE and the confirmed Expected-Version, without a body; a body in the answer is a defect', async () => {
+    const { api, requests } = fakeSessionApi(() => undefined);
+    await expect(createProjectAssignmentsApi(api).remove('a/1', 1793260800123456)).resolves.toBeUndefined();
+    expect(requests).toEqual([
+      { path: '/api/v1/project-assignments/a%2F1', method: 'DELETE', body: undefined, expectedVersion: 1793260800123456 },
+    ]);
+    const answering = createProjectAssignmentsApi(fakeSessionApi(() => assignment('a-1')).api);
+    await expect(answering.remove('a-1', 1)).rejects.toMatchObject({ kind: 'invalid-response' });
   });
 
   it('maps a month key to its first day', () => {

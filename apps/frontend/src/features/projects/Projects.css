@@ -73,6 +73,13 @@
   border: 2px solid var(--sp-color-danger);
 }
 
+/* Row actions of a month assignment (correct, remove). */
+.assignments__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* Correction of one existing month assignment. */
 .assignment-correction {
   padding: 16px;

@@ -90,6 +90,15 @@ async function row(id: string) {
   )).rows[0];
 }
 
+/** #73: the stored version exactly as the API must render it (updated_at in epoch microseconds). */
+async function versionOf(id: string): Promise<number> {
+  const { rows } = await db().query<{ version: string }>(
+    'SELECT (extract(epoch FROM updated_at) * 1000000)::bigint::text AS version FROM project_assignments WHERE id = $1',
+    [id],
+  );
+  return Number(rows[0].version);
+}
+
 async function auditFor(correlationId: string) {
   return (await db().query(
     `SELECT action, resource_type, resource_id, actor_account_id, old_values, new_values
@@ -233,7 +242,9 @@ describe('SP-09 PATCH — future corrections (D1)', () => {
     const id = await seed(mira, north, '2027-02-01');
     const response = await patch(id, { projectId: south.projectId, monthStart: '2027-03-01', employeeId: jonas.employeeId.toUpperCase() }).expect(200);
     expect(response.headers['cache-control']).toBe('no-store');
-    expect(response.body).toEqual({ id, employeeId: jonas.employeeId, projectId: south.projectId, monthStart: '2027-03-01' });
+    expect(response.body).toEqual({
+      id, employeeId: jonas.employeeId, projectId: south.projectId, monthStart: '2027-03-01', version: await versionOf(id),
+    });
     expect(await row(id)).toMatchObject({ employee_id: jonas.employeeId, project_id: south.projectId, month: '2027-03-01' });
 
     const audit = await auditFor(response.headers['x-correlation-id']);
@@ -306,7 +317,9 @@ describe('#64 case 1 — FUTURE corrections need employment evidence for the res
     // An employment end on the 1st of the month counts (inclusive).
     await setEmployment(mira, '2020-01-01', '2027-02-01');
     const ok = await patch(id, { projectId: south.projectId }).expect(200);
-    expect(ok.body).toEqual({ id, employeeId: mira.employeeId, projectId: south.projectId, monthStart: '2027-02-01' });
+    expect(ok.body).toEqual({
+      id, employeeId: mira.employeeId, projectId: south.projectId, monthStart: '2027-02-01', version: await versionOf(id),
+    });
     expect(await auditFor(ok.headers['x-correlation-id'])).toEqual([expect.objectContaining({
       old_values: { projectId: north.projectId },
       new_values: { scope: 'FUTURE', projectId: south.projectId },
@@ -352,7 +365,7 @@ describe('#64 case 1 — FUTURE corrections need employment evidence for the res
     expect((await patch(id, all('2027-03-01')).expect(409)).body.code).toBe('EMPLOYEE_NOT_EMPLOYED_FOR_MONTH');
     expect(await state(tenantA.companyId)).toEqual(before);
     const ok = await patch(id, all('2027-04-01')).expect(200);
-    expect(ok.body).toEqual({ id, ...all('2027-04-01') });
+    expect(ok.body).toEqual({ id, ...all('2027-04-01'), version: await versionOf(id) });
   });
 
   it('precedence as for POST: 404, then EMPLOYEE_INACTIVE/PROJECT_INACTIVE, then employment, then the taken month', async () => {
@@ -380,7 +393,9 @@ describe('#64 case 1 — FUTURE corrections need employment evidence for the res
     // Nothing is corrected, so there is no new state to validate (existing no-op contract, like the status rules).
     const response = await patch(id, { employeeId: mira.employeeId, projectId: north.projectId, monthStart: '2027-02-01' })
       .expect(200);
-    expect(response.body).toEqual({ id, employeeId: mira.employeeId, projectId: north.projectId, monthStart: '2027-02-01' });
+    expect(response.body).toEqual({
+      id, employeeId: mira.employeeId, projectId: north.projectId, monthStart: '2027-02-01', version: await versionOf(id),
+    });
     expect(await state(tenantA.companyId)).toEqual(before);
   });
 
@@ -449,7 +464,9 @@ describe('#64 decision B — HISTORICAL→FUTURE corrections need employment evi
     const past = await seed(mira, north, '2026-10-01');
     await setEmployment(mira, '2020-01-01', '2027-02-01'); // ends on the 1st of the target month
     const response = await patch(past, { monthStart: '2027-02-01', projectId: south.projectId }).expect(200);
-    expect(response.body).toEqual({ id: past, employeeId: mira.employeeId, projectId: south.projectId, monthStart: '2027-02-01' });
+    expect(response.body).toEqual({
+      id: past, employeeId: mira.employeeId, projectId: south.projectId, monthStart: '2027-02-01', version: await versionOf(past),
+    });
     expect(await auditFor(response.headers['x-correlation-id'])).toEqual([{
       action: 'PROJECT_ASSIGNMENT_CORRECTED',
       resource_type: 'PROJECT_ASSIGNMENT',
@@ -556,7 +573,9 @@ describe('#64 decision B — HISTORICAL→FUTURE corrections need employment evi
     const before = await state(tenantA.companyId);
     const response = await patch(id, { employeeId: mira.employeeId.toUpperCase(), projectId: north.projectId, monthStart: '2026-10-01' })
       .expect(200);
-    expect(response.body).toEqual({ id, employeeId: mira.employeeId, projectId: north.projectId, monthStart: '2026-10-01' });
+    expect(response.body).toEqual({
+      id, employeeId: mira.employeeId, projectId: north.projectId, monthStart: '2026-10-01', version: await versionOf(id),
+    });
     expect(await state(tenantA.companyId)).toEqual(before);
   });
 
@@ -625,7 +644,9 @@ describe('#64 future-target status guard — a future target month needs an ACTI
     const past = await seed(mira, north, '2026-10-01');
     const current = await seed(jonas, south, '2026-12-01');
     const moved = await patch(past, { monthStart: '2027-02-01' }).expect(200);
-    expect(moved.body).toEqual({ id: past, employeeId: mira.employeeId, projectId: north.projectId, monthStart: '2027-02-01' });
+    expect(moved.body).toEqual({
+      id: past, employeeId: mira.employeeId, projectId: north.projectId, monthStart: '2027-02-01', version: await versionOf(past),
+    });
     expect((await auditFor(moved.headers['x-correlation-id']))[0].new_values).toEqual({ scope: 'HISTORICAL', monthStart: '2027-02-01' });
 
     // The status is read at correction time: deactivated refuses, reactivated works again.
@@ -688,7 +709,9 @@ describe('#64 future-target status guard — a future target month needs an ACTI
     const before = await state(tenantA.companyId);
     // A genuine no-op is answered before any status rule: 200, no write, no audit (historical and future row).
     const noop = await patch(id, { employeeId: mira.employeeId, projectId: north.projectId, monthStart: '2026-10-01' }).expect(200);
-    expect(noop.body).toEqual({ id, employeeId: mira.employeeId, projectId: north.projectId, monthStart: '2026-10-01' });
+    expect(noop.body).toEqual({
+      id, employeeId: mira.employeeId, projectId: north.projectId, monthStart: '2026-10-01', version: await versionOf(id),
+    });
     expect((await patch(future, { monthStart: '2027-03-01' }).expect(200)).body.monthStart).toBe('2027-03-01');
     expect(await state(tenantA.companyId)).toEqual(before);
     // An unknown project is a 404 before the status rules ...

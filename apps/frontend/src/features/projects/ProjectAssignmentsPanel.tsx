@@ -2,6 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'rea
 import type { ReadSource } from '../../shared/data/data-source';
 import { MAX_PAGE_SIZE, loadAllPages } from '../../shared/data/load-all-pages';
 import { useReadSource } from '../../shared/data/use-read-source';
+import type { Clock } from '../../shared/time/clock';
+import { futureMonthCertainty } from '../../shared/time/company-month';
 import { formatMonthLabel, type MonthKey } from '../../shared/time/month';
 import { ApiErrorAlert } from '../../shared/ui/ApiErrorAlert';
 import { StatusBadge } from '../../shared/ui/StatusBadge';
@@ -9,6 +11,8 @@ import { EmptyState, ErrorState, LoadingState } from '../../shared/ui/ViewStates
 import { EMPLOYEE_STATUS, fullName, type Employee } from '../employees/employee-types';
 import type { EmployeesApi } from '../employees/employees-api';
 import { AssignmentCorrectionForm } from './AssignmentCorrectionForm';
+import { AssignmentRemovalConfirmation } from './AssignmentRemovalConfirmation';
+import { removalFailureText, removedText, type RemovalSnapshot } from './assignment-removal';
 import type { EditState } from './edit-state';
 import { monthStartOf, type ProjectAssignment, type ProjectAssignmentsApi } from './project-assignments-api';
 import type { Project } from './project-types';
@@ -26,13 +30,20 @@ type MonthData = {
   projects: Project[];
 };
 
-/** Feedback of the last write; kept outside the form so it survives the reload. */
-type Outcome = { kind: 'success' | 'info'; text: string } | { kind: 'error'; error: Error };
+/**
+ * Feedback of the last write; kept outside the form so it survives the reload.
+ * `text` replaces the general wording of an error for one action (#73 removal).
+ */
+type Outcome =
+  | { kind: 'success' | 'info'; text: string }
+  | { kind: 'error'; error: Error; text?: { title: string; description: string } };
 
 type PanelProps = {
   project: Project;
   month: MonthKey;
   apis: AssignmentApis;
+  /** Only a hint for offering "Entfernen" (#73 R2-a); the server decides with the company time zone. */
+  clock: Clock;
   /** Reports the state of an open correction, so leaving the page can be confirmed first. */
   onEditStateChange: (state: EditState) => void;
 };
@@ -44,10 +55,12 @@ type PanelProps = {
  * month is read again, so the view always shows the persisted state.
  * Existing assignments can be corrected (employee, project, month); a
  * corrected assignment that now belongs elsewhere leaves this view only
- * through that reload, never optimistically.
+ * through that reload, never optimistically. Assignments of a month that may
+ * lie after the company's current month can be removed after an explicit
+ * confirmation (#73); nothing is created in their place.
  * Mount with `key={month}`: a new month starts without old feedback.
  */
-export function ProjectAssignmentsPanel({ project, month, apis, onEditStateChange }: PanelProps) {
+export function ProjectAssignmentsPanel({ project, month, apis, clock, onEditStateChange }: PanelProps) {
   const source = useMemo<ReadSource<MonthKey, MonthData>>(
     () => ({
       kind: 'api',
@@ -67,6 +80,7 @@ export function ProjectAssignmentsPanel({ project, month, apis, onEditStateChang
   const outcomeRef = useRef<HTMLDivElement>(null);
   const [focusOutcome, setFocusOutcome] = useState<object | null>(null);
   const monthLabel = formatMonthLabel(month);
+  const removal = futureMonthCertainty(month, clock());
 
   useEffect(() => {
     if (focusOutcome) outcomeRef.current?.focus();
@@ -87,7 +101,7 @@ export function ProjectAssignmentsPanel({ project, month, apis, onEditStateChang
           {outcome?.kind === 'success' && <p className="employees__notice">{outcome.text}</p>}
           {outcome?.kind === 'info' && <p className="employees-card__hint">{outcome.text}</p>}
         </div>
-        {outcome?.kind === 'error' && <ApiErrorAlert error={outcome.error} />}
+        {outcome?.kind === 'error' && <ApiErrorAlert error={outcome.error} text={outcome.text} />}
       </div>
 
       {state.status === 'loading' ? (
@@ -107,6 +121,8 @@ export function ProjectAssignmentsPanel({ project, month, apis, onEditStateChang
           })}
           onFailed={(error) => report({ kind: 'error', error })}
           onCorrectionOutcome={report}
+          removal={removal}
+          onRemovalOutcome={report}
           onFeedbackCleared={() => setOutcome(null)}
           onEditStateChange={onEditStateChange}
         />
@@ -125,18 +141,26 @@ type ContentProps = {
   onFailed: (error: Error) => void;
   /** Feedback of a closed correction; `reload` reads the month again. */
   onCorrectionOutcome: (outcome: Outcome, reload: boolean) => void;
+  /** Whether the month may lie after the company's current month (#73 R2-a hint). */
+  removal: 'never' | 'uncertain' | 'always';
+  /** Feedback of a settled removal; the month is always read again. */
+  onRemovalOutcome: (outcome: Outcome) => void;
   onFeedbackCleared: () => void;
   onEditStateChange: (state: EditState) => void;
 };
 
 function MonthContent({
-  project, month, monthLabel, data, apis, onSaved, onFailed, onCorrectionOutcome, onFeedbackCleared, onEditStateChange,
+  project, month, monthLabel, data, apis, onSaved, onFailed, onCorrectionOutcome, removal, onRemovalOutcome,
+  onFeedbackCleared, onEditStateChange,
 }: ContentProps) {
   const captionId = useId();
-  // At most one correction at a time; the other rows' actions wait until it is closed.
+  // At most one correction or removal at a time; the other rows' actions wait until it is closed.
   const [correcting, setCorrecting] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<RemovalSnapshot | null>(null);
+  const busy = correcting !== null || removing !== null;
   const editButtons = useRef(new Map<string, HTMLButtonElement>());
-  const returnFocusTo = useRef<string | null>(null);
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>());
+  const returnFocusTo = useRef<{ id: string; action: 'edit' | 'remove' } | null>(null);
   const employeesById = new Map(data.employees.map((employee) => [employee.id, employee]));
   const projectsById = new Map(data.projects.map((item) => [item.id, item]));
   const assignedHere = data.assignments.filter((assignment) => assignment.projectId === project.id);
@@ -150,13 +174,14 @@ function MonthContent({
   const pool = data.employees.filter((employee) => employee.status === 'ACTIVE' && !assignedIds.has(employee.id));
   const correction = assignedHere.find((assignment) => assignment.id === correcting);
 
-  // After "Abbrechen" the form is gone: continue on the row's edit button instead of <body>.
+  // After "Abbrechen" the form is gone: continue on the row's button instead of <body>.
   useEffect(() => {
-    if (correcting === null && returnFocusTo.current !== null) {
-      editButtons.current.get(returnFocusTo.current)?.focus();
+    if (correcting === null && removing === null && returnFocusTo.current !== null) {
+      const { id, action } = returnFocusTo.current;
+      (action === 'edit' ? editButtons : removeButtons).current.get(id)?.focus();
       returnFocusTo.current = null;
     }
-  }, [correcting]);
+  }, [correcting, removing]);
 
   function nameOf(employeeId: string) {
     const employee = employeesById.get(employeeId);
@@ -201,23 +226,51 @@ function MonthContent({
                     <td data-label="Mitarbeiter-ID">{employee?.employeeCode ?? '–'}</td>
                     <td data-label="Status">{status && <StatusBadge tone={status.tone}>{status.label}</StatusBadge>}</td>
                     <td data-label="Aktion">
-                      <button
-                        ref={(node) => {
-                          if (node) editButtons.current.set(assignment.id, node);
-                          else editButtons.current.delete(assignment.id);
-                        }}
-                        type="button"
-                        className="employees-button"
-                        aria-label={`Zuordnung von ${nameOf(assignment.employeeId)} korrigieren`}
-                        aria-expanded={correcting === assignment.id}
-                        disabled={correcting !== null}
-                        onClick={() => {
-                          onFeedbackCleared();
-                          setCorrecting(assignment.id);
-                        }}
-                      >
-                        Korrigieren
-                      </button>
+                      <div className="assignments__actions">
+                        <button
+                          ref={(node) => {
+                            if (node) editButtons.current.set(assignment.id, node);
+                            else editButtons.current.delete(assignment.id);
+                          }}
+                          type="button"
+                          className="employees-button"
+                          aria-label={`Zuordnung von ${nameOf(assignment.employeeId)} korrigieren`}
+                          aria-expanded={correcting === assignment.id}
+                          disabled={busy}
+                          onClick={() => {
+                            onFeedbackCleared();
+                            setCorrecting(assignment.id);
+                          }}
+                        >
+                          Korrigieren
+                        </button>
+                        {removal !== 'never' && (
+                          <button
+                            ref={(node) => {
+                              if (node) removeButtons.current.set(assignment.id, node);
+                              else removeButtons.current.delete(assignment.id);
+                            }}
+                            type="button"
+                            className="employees-button employees-button--danger"
+                            aria-label={`Zuordnung von ${nameOf(assignment.employeeId)} entfernen`}
+                            aria-expanded={removing?.id === assignment.id}
+                            disabled={busy}
+                            onClick={() => {
+                              onFeedbackCleared();
+                              // Bound to what is displayed now, including its version.
+                              setRemoving({
+                                id: assignment.id,
+                                version: assignment.version,
+                                employeeName: nameOf(assignment.employeeId),
+                                projectName: project.name,
+                                monthLabel,
+                              });
+                            }}
+                          >
+                            Entfernen
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -243,7 +296,7 @@ function MonthContent({
             onCorrectionOutcome({ kind: 'success', text: 'Es gab keine Änderungen zu speichern.' }, false);
           }}
           onCancel={() => {
-            returnFocusTo.current = correction.id;
+            returnFocusTo.current = { id: correction.id, action: 'edit' };
             setCorrecting(null);
           }}
           onDiscardAndReload={() => {
@@ -251,6 +304,24 @@ function MonthContent({
             onCorrectionOutcome({ kind: 'info', text: 'Die Korrektur wurde verworfen. Der aktuelle Stand wird neu geladen.' }, true);
           }}
           onEditStateChange={onEditStateChange}
+        />
+      ) : removing ? (
+        <AssignmentRemovalConfirmation
+          key={removing.id}
+          snapshot={removing}
+          uncertainMonth={removal === 'uncertain'}
+          api={apis.assignments}
+          onSettled={(error) => {
+            setRemoving(null);
+            // Every outcome reloads the month; a refusal is never retried automatically.
+            onRemovalOutcome(error === null
+              ? { kind: 'success', text: removedText(removing) }
+              : { kind: 'error', error, text: removalFailureText(error) ?? undefined });
+          }}
+          onCancel={() => {
+            returnFocusTo.current = { id: removing.id, action: 'remove' };
+            setRemoving(null);
+          }}
         />
       ) : project.status === 'ACTIVE' ? (
         <AssignForm
