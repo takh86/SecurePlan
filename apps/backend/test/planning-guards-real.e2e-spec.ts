@@ -268,6 +268,13 @@ describe('E-10 — real services: true no-op passes, every effective change fail
         .rejects.toMatchObject({ status: 409, response: { code: 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH' } });
       await expect(assignments.correct(tenant, historicalId, { monthStart: '2027-03-01' }, randomUUID()))
         .rejects.toMatchObject({ status: 409, response: { code: 'EMPLOYEE_NOT_EMPLOYED_FOR_MONTH' } });
+      // #64 future-target status guard: an unchanged non-ACTIVE reference is refused before both.
+      await probe.query("UPDATE projects SET status = 'INACTIVE' WHERE id = $1", [north.projectId]);
+      await expect(assignments.correct(tenant, historicalId, { monthStart: '2027-03-01' }, randomUUID()))
+        .rejects.toMatchObject({ status: 409, response: { code: 'PROJECT_INACTIVE' } });
+      await probe.query("UPDATE employees SET status = 'DEACTIVATED' WHERE id = $1", [employee.employeeId]);
+      await expect(assignments.correct(tenant, historicalId, { monthStart: '2027-03-01' }, randomUUID()))
+        .rejects.toMatchObject({ status: 409, response: { code: 'EMPLOYEE_INACTIVE' } });
 
       // ... without any write or audit entry.
       expect(await snapshot()).toEqual(before);

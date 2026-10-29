@@ -192,7 +192,13 @@ export class ProjectAssignmentsService {
    * - HISTORICAL correction into a FUTURE target month (owner decision B of
    *   28.10.2026): the resulting employee needs employment evidence for the
    *   target month even if unchanged (POST's code); an employee change keeps
-   *   the historical code. Status rules stay historical;
+   *   the historical code. Since the #64 future-target status guard (owner
+   *   decision of 28.10.2026) the resulting employee and project must also be
+   *   ACTIVE, even if unchanged, as in a FUTURE correction; the scope stays
+   *   HISTORICAL;
+   * - ARCHIVED project (F-3): newly referenced it is 404 before the row lock;
+   *   unchanged with a future target month it is PROJECT_INACTIVE, as for a
+   *   FUTURE correction; unchanged within history it may stay;
    * - error precedence after the no-op check: EMPLOYEE_INACTIVE ->
    *   PROJECT_INACTIVE -> missing employment evidence -> planning guard ->
    *   target month taken;
@@ -290,14 +296,11 @@ export class ProjectAssignmentsService {
       const historical = current.month_start <= zone || next.monthStart <= zone;
       const scope = historical ? 'HISTORICAL' : 'FUTURE';
 
-      // Status rules (D2): future = everything ACTIVE; historical = nothing NEW may be inactive.
-      if ((!historical || employeeChanged) && nextEmployee.status !== 'ACTIVE') {
-        throw new ConflictException({ code: 'EMPLOYEE_INACTIVE' });
-      }
-      if ((!historical || projectChanged) && nextProject.status !== 'ACTIVE') {
-        throw new ConflictException({ code: 'PROJECT_INACTIVE' });
-      }
-      // Read from the employee row locked above, so a concurrent change of the dates is serialized.
+      // Status and employment dates come from the rows locked above, so concurrent changes are serialized.
+      const statusConflict = correctionStatusConflict(
+        employeeChanged, projectChanged, nextEmployee, nextProject, next.monthStart, zone,
+      );
+      if (statusConflict !== null) throw new ConflictException({ code: statusConflict });
       const employmentConflict = correctionEmploymentConflict(scope, employeeChanged, nextEmployee, next.monthStart, zone);
       if (employmentConflict !== null) throw new ConflictException({ code: employmentConflict });
 
@@ -375,6 +378,32 @@ export function employmentCovers(
   const monthEnd = `${monthStart.slice(0, 8)}${String(lastDay).padStart(2, '0')}`;
   // YYYY-MM-DD strings compare chronologically.
   return employee.employment_start <= monthEnd && (employee.employment_end === null || employee.employment_end >= monthStart);
+}
+
+/**
+ * The 409 code for a correction whose resulting employee or project is not
+ * ACTIVE where it has to be, or null (employee first, as for POST):
+ * - target month after `currentMonth` (#64 future-target status guard, owner
+ *   decision of 28.10.2026): both must be ACTIVE whichever field changed, for
+ *   FUTURE corrections (D1, unchanged) and for HISTORICAL corrections into a
+ *   future month alike; an unchanged ARCHIVED project is PROJECT_INACTIVE;
+ * - target month within history (D2, unchanged): only a NEWLY referenced
+ *   employee or project must be ACTIVE.
+ * A newly referenced ARCHIVED project never gets here: correct() answers 404 (F-3).
+ */
+export function correctionStatusConflict(
+  employeeChanged: boolean,
+  projectChanged: boolean,
+  employee: { status: string },
+  project: { status: string },
+  monthStart: string,
+  currentMonth: string,
+): 'EMPLOYEE_INACTIVE' | 'PROJECT_INACTIVE' | null {
+  // Month starts as YYYY-MM-DD strings compare chronologically.
+  const intoFuture = monthStart > currentMonth;
+  if ((intoFuture || employeeChanged) && employee.status !== 'ACTIVE') return 'EMPLOYEE_INACTIVE';
+  if ((intoFuture || projectChanged) && project.status !== 'ACTIVE') return 'PROJECT_INACTIVE';
+  return null;
 }
 
 /**
