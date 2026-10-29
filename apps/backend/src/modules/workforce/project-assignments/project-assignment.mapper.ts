@@ -1,5 +1,5 @@
 /** Explicit API <-> database mapping for project assignments. */
-import type { ProjectAssignmentResponse } from './project-assignment.types.js';
+import type { FutureProjectAssignmentResponse, ProjectAssignmentResponse } from './project-assignment.types.js';
 
 export type ProjectAssignmentRow = {
   id: string;
@@ -8,6 +8,11 @@ export type ProjectAssignmentRow = {
   month_start: string;
   /** bigint as node-pg delivers it: a decimal string, converted only by toAssignmentVersion. */
   version: string;
+};
+
+export type FutureProjectAssignmentRow = ProjectAssignmentRow & {
+  project_name: string | null;
+  project_status: string | null;
 };
 
 /**
@@ -59,5 +64,16 @@ export function toProjectAssignmentResponse(row: ProjectAssignmentRow): ProjectA
     projectId: row.project_id,
     monthStart: row.month_start,
     version: toAssignmentVersion(row.version),
+  };
+}
+
+/** Defense in depth after the conditional SQL join: never expose hidden metadata. */
+export function toFutureProjectAssignmentResponse(row: FutureProjectAssignmentRow): FutureProjectAssignmentResponse {
+  const visible = (row.project_status === 'ACTIVE' || row.project_status === 'INACTIVE')
+    && typeof row.project_name === 'string';
+  return {
+    ...toProjectAssignmentResponse(row),
+    projectName: visible ? row.project_name : null,
+    projectStatus: visible ? row.project_status as 'ACTIVE' | 'INACTIVE' : null,
   };
 }

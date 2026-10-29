@@ -7,6 +7,7 @@ import { EmployeeCreatePage } from './EmployeeCreatePage';
 import { EmployeeDetailPage } from './EmployeeDetailPage';
 import { createEmployeesApi, type EmployeesApi } from './employees-api';
 import { EmployeesListPage } from './EmployeesListPage';
+import { createEmployeeFutureAssignmentsApi, type EmployeeFutureAssignmentsApi } from './employee-future-assignments-api';
 import './Employees.css';
 
 /**
@@ -15,19 +16,20 @@ import './Employees.css';
  */
 export function EmployeesSection({ route, api }: { route: AppRoute; api: SessionApi }) {
   const employees = useMemo(() => createEmployeesApi(api), [api]);
+  const assignments = useMemo(() => createEmployeeFutureAssignmentsApi(api), [api]);
   useFocusHeadingOnSubpageChange();
   return (
     <Routes>
       <Route index element={<EmployeesListPage route={route} employees={employees} />} />
       <Route path="neu" element={<EmployeeCreatePage basePath={route.path} employees={employees} />} />
-      <Route path=":employeeId" element={<DetailRoute basePath={route.path} employees={employees} />} />
+      <Route path=":employeeId" element={<DetailRoute basePath={route.path} employees={employees} assignments={assignments} />} />
       <Route path="*" element={<Navigate to={route.path} replace />} />
     </Routes>
   );
 }
 
-function DetailRoute({ basePath, employees }: { basePath: string; employees: EmployeesApi }) {
+function DetailRoute({ basePath, employees, assignments }: { basePath: string; employees: EmployeesApi; assignments: EmployeeFutureAssignmentsApi }) {
   const { employeeId = '' } = useParams();
   // A new id is a new page: no state carries over from the previous record.
-  return <EmployeeDetailPage key={employeeId} employeeId={employeeId} basePath={basePath} employees={employees} />;
+  return <EmployeeDetailPage key={employeeId} employeeId={employeeId} basePath={basePath} employees={employees} assignments={assignments} />;
 }

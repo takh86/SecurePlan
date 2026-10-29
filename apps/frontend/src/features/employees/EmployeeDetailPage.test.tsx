@@ -17,6 +17,7 @@ function server(initial: Employee, overrides: Partial<Record<string, (request: R
   return (request: RecordedRequest) => {
     const override = overrides[`${request.method} ${request.path}`];
     if (override) return override(request);
+    if (request.path.includes('/future-project-assignments?')) return { items: [], pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 } };
     if (request.method === 'PATCH') {
       current = { ...current, ...(request.body as Partial<Employee>) };
     } else if (request.method === 'POST' && request.path.endsWith('/deactivate')) {
@@ -40,7 +41,10 @@ describe('SP-07 — employee detail', () => {
     expect(status.textContent).toContain('Aktiv');
     expect(status.textContent).toContain('Aktivierung ausstehend');
     expect(status.textContent).toContain('erneuter Versand der Einladung ist in dieser Ausbaustufe nicht');
-    expect(requests).toEqual([{ path: `/api/v1/employees/${EMPLOYEE_ID}`, method: 'GET', body: undefined }]);
+    expect(requests).toEqual([
+      { path: `/api/v1/employees/${EMPLOYEE_ID}`, method: 'GET', body: undefined },
+      { path: `/api/v1/employees/${EMPLOYEE_ID}/future-project-assignments?page=1&pageSize=25`, method: 'GET', body: undefined },
+    ]);
   });
 
   it('edits with a PATCH of only the changed fields and confirms the save', async () => {
@@ -130,6 +134,7 @@ describe('SP-07 — employee detail', () => {
     let reads = 0;
     const { requests } = renderEmployees(PATH, (request) => {
       if (request.method === 'POST') throw httpError(409, 'EMPLOYEE_INACTIVE');
+      if (request.path.includes('/future-project-assignments?')) return { items: [], pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 } };
       reads += 1;
       return reads === 1 ? employee() : employee({ status: 'INACTIVE', accountStatus: 'DEACTIVATED' });
     });
@@ -137,7 +142,7 @@ describe('SP-07 — employee detail', () => {
     await user.click(screen.getByRole('button', { name: 'Jetzt deaktivieren' }));
 
     await waitFor(() => expect(screen.getByRole('region', { name: 'Status' }).textContent).toContain('Konto gesperrt'));
-    expect(requests.filter((request) => request.method === 'GET')).toHaveLength(2);
+    expect(requests.filter((request) => request.method === 'GET' && request.path === `/api/v1/employees/${EMPLOYEE_ID}`)).toHaveLength(2);
   });
 
   it('never offers deactivation for an inactive record and explains its state', async () => {

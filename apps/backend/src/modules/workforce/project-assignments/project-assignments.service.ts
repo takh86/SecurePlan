@@ -33,6 +33,7 @@ import { WALL_CLOCK, type WallClock } from '../../../common/time/wall-clock.js';
 import { BusinessAuditService } from '../../audit/business-audit.service.js';
 import type {
   CreateProjectAssignmentDto,
+  ListFutureProjectAssignmentsQueryDto,
   ListProjectAssignmentsQueryDto,
   UpdateProjectAssignmentDto,
 } from './dto/project-assignment.dto.js';
@@ -44,9 +45,11 @@ import {
   isMonthStart,
   toAssignmentVersion,
   toProjectAssignmentResponse,
+  toFutureProjectAssignmentResponse,
+  type FutureProjectAssignmentRow,
   type ProjectAssignmentRow,
 } from './project-assignment.mapper.js';
-import type { ProjectAssignmentPage, ProjectAssignmentResponse } from './project-assignment.types.js';
+import type { FutureProjectAssignmentPage, ProjectAssignmentPage, ProjectAssignmentResponse } from './project-assignment.types.js';
 
 const ADMIN_ONLY = ['COMPANY_ADMIN'] as const;
 const DEFAULT_PAGE_SIZE = 25;
@@ -63,6 +66,64 @@ export class ProjectAssignmentsService {
     private readonly audit: BusinessAuditService,
     @Inject(WALL_CLOCK) private readonly clock: WallClock,
   ) {}
+
+  /**
+   * S-9 / D73-7: one employee's future monthly links, including deactivated
+   * employees and invisible project references. No write locks or business
+   * audit. Parent, zone, count and labels belong to one read-only snapshot;
+   * separate HTTP pages deliberately get fresh snapshots.
+   */
+  async listFutureForEmployee(
+    tenant: TenantContext,
+    employeeId: string,
+    query: ListFutureProjectAssignmentsQueryDto,
+  ): Promise<FutureProjectAssignmentPage> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? DEFAULT_PAGE_SIZE;
+    return this.database.withTransaction(async (client) => {
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+      requireRow(await client.query(
+        'SELECT 1 FROM employees WHERE company_id = $1 AND id = $2',
+        [tenant.companyId, employeeId],
+      ));
+      // AT TIME ZONE also accepts POSIX strings (e.g. Invalid/S9). Discovery
+      // requires a named IANA zone, not a guessed numeric offset. Keep the
+      // existing write helper/contracts unchanged.
+      const companyMonth = requireRow(await client.query<{ current_month: string | null }>(
+        `SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names AS tz WHERE tz.name = c.time_zone)
+                     THEN to_char(date_trunc('month', $2::timestamptz AT TIME ZONE c.time_zone), 'YYYY-MM-DD')
+                     ELSE NULL END AS current_month
+         FROM companies AS c WHERE c.id = $1`,
+        [tenant.companyId, this.clock().toISOString()],
+      ));
+      if (companyMonth.current_month === null) throw new Error('Invalid company IANA time zone');
+      const currentMonth = companyMonth.current_month;
+      const params = [tenant.companyId, employeeId, currentMonth];
+      const filter = 'pa.company_id = $1 AND pa.employee_id = $2 AND pa.planning_month > $3::date';
+      const counted = await client.query<{ total: number }>(
+        `SELECT count(*)::int AS total FROM project_assignments AS pa WHERE ${filter}`,
+        params,
+      );
+      const rows = await client.query<FutureProjectAssignmentRow>(
+        `SELECT pa.id, pa.employee_id, pa.project_id,
+                to_char(pa.planning_month, 'YYYY-MM-DD') AS month_start,
+                ${assignmentVersionSql('pa.updated_at')} AS version,
+                p.name AS project_name, p.status AS project_status
+         FROM project_assignments AS pa
+         LEFT JOIN projects AS p ON p.company_id = pa.company_id AND p.id = pa.project_id
+                                  AND p.status IN ('ACTIVE', 'INACTIVE')
+         WHERE ${filter}
+         ORDER BY pa.planning_month ASC, pa.id ASC
+         LIMIT $4 OFFSET $5`,
+        [...params, pageSize, (page - 1) * pageSize],
+      );
+      const totalItems = counted.rows[0].total;
+      return {
+        items: rows.rows.map(toFutureProjectAssignmentResponse),
+        pagination: { page, pageSize, totalItems, totalPages: Math.ceil(totalItems / pageSize) },
+      };
+    });
+  }
 
   async list(tenant: TenantContext, query: ListProjectAssignmentsQueryDto): Promise<ProjectAssignmentPage> {
     assertMonthStart(query.monthStart);

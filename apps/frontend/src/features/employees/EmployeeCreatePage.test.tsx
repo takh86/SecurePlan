@@ -9,6 +9,9 @@ import { renderEmployees } from './employees-render.test-support';
 afterEach(() => cleanup());
 
 const created = employee({ employeeCode: 'A-100', employmentStart: null, shiftEligibility: 'DAY' });
+const server = (answer: unknown) => (request: RecordedRequest) => request.path.includes('/future-project-assignments?')
+  ? { items: [], pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 } }
+  : answer;
 
 async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Mitarbeiter-ID'), ' A-100 ');
@@ -25,7 +28,7 @@ function writes(requests: RecordedRequest[]) {
 describe('SP-07 — create employee', () => {
   it('validates on the client first: no request, errors linked to their fields, focus on the first one', async () => {
     const user = userEvent.setup();
-    const { requests } = renderEmployees('/mitarbeitende/neu', () => created);
+    const { requests } = renderEmployees('/mitarbeitende/neu', server(created));
     expect(screen.getByRole('heading', { level: 1, name: 'Mitarbeiter:in anlegen' })).toBeTruthy();
     // No password is set by the admin.
     expect(screen.queryByLabelText(/Passwort/)).toBeNull();
@@ -44,7 +47,7 @@ describe('SP-07 — create employee', () => {
 
   it('sends exactly the contract fields (trimmed) and opens the new record with an honest notice', async () => {
     const user = userEvent.setup();
-    const { requests, location } = renderEmployees('/mitarbeitende/neu', () => created);
+    const { requests, location } = renderEmployees('/mitarbeitende/neu', server(created));
     await fillValidForm(user);
     await user.click(screen.getByRole('button', { name: 'Mitarbeiter:in anlegen' }));
 
@@ -61,7 +64,7 @@ describe('SP-07 — create employee', () => {
         shiftEligibility: 'DAY',
       },
     }]);
-    const notice = screen.getByRole('status').textContent ?? '';
+    const notice = screen.getByText(/Mitarbeiter:in wurde angelegt/).textContent ?? '';
     expect(notice).toContain('Mitarbeiter:in wurde angelegt');
     // The UI must not claim a successful delivery it cannot know about.
     expect(notice).toContain('kann diese Ansicht nicht bestätigen');
@@ -70,7 +73,7 @@ describe('SP-07 — create employee', () => {
   it('locks the form while the request is pending', async () => {
     const user = userEvent.setup();
     const response = deferred<unknown>();
-    renderEmployees('/mitarbeitende/neu', () => response.promise);
+    renderEmployees('/mitarbeitende/neu', server(response.promise));
     await fillValidForm(user);
     await user.click(screen.getByRole('button', { name: 'Mitarbeiter:in anlegen' }));
 

@@ -270,6 +270,14 @@
   font-size: 18px;
 }
 
+.employee-future-assignments__reference {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--sp-color-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .employees-confirm ul {
   margin: 0;
   padding-left: 1.25rem;

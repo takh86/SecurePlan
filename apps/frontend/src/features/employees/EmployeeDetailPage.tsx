@@ -19,8 +19,10 @@ import {
   type Employee,
 } from './employee-types';
 import type { EmployeesApi } from './employees-api';
+import type { EmployeeFutureAssignmentsApi } from './employee-future-assignments-api';
+import { EmployeeFutureAssignmentsSection } from './EmployeeFutureAssignmentsSection';
 
-type DetailProps = { employeeId: string; basePath: string; employees: EmployeesApi };
+type DetailProps = { employeeId: string; basePath: string; employees: EmployeesApi; assignments: EmployeeFutureAssignmentsApi };
 
 function noticeFromLocation(state: unknown): EmployeeNotice | null {
   return typeof state === 'object' && state !== null && (state as { notice?: unknown }).notice === 'created'
@@ -28,7 +30,7 @@ function noticeFromLocation(state: unknown): EmployeeNotice | null {
     : null;
 }
 
-export function EmployeeDetailPage({ employeeId, basePath, employees }: DetailProps) {
+export function EmployeeDetailPage({ employeeId, basePath, employees, assignments }: DetailProps) {
   const location = useLocation();
   const source = useMemo<ReadSource<string, Employee>>(
     () => ({ kind: 'api', load: (id, signal) => employees.get(id, signal) }),
@@ -69,6 +71,7 @@ export function EmployeeDetailPage({ employeeId, basePath, employees }: DetailPr
           <EmployeeDetails
             employee={employee}
             employees={employees}
+            assignments={assignments}
             onChanged={(next, message) => {
               setUpdated(next);
               setNotice(message);
@@ -89,11 +92,12 @@ export function EmployeeDetailPage({ employeeId, basePath, employees }: DetailPr
 type DetailsProps = {
   employee: Employee;
   employees: EmployeesApi;
+  assignments: EmployeeFutureAssignmentsApi;
   onChanged: (employee: Employee, message: string) => void;
   onStale: () => void;
 };
 
-function EmployeeDetails({ employee, employees, onChanged, onStale }: DetailsProps) {
+function EmployeeDetails({ employee, employees, assignments, onChanged, onStale }: DetailsProps) {
   const [editing, setEditing] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
   const dataSection = useRef<HTMLElement>(null);
@@ -187,6 +191,8 @@ function EmployeeDetails({ employee, employees, onChanged, onStale }: DetailsPro
           </>
         )}
       </section>
+
+      <EmployeeFutureAssignmentsSection key={employee.id} employee={employee} api={assignments} />
 
       {employee.status === 'ACTIVE' && (
         <DeactivationSection
