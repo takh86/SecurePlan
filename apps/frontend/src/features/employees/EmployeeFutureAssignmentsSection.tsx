@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
 import type { ReadSource } from '../../shared/data/data-source';
 import { useReadSource } from '../../shared/data/use-read-source';
 import { futureMonthCertainty } from '../../shared/time/company-month';
@@ -13,11 +13,12 @@ import { PROJECT_STATUS } from '../projects/project-types';
 import { fullName, type Employee } from './employee-types';
 import type { EmployeeFutureAssignmentsApi, FutureAssignmentPage } from './employee-future-assignments-api';
 
-type Props = { employee: Employee; api: EmployeeFutureAssignmentsApi };
+export type FutureAssignmentsHandle = { review: () => void };
+type Props = { employee: Employee; api: EmployeeFutureAssignmentsApi; ref?: Ref<FutureAssignmentsHandle> };
 type Outcome = { kind: 'success'; text: string } | { kind: 'error'; error: Error };
 
 /** Independent section state: refreshing assignments never remounts the employee form. */
-export function EmployeeFutureAssignmentsSection({ employee, api }: Props) {
+export function EmployeeFutureAssignmentsSection({ employee, api, ref }: Props) {
   const [page, setPage] = useState(1);
   const source = useMemo<ReadSource<number, FutureAssignmentPage>>(
     () => ({ kind: 'api', load: (requestedPage, signal) => api.list(employee.id, requestedPage, signal) }),
@@ -45,6 +46,14 @@ export function EmployeeFutureAssignmentsSection({ employee, api }: Props) {
     setPage(nextPage);
     retry();
   }
+
+  useImperativeHandle(ref, () => ({
+    review() {
+      setOutcome(null);
+      reload(1);
+      setFocus({ target: 'heading' });
+    },
+  }));
 
   function changePage(nextPage: number) {
     setOutcome(null);

@@ -69,7 +69,7 @@ Betrifft `POST /api/v1/project-assignments`. Für `PATCH` galt die Regel zunäch
 
 ## #64 Fall 1: Beschäftigungsnachweis bei zukünftigen Korrekturen (Owner-Entscheidung 1a, 28.10.2026)
 
-Entscheidung: [#64, Kommentar vom 28.10.2026](https://github.com/takh86/SecurePlan/issues/64#issuecomment-6474708196). Die Fälle 2–5 desselben Issues sind hier **nicht** umgesetzt.
+Entscheidung: [#64, Kommentar vom 28.10.2026](https://github.com/takh86/SecurePlan/issues/64#issuecomment-6474708196). Dieser Abschnitt beschreibt Fall 1. Fall 2 ist separat in [Beschäftigungszeitraum-Konsistenz](../api/employee-employment-period-consistency.md) dokumentiert; weitere Fälle und SP-11-Gates bleiben eigenständig.
 
 - **Regel:** Bei einer zukünftigen Korrektur (alter **und** neuer Monat nach dem aktuellen Monat) muss die resultierende Kombination aus Mitarbeiter und Monat dieselbe Beschäftigungsregel erfüllen wie der POST (F-1). Das gilt auch, wenn der PATCH nur das Projekt ändert. Geprüft wird nur das Ergebnis; ob die gespeicherte Zuordnung den Nachweis hatte, spielt keine Rolle.
 - **Fehlercode:** `409 EMPLOYEE_NOT_EMPLOYED_FOR_MONTH`, mit derselben Bedeutung wie beim POST. Es gibt keinen neuen Code und keine neue Bedeutung eines bestehenden Codes. Abgelehnt wird vor UPDATE und Audit.

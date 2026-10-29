@@ -418,7 +418,7 @@ describe('#73 API-CON-12 — removal against employment changes and deactivation
       ? send('patch', `/api/v1/employees/${mira.employeeId}`, admin, { body: { employmentEnd: '2027-02-28' } })
       : send('post', `/api/v1/employees/${mira.employeeId}/deactivate`, admin, { body: {} });
 
-  it.each(['employment', 'deactivation'] as const)('removal first, the %s change waits on its employee lock: both succeed', async (kind) => {
+  it.each(['employment', 'deactivation'] as const)('removal first: %s waits; retained April blocks only the employment change', async (kind) => {
     const x = await seed(mira, north, '2027-03-01');
     const kept = await seed(mira, south, '2027-04-01');
     const keptVersion = await versionOf(kept);
@@ -431,7 +431,14 @@ describe('#73 API-CON-12 — removal against employment changes and deactivation
     await finish(gate, 'ROLLBACK');
 
     const [removeResponse, changeResponse] = await Promise.all([removed, changed]);
-    expect([outcome(removeResponse), outcome(changeResponse)]).toEqual(['204', '200']);
+    expect([outcome(removeResponse), outcome(changeResponse)]).toEqual([
+      '204', kind === 'employment' ? '409 EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_PROJECT_ASSIGNMENTS' : '200',
+    ]);
+    if (kind === 'employment') {
+      expect(changeResponse.body.conflictCount).toBe(1);
+      expect(changeResponse.body.conflictingAssignments).toEqual([{ assignmentId: kept, monthStart: '2027-04-01' }]);
+      expect(await audits('EMPLOYEE_UPDATED')).toEqual([]);
+    }
     expect(await row(x)).toBeNull();
     // Employee writes never touch assignments: the other row's version is unchanged.
     expect(await versionOf(kept)).toBe(keptVersion);
