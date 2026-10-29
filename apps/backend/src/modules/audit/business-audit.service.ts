@@ -31,6 +31,11 @@ export type BusinessAuditAction =
   | 'PROJECT_ASSIGNMENT_CREATED'
   /** Provisional MVP name (owner 26.10.2026): correction of an existing assignment; old/new IDs and month only. */
   | 'PROJECT_ASSIGNMENT_CORRECTED'
+  /**
+   * Provisional MVP name (PO decision D73-5, 29.10.2026): a FUTURE month assignment
+   * was physically removed; old values hold the complete removed tuple (IDs and month).
+   */
+  | 'PROJECT_ASSIGNMENT_REMOVED'
   /** Provisional MVP name (owner 27.10.2026, ADR-0003): shift set of one effective month replaced; resource = project. */
   | 'SHIFT_CONFIGURATION_UPDATED';
 

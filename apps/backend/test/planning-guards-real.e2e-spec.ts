@@ -1,6 +1,7 @@
 /**
  * E-10 — temporary fail-closed planning guards (SP-08b shift configuration,
- * SP-09 assignment correction) against REAL PostgreSQL.
+ * SP-09 assignment correction and, since #73, assignment removal) against
+ * REAL PostgreSQL.
  *
  * Shared-database cases create planning relations only inside transactions
  * that are rolled back, so parallel test files never see them. Committed DDL
@@ -20,6 +21,7 @@ import {
   createSyntheticEmployee,
   createSyntheticProject,
   createSyntheticTenant,
+  inTransaction,
   openLocalTestPool,
   removeSyntheticTenants,
   type TestPool,
@@ -276,6 +278,19 @@ describe('E-10 — real services: true no-op passes, every effective change fail
       await expect(assignments.correct(tenant, historicalId, { monthStart: '2027-03-01' }, randomUUID()))
         .rejects.toMatchObject({ status: 409, response: { code: 'EMPLOYEE_INACTIVE' } });
 
+      // #73: removal of a FUTURE row with the valid version (status is not checked) meets the guard;
+      // a stale version and a non-future row are refused before it, all 409 without a trace.
+      const versionOf = async (id: string) => Number((await probe.query<{ version: string }>(
+        'SELECT (extract(epoch FROM updated_at) * 1000000)::bigint::text AS version FROM project_assignments WHERE id = $1',
+        [id],
+      )).rows[0].version);
+      await expect(assignments.remove(tenant, assignmentId, await versionOf(assignmentId), randomUUID()))
+        .rejects.toMatchObject({ status: 409, response: { code: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' } });
+      await expect(assignments.remove(tenant, assignmentId, await versionOf(assignmentId) + 1, randomUUID()))
+        .rejects.toMatchObject({ status: 409, response: { code: 'PROJECT_ASSIGNMENT_CONFLICT' } });
+      await expect(assignments.remove(tenant, historicalId, await versionOf(historicalId), randomUUID()))
+        .rejects.toMatchObject({ status: 409, response: { code: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' } });
+
       // ... without any write or audit entry.
       expect(await snapshot()).toEqual(before);
     });
@@ -287,5 +302,25 @@ describe('E-10 — real services: true no-op passes, every effective change fail
     } finally {
       client.release();
     }
+
+    // ... and so does the removal (#73), on committed state, with exactly one audit event.
+    const committed = new ProjectAssignmentsService(
+      { withTransaction: <T>(work: (c: PoolClient) => Promise<T>) => inTransaction(db(), work) } as unknown as DatabaseService,
+      new BusinessAuditService(),
+      MID_DEC,
+    );
+    const { rows } = await db().query<{ version: string }>(
+      'SELECT (extract(epoch FROM updated_at) * 1000000)::bigint::text AS version FROM project_assignments WHERE id = $1',
+      [assignmentId],
+    );
+    await committed.remove(
+      { sessionId: randomUUID(), accountId: tenantA.admin.accountId, companyId: tenantA.companyId, role: 'COMPANY_ADMIN' },
+      assignmentId, Number(rows[0].version), randomUUID(),
+    );
+    expect((await db().query('SELECT 1 FROM project_assignments WHERE id = $1', [assignmentId])).rowCount).toBe(0);
+    expect((await db().query(
+      "SELECT count(*)::int AS n FROM audit_event WHERE resource_id = $1 AND action = 'PROJECT_ASSIGNMENT_REMOVED'",
+      [assignmentId],
+    )).rows[0].n).toBe(1);
   });
 });

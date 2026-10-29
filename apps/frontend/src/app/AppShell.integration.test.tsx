@@ -753,7 +753,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
         employmentStart: null, employmentEnd: null, shiftEligibility: 'BOTH', status: 'ACTIVE',
         email: 'mira@secureplan.test', accountStatus: 'ACTIVE',
       };
-      const created = { id: 'a-1', employeeId: employee.id, projectId: project.id, monthStart: '2027-01-01' };
+      const created = { id: 'a-1', employeeId: employee.id, projectId: project.id, monthStart: '2027-01-01', version: 1793260800000001 };
       const pageOf = (items: unknown[]) => json(200, { items, pagination: { page: 1, pageSize: 100, totalItems: items.length, totalPages: 1 } });
       const MONTH = '/api/v1/project-assignments?monthStart=2027-01-01&pageSize=100';
       enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));

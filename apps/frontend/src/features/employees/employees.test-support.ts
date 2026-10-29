@@ -7,14 +7,16 @@ import { ApiError, type FieldError, type KnownErrorCode } from '../../shared/api
 import type { SessionApi, SessionRequest } from '../auth/session-api';
 import type { Employee, EmployeePage } from './employee-types';
 
-export type RecordedRequest = { path: string; method: string; body: unknown };
+/** `expectedVersion` is recorded only when sent (#73 Expected-Version header). */
+export type RecordedRequest = { path: string; method: string; body: unknown; expectedVersion?: number };
 export type Handler = (request: RecordedRequest) => unknown;
 
 export function fakeSessionApi(handler: Handler) {
   const requests: RecordedRequest[] = [];
   const api: SessionApi = {
     async request<T>(path: string, options: SessionRequest = {}): Promise<T> {
-      const recorded = { path, method: options.method ?? 'GET', body: options.body };
+      const recorded: RecordedRequest = { path, method: options.method ?? 'GET', body: options.body };
+      if (options.expectedVersion !== undefined) recorded.expectedVersion = options.expectedVersion;
       requests.push(recorded);
       return (await handler(recorded)) as T;
     },

@@ -122,6 +122,7 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
               project={project}
               month={requestedMonth}
               apis={apis}
+              clock={clock}
               onEditStateChange={setAssignmentEdit}
             />
           </>
@@ -477,10 +478,11 @@ type AssignmentSectionProps = {
   project: Project;
   month: MonthKey;
   apis: AssignmentApis;
+  clock: Clock;
   onEditStateChange: (state: EditState) => void;
 };
 
-function AssignmentSection({ project, month, apis, onEditStateChange }: AssignmentSectionProps) {
+function AssignmentSection({ project, month, apis, clock, onEditStateChange }: AssignmentSectionProps) {
   return (
     <section className="employees-card" aria-labelledby="project-assignments-title">
       <h2 id="project-assignments-title">Mitarbeiterzuordnung</h2>
@@ -489,6 +491,7 @@ function AssignmentSection({ project, month, apis, onEditStateChange }: Assignme
         project={project}
         month={month}
         apis={apis}
+        clock={clock}
         onEditStateChange={onEditStateChange}
       />
     </section>

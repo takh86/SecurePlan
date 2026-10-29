@@ -1,7 +1,8 @@
 /**
- * SP-09 month-assignment API client (create/read/correct). Uses only the
- * endpoints the backend provides; tenant and role are never sent, and there is
- * no DELETE (history stays). Responses are shape-checked.
+ * SP-09 month-assignment API client (create/read/correct, and since #73 remove
+ * for months after the company's current month; the server decides). Uses
+ * only the endpoints the backend provides; tenant and role are never sent.
+ * Responses are shape-checked.
  */
 import { ApiError } from '../../shared/api/api-error';
 import { MAX_PAGE_SIZE, loadAllPages } from '../../shared/data/load-all-pages';
@@ -16,9 +17,14 @@ export type ProjectAssignment = {
   employeeId: string;
   projectId: string;
   monthStart: string;
+  /**
+   * #73: opaque concurrency token (positive safe integer); a removal sends the
+   * version the admin confirmed. Kept in memory only, never stored or put in a URL.
+   */
+  version: number;
 };
 
-export type CreateProjectAssignmentInput = Omit<ProjectAssignment, 'id'>;
+export type CreateProjectAssignmentInput = Omit<ProjectAssignment, 'id' | 'version'>;
 
 /** PATCH body: only the changed business dimensions. */
 export type UpdateProjectAssignmentInput = Partial<CreateProjectAssignmentInput>;
@@ -29,6 +35,11 @@ export interface ProjectAssignmentsApi {
   create(input: CreateProjectAssignmentInput): Promise<ProjectAssignment>;
   /** Corrects one assignment; the server re-validates the complete result. */
   update(assignmentId: string, changes: UpdateProjectAssignmentInput): Promise<ProjectAssignment>;
+  /**
+   * Removes one assignment, only if it still has `expectedVersion` (#73).
+   * Never retried automatically: a refusal or an unknown outcome needs a reload.
+   */
+  remove(assignmentId: string, expectedVersion: number): Promise<void>;
 }
 
 /** API month value for a `YYYY-MM` month: its first calendar day. */
@@ -51,7 +62,9 @@ function toAssignment(value: unknown): ProjectAssignment {
     typeof value.employeeId !== 'string' ||
     typeof value.projectId !== 'string' ||
     typeof value.monthStart !== 'string' ||
-    !/^\d{4}-\d{2}-01$/.test(value.monthStart)
+    !/^\d{4}-\d{2}-01$/.test(value.monthStart) ||
+    !Number.isSafeInteger(value.version) ||
+    (value.version as number) <= 0
   ) {
     invalid();
   }
@@ -61,6 +74,7 @@ function toAssignment(value: unknown): ProjectAssignment {
     employeeId: value.employeeId as string,
     projectId: value.projectId as string,
     monthStart: value.monthStart as string,
+    version: value.version as number,
   };
 }
 
@@ -100,6 +114,14 @@ export function createProjectAssignmentsApi(api: SessionApi): ProjectAssignments
       // An answer for another record would be a contract defect.
       if (saved.id !== assignmentId) invalid();
       return saved;
+    },
+    async remove(assignmentId, expectedVersion) {
+      const answer = await api.request<unknown>(`${BASE}/${encodeURIComponent(assignmentId)}`, {
+        method: 'DELETE',
+        expectedVersion,
+      });
+      // 204 has no representation; any body would be a contract defect.
+      if (answer !== undefined) invalid();
     },
   };
 }

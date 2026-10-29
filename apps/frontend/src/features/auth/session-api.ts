@@ -11,9 +11,11 @@ import { ApiError } from '../../shared/api/api-error';
 import { requestJson } from '../../shared/api/http-client';
 
 export type SessionRequest = {
-  method?: 'GET' | 'POST' | 'PATCH';
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   signal?: AbortSignal;
+  /** #73: optimistic-concurrency token, sent as the `Expected-Version` header. */
+  expectedVersion?: number;
 };
 
 export interface SessionApi {
@@ -28,11 +30,20 @@ export function createSessionApi(
   onUnauthorized: (error: ApiError) => void,
 ): SessionApi {
   return {
-    async request<T>(path: string, { method = 'GET', body, signal }: SessionRequest = {}): Promise<T> {
+    async request<T>(path: string, { method = 'GET', body, signal, expectedVersion }: SessionRequest = {}): Promise<T> {
       if (!path.startsWith(API_PREFIX) || path.includes('//')) {
         throw new Error('Session requests are limited to the SecurePlan API');
       }
+      if (expectedVersion !== undefined && !(Number.isSafeInteger(expectedVersion) && expectedVersion > 0)) {
+        throw new Error('Expected-Version must be a positive safe integer');
+      }
       const unsafe = method !== 'GET';
+      // DELETE has no request body (#73); POST and PATCH send JSON.
+      const sendsBody = unsafe && method !== 'DELETE';
+      const headers: Record<string, string> = {};
+      if (sendsBody) headers['Content-Type'] = 'application/json';
+      if (unsafe) headers['X-CSRF-Token'] = csrfToken;
+      if (expectedVersion !== undefined) headers['Expected-Version'] = String(expectedVersion);
       try {
         return await requestJson<T>(path, {
           method,
@@ -40,8 +51,8 @@ export function createSessionApi(
           cache: 'no-store',
           referrerPolicy: 'no-referrer',
           signal,
-          headers: unsafe ? { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken } : undefined,
-          body: unsafe ? JSON.stringify(body ?? {}) : undefined,
+          headers: Object.keys(headers).length > 0 ? headers : undefined,
+          body: sendsBody ? JSON.stringify(body ?? {}) : undefined,
         });
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) onUnauthorized(error);

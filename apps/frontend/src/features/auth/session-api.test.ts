@@ -35,7 +35,29 @@ describe('SP-07 — session-bound API (CSRF token stays in the closure)', () => 
     const headers = new Headers(init.headers);
     expect(headers.get('x-csrf-token')).toBe(CSRF);
     expect(headers.get('content-type')).toBe('application/json');
+    expect(headers.get('expected-version')).toBeNull();
     expect(init.body).toBe('{"a":1}');
+  });
+
+  it('#73 DELETE carries the CSRF token and Expected-Version, but no body and no Content-Type', async () => {
+    const fetchMock = stubFetch(() => new Response(null, { status: 204 }));
+    await expect(createSessionApi(CSRF, vi.fn())
+      .request('/api/v1/project-assignments/a-1', { method: 'DELETE', expectedVersion: 1793260800123456, body: { ignored: true } }))
+      .resolves.toBeUndefined();
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = new Headers(init.headers);
+    expect(init.method).toBe('DELETE');
+    expect(headers.get('x-csrf-token')).toBe(CSRF);
+    expect(headers.get('expected-version')).toBe('1793260800123456');
+    expect(headers.get('content-type')).toBeNull();
+    expect(init.body).toBeUndefined();
+  });
+
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN])('#73 refuses Expected-Version %s before sending anything', async (version) => {
+    const fetchMock = stubFetch(ok);
+    await expect(createSessionApi(CSRF, vi.fn()).request('/api/v1/project-assignments/a-1', { method: 'DELETE', expectedVersion: version }))
+      .rejects.toThrow('positive safe integer');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('reports a 401 to the session boundary and still rejects', async () => {

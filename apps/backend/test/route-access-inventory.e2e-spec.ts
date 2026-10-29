@@ -190,9 +190,11 @@ describe('SP-06 — runtime route access inventory', () => {
         expect({ route: route.key, roles: route.roles }).toEqual({ route: route.key, roles: ['COMPANY_ADMIN'] });
       }
 
-      // SP-09: month assignments are COMPANY_ADMIN-only; create/read/correct, no DELETE.
+      // SP-09: month assignments are COMPANY_ADMIN-only; create/read/correct, and since
+      // #73 exactly one DELETE (future months only, decided by the service).
       const assignmentRoutes = handlers.filter((h) => h.key.includes(' /api/v1/project-assignments'));
       expect(assignmentRoutes.map((h) => h.key)).toEqual([
+        'DELETE /api/v1/project-assignments/:assignmentId',
         'GET /api/v1/project-assignments',
         'PATCH /api/v1/project-assignments/:assignmentId',
         'POST /api/v1/project-assignments',

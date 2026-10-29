@@ -76,7 +76,7 @@ function versionResponse(projectId: string, version: ShiftVersion | undefined) {
 
 /**
  * In-memory company behind the documented endpoints. Business outcomes of
- * POST/PATCH /project-assignments and the SP-08b shift configuration follow the API
+ * POST/PATCH/DELETE /project-assignments (with versions, #73) and the SP-08b shift configuration follow the API
  * contract (codes, versions, full replacement, no-op) so screens can be tested
  * end to end; `fail` lets a test inject an error for one request.
  * `currentMonthStart` is the company's current month for the past-month rule.
@@ -91,6 +91,8 @@ export function fakeCompany(initial: Partial<CompanyState> & { currentMonthStart
   const currentMonthStart = initial.currentMonthStart ?? '2026-12-01';
   let failNext: ((request: RecordedRequest) => unknown) | null = null;
   let nextId = 1;
+  // Synthetic example versions (#73): opaque, strictly increasing per write.
+  let nextVersion = 1793260800000001;
 
   const handler: Handler = (request) => {
     if (failNext) {
@@ -173,7 +175,7 @@ export function fakeCompany(initial: Partial<CompanyState> & { currentMonthStart
       return paged(state.assignments.filter((item) => item.monthStart === monthStart), params);
     }
     if (pathname === '/api/v1/project-assignments' && request.method === 'POST') {
-      const body = request.body as Omit<ProjectAssignment, 'id'>;
+      const body = request.body as Omit<ProjectAssignment, 'id' | 'version'>;
       const person = state.employees.find((item) => item.id === body.employeeId);
       const target = state.projects.find((item) => item.id === body.projectId);
       if (!person || !target) throw httpError(404, 'RESOURCE_NOT_FOUND');
@@ -185,17 +187,27 @@ export function fakeCompany(initial: Partial<CompanyState> & { currentMonthStart
       if (existing) {
         throw httpError(409, existing.projectId === body.projectId ? 'PROJECT_ASSIGNMENT_ALREADY_EXISTS' : 'PROJECT_ASSIGNMENT_CONFLICT');
       }
-      const created = { id: `a-${nextId++}`, ...body };
+      const created = { id: `a-${nextId++}`, ...body, version: nextVersion++ };
       state.assignments.push(created);
       return created;
     }
     const assignmentMatch = /^\/api\/v1\/project-assignments\/([^/]+)$/.exec(pathname);
+    if (assignmentMatch && request.method === 'DELETE') {
+      // #73 contract: header 400, unknown 404, stale 409, current/past month 409, else 204 (no body).
+      if (request.expectedVersion === undefined) throw httpError(400, null);
+      const index = state.assignments.findIndex((item) => item.id === decodeURIComponent(assignmentMatch[1]));
+      if (index < 0) throw httpError(404, 'RESOURCE_NOT_FOUND');
+      if (state.assignments[index].version !== request.expectedVersion) throw httpError(409, 'PROJECT_ASSIGNMENT_CONFLICT');
+      if (state.assignments[index].monthStart <= currentMonthStart) throw httpError(409, 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT');
+      state.assignments.splice(index, 1);
+      return undefined;
+    }
     if (assignmentMatch && request.method === 'PATCH') {
       // Simplified correction contract: no time-zone/historical scope and no planning guard
       // (tests inject those answers with `fail`).
       const index = state.assignments.findIndex((item) => item.id === decodeURIComponent(assignmentMatch[1]));
       if (index < 0) throw httpError(404, 'RESOURCE_NOT_FOUND');
-      const body = request.body as Partial<Omit<ProjectAssignment, 'id'>>;
+      const body = request.body as Partial<Omit<ProjectAssignment, 'id' | 'version'>>;
       if (Object.keys(body).length === 0) throw httpError(400, 'EMPTY_PATCH');
       if (body.monthStart !== undefined && !/^\d{4}-\d{2}-01$/.test(body.monthStart)) throw httpError(400, 'INVALID_MONTH_START');
       const current = state.assignments[index];
@@ -214,8 +226,9 @@ export function fakeCompany(initial: Partial<CompanyState> & { currentMonthStart
       if (existing) {
         throw httpError(409, existing.projectId === next.projectId ? 'PROJECT_ASSIGNMENT_ALREADY_EXISTS' : 'PROJECT_ASSIGNMENT_CONFLICT');
       }
-      state.assignments[index] = next;
-      return next;
+      // An effective correction moves the version; a no-op (above) keeps it.
+      state.assignments[index] = { ...next, version: nextVersion++ };
+      return state.assignments[index];
     }
     throw new Error(`Unexpected request ${request.method} ${request.path}`);
   };

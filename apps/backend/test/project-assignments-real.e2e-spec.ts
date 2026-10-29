@@ -31,7 +31,7 @@ import {
 import { FailingAudit, ORIGIN, RecordingDelivery, bootEmployeesApp } from './helpers/employees-test-app.js';
 
 const BASE = '/api/v1/project-assignments';
-const RESPONSE_KEYS = ['employeeId', 'id', 'monthStart', 'projectId'];
+const RESPONSE_KEYS = ['employeeId', 'id', 'monthStart', 'projectId', 'version'];
 // Deterministic synthetic months, including a year boundary.
 const NOV = '2026-11-01';
 const DEC = '2026-12-01';
@@ -188,6 +188,13 @@ describe('SP-09 — create and read', () => {
     expect(stored.rows[0]).toEqual({
       company_id: tenantA.companyId, employee_id: employeeA.employeeId, project_id: north.projectId, month: NOV,
     });
+    // #73: the version is the stored updated_at in epoch microseconds, exactly.
+    const version = await db().query<{ version: string }>(
+      'SELECT (extract(epoch FROM updated_at) * 1000000)::bigint::text AS version FROM project_assignments WHERE id = $1',
+      [response.body.id],
+    );
+    expect(response.body.version).toBe(Number(version.rows[0].version));
+    expect(Number.isSafeInteger(response.body.version) && response.body.version > 0).toBe(true);
 
     const audit = await db().query(
       `SELECT action, resource_type, resource_id, actor_account_id, old_values, new_values

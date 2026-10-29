@@ -34,10 +34,10 @@ function company() {
     projects: [hafen, messe, lager],
     employees: [jonas, mira, lena, tom],
     assignments: [
-      { id: 'a-mira', employeeId: mira.id, projectId: hafen.id, monthStart: DEC },
-      { id: 'a-lena', employeeId: lena.id, projectId: hafen.id, monthStart: DEC },
-      { id: 'a-tom', employeeId: tom.id, projectId: messe.id, monthStart: DEC },
-      { id: 'a-jonas-jan', employeeId: jonas.id, projectId: hafen.id, monthStart: JAN },
+      { id: 'a-mira', employeeId: mira.id, projectId: hafen.id, monthStart: DEC, version: 1793260800000101 },
+      { id: 'a-lena', employeeId: lena.id, projectId: hafen.id, monthStart: DEC, version: 1793260800000102 },
+      { id: 'a-tom', employeeId: tom.id, projectId: messe.id, monthStart: DEC, version: 1793260800000103 },
+      { id: 'a-jonas-jan', employeeId: jonas.id, projectId: hafen.id, monthStart: JAN, version: 1793260800000104 },
     ],
   });
 }
@@ -243,8 +243,10 @@ describe('SP-09 correction — saving (PATCH, persisted state)', () => {
     )).toBeTruthy();
     expect(patches(requests).map((request) => request.body))
       .toEqual([{ employeeId: jonas.id, projectId: messe.id, monthStart: '2027-02-01' }]);
-    expect(server.state.assignments.find((item) => item.id === 'a-mira'))
-      .toEqual({ id: 'a-mira', employeeId: jonas.id, projectId: messe.id, monthStart: '2027-02-01' });
+    const stored = server.state.assignments.find((item) => item.id === 'a-mira');
+    expect(stored).toEqual({ id: 'a-mira', employeeId: jonas.id, projectId: messe.id, monthStart: '2027-02-01', version: expect.any(Number) });
+    // #73: an effective correction gives the assignment a new version.
+    expect(stored?.version).not.toBe(1793260800000101);
   });
 
   it('no-op: unchanged values send nothing and say so', async () => {
@@ -332,7 +334,7 @@ describe('SP-09 correction — failures keep the input', () => {
     expect(monthField().value).toBe('2027-01');
     expect(employeeSelect().disabled).toBe(false);
     expect(server.state.assignments.find((item) => item.id === 'a-mira')).toEqual({
-      id: 'a-mira', employeeId: mira.id, projectId: hafen.id, monthStart: DEC,
+      id: 'a-mira', employeeId: mira.id, projectId: hafen.id, monthStart: DEC, version: 1793260800000101,
     });
     // 404/409 may mean the stored state changed meanwhile; the user can retry or reload deliberately.
     expect(correctionForm().textContent?.includes('Der gespeicherte Stand kann sich inzwischen geändert haben.')).toBe(status !== 403);
