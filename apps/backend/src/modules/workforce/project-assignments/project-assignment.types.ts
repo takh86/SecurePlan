@@ -21,3 +21,14 @@ export type ProjectAssignmentPage = {
   items: ProjectAssignmentResponse[];
   pagination: { page: number; pageSize: number; totalItems: number; totalPages: number };
 };
+
+/** S-9 only: archived project metadata stays invisible (ADR-0002 F-3). */
+export type FutureProjectAssignmentResponse = ProjectAssignmentResponse & {
+  projectName: string | null;
+  projectStatus: 'ACTIVE' | 'INACTIVE' | null;
+};
+
+export type FutureProjectAssignmentPage = {
+  items: FutureProjectAssignmentResponse[];
+  pagination: ProjectAssignmentPage['pagination'];
+};

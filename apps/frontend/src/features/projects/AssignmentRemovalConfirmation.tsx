@@ -7,7 +7,7 @@ type ConfirmationProps = {
   snapshot: RemovalSnapshot;
   /** The month lies in the window where only the company's time zone decides (R2-a). */
   uncertainMonth: boolean;
-  api: ProjectAssignmentsApi;
+  api: Pick<ProjectAssignmentsApi, 'remove'>;
   /** The DELETE settled (`null` = removed). The caller closes this and reloads; nothing is retried. */
   onSettled: (error: Error | null) => void;
   onCancel: () => void;

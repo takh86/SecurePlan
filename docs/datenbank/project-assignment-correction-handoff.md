@@ -178,6 +178,6 @@ Entscheidungen: [PO-Freigabe D73-1 bis D73-5, D73-8, R1, R2](https://github.com/
 ### Offboarding-Ablauf und offene Punkte
 
 - **Ablauf:** künftige Zuordnungen der Person finden → jede unerwünschte einzeln entfernen (je ein Audit-Ereignis) → Beschäftigungsende im Mitarbeiterstamm setzen → optional deaktivieren → später und getrennt einen Ersatz zuordnen. Nichts wird automatisch angelegt.
-- **Offen (D73-7 / S-9):** Schritt 1 hat noch keinen eigenen Aufruf; das Monatspanel je Projekt reicht für das Offboarding nicht aus. Eine mitarbeiterbezogene Abfrage oder eine begrenzte Konfliktliste im 409 von #64 Fall 2 ist ein Gate vor #64 Fall 2.
+- **D73-7 / S-9:** Die [Mitarbeiter-Zukunftsliste](../api/employee-future-project-assignments.md) ergänzt Schritt 1 mit einem eigenen tenant-sicheren, paginierten Read und der bestehenden Einzelentfernung im Mitarbeiterdetail. API-/Designfreigabe liegt vor; Code-Review und Browsernachweis bleiben getrennte Gates. #64 Fall 2 wird dadurch nicht implementiert oder freigegeben.
 - **Offen (S-8):** Der Korrektur-PATCH hat weiterhin keine Vorbedingung; sein Lost-Update-Fall bleibt bewusst außerhalb von #73.
 - **Pre-Staging:** Audit-Unveränderlichkeit, Aufbewahrung und Zugriff sowie die Versionsgrenze, siehe `docs/security/pre-staging-gates.md`.

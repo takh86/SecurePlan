@@ -55,7 +55,8 @@ function invalid(): never {
   throw new ApiError('invalid-response', null, null, null);
 }
 
-function toAssignment(value: unknown): ProjectAssignment {
+/** Shared response validation for monthly reads and employee discovery. */
+export function toAssignment(value: unknown): ProjectAssignment {
   if (
     !isRecord(value) ||
     typeof value.id !== 'string' ||

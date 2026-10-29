@@ -17,6 +17,8 @@ import { CorrelationId } from '../../../common/http/correlation-id.decorator.js'
 import { ResourceIdPipe } from '../../../common/http/resource-id.pipe.js';
 import { CreateEmployeeDto, ListEmployeesQueryDto, UpdateEmployeeDto } from './dto/employee.dto.js';
 import { EmployeesService } from './employees.service.js';
+import { ListFutureProjectAssignmentsQueryDto } from '../project-assignments/dto/project-assignment.dto.js';
+import { ProjectAssignmentsService } from '../project-assignments/project-assignments.service.js';
 
 /**
  * SP-07 employee administration. COMPANY_ADMIN of the session's own company
@@ -26,7 +28,10 @@ import { EmployeesService } from './employees.service.js';
  */
 @Controller('api/v1/employees')
 export class EmployeesController {
-  constructor(private readonly employees: EmployeesService) {}
+  constructor(
+    private readonly employees: EmployeesService,
+    private readonly assignments: ProjectAssignmentsService,
+  ) {}
 
   @Get()
   @RequireRoles('COMPANY_ADMIN')
@@ -43,6 +48,17 @@ export class EmployeesController {
     @Param('employeeId', ResourceIdPipe) employeeId: string,
   ) {
     return this.employees.get(tenant, employeeId);
+  }
+
+  @Get(':employeeId/future-project-assignments')
+  @RequireRoles('COMPANY_ADMIN')
+  @Header('Cache-Control', 'no-store')
+  listFutureAssignments(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('employeeId', ResourceIdPipe) employeeId: string,
+    @Query() query: ListFutureProjectAssignmentsQueryDto,
+  ) {
+    return this.assignments.listFutureForEmployee(tenant, employeeId, query);
   }
 
   @Post()
