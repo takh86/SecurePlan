@@ -2,9 +2,9 @@
 
 B2B-SaaS für Personal- und Einsatzplanung in Sicherheitsunternehmen. Praxisphase im B.Sc. Informatik an der THM; Fokus auf Backend Engineering mit nachvollziehbaren Anforderungen, Architekturentscheidungen und Tests.
 
-**Stand: 29.10.2026 · geprüfte Baseline `7107781` · SP-09-Abschlussreview offen**
+**Stand: 30.10.2026 · geprüfte main-Baseline `5752ca8` · SP-10 im Implementierungsreview**
 
-NestJS-Backend und React-Frontend enthalten Account-Aktivierung, Login/Sessions, Rollen-/Tenant-Schutz, Mitarbeiter, Projekte, Monatszuordnungen und deren freigegebene Korrektur-/Entfernungsabläufe. PRs #70–#76 ergänzen Zukunftsregeln, S-9-Discovery und Beschäftigungszeitraum-Konsistenz. Die [Abschlussmatrizen #64/#73](docs/reviews/sp09-closeout-64-73.md) trennen implementierte SP-09-Regeln, offene Dokumentabnahme, SP-11-Übergaben und Release-Gates. Planung/Dienste sind noch nicht implementiert; Browser-Smoke und Browser-E2E bleiben NOT_RUN.
+NestJS-Backend und React-Frontend enthalten Account-Aktivierung, Login/Sessions, Rollen-/Tenant-Schutz, Mitarbeiter, Projekte, Monatszuordnungen und deren freigegebene Korrektur-/Entfernungsabläufe. SP-10 ergänzt administrative Krank-/Urlaubsmarker mit Vorschau, Bestätigung und atomaren Zeitraumbatches. [SP-10-Evidenz und Grenzen](docs/reviews/sp10-availability.md) trennen implementiertes Verhalten, ausgeführte Tests und ausstehende Abnahme. Planung/Dienste sind noch nicht implementiert; Browser-Smoke und Browser-E2E bleiben NOT_RUN.
 
 ## Produkt und verbindlicher MVP
 
@@ -23,7 +23,7 @@ Excel-Import ist Stretch. Tagesplan, Lohnabrechnung und vollständige Notificati
 | --- | --- |
 | Backend | TypeScript, NestJS, Node.js 24, ESM |
 | Frontend | React, TypeScript, Vite |
-| Persistenz | PostgreSQL 17; `pg`, SQL-first Migrationen und Domain-Persistenz bis SP-09 |
+| Persistenz | PostgreSQL 17; `pg`, SQL-first Migrationen und Domain-Persistenz bis SP-10 |
 | Architekturziel | Tenant-aware Modular Monolith; Identity/Workforce/Audit vorhanden, Planning folgt separat |
 | Qualität | Oxlint, Backend Vitest/Supertest, TypeScript Builds, GitHub Actions |
 
@@ -68,11 +68,14 @@ npm run lint
 npm run typecheck
 npm run build
 npm test
+npm run test --workspace=frontend
 npm run test:e2e
+npm run test:scripts
+npm run check:public
 npm run start:backend
 ```
 
-`start:backend` benötigt einen vorherigen Build. Backend-HTTP/E2E umfasst sowohl Test-Doubles als auch echte PostgreSQL-Integrations-/Concurrency-Suites. DB- und Skripttests schreiben Fixtures: ausschließlich eine ausdrücklich verifizierte isolierte Testinstanz verwenden, nie eine geteilte oder produktive Datenbank. Die [Abschlussevidenz](docs/reviews/sp09-closeout-64-73.md) verlinkt bestehende CI-Läufe; während des Dokumentationsaudits wurden keine DB-Tests ausgeführt.
+`start:backend` benötigt einen vorherigen Build. Backend-HTTP/E2E umfasst sowohl Test-Doubles als auch echte PostgreSQL-Integrations-/Concurrency-Suites. DB- und Skripttests schreiben Fixtures und verlangen vor Testbeginn einen [verifizierten wegwerfbaren PostgreSQL-Container samt Identitätsnachweis](docs/testing/disposable-postgres.md). Die Entwicklungs-`.env` ist kein Test-Fallback. Ohne expliziten Nachweis verweigert der Testlauncher den Start vor dem ersten Fixture-Write.
 
 ## Datenbank und Migrationen
 
@@ -80,7 +83,7 @@ npm run start:backend
 
 Migrationen liegen in `apps/backend/migrations`. Der Runner serialisiert Aufrufe über einen Advisory Lock, prüft SHA-256-Prüfsummen und führt jede neue Datei samt Ledger-Eintrag atomar aus. Bereits angewendete Dateien nicht verändern; neue Änderungen erhalten eine neue Migration. Ein zweiter Lauf muss ohne erneuten Effekt funktionieren.
 
-Migrationen bis `0009` enthalten Foundation, Identity/Sessions/Audit und Workforce-/Projekt-/Monatszuordnungs-/Schichtkonfigurations-Persistenz. Planungstabellen fehlen noch. Ihr Einführen erfordert die gleichzeitige freigegebene Integration beider [SP-11-Abhängigkeitsprüfungen](docs/datenbank/sp11-integrity-handoff.md); die temporären Guards bleiben bis dahin fail closed. Interne Spezifikationen werden separat gepflegt.
+Migrationen bis `0010` enthalten Foundation, Identity/Sessions/Audit, Workforce-/Projekt-/Monatszuordnungs-/Schichtkonfigurations-Persistenz und tägliche Verfügbarkeitsmarker samt technischen Batch-Datensätzen. Planungstabellen fehlen noch. Ihr Einführen erfordert die gleichzeitige freigegebene Integration beider [SP-11-Abhängigkeitsprüfungen](docs/datenbank/sp11-integrity-handoff.md); die temporären Guards bleiben bis dahin fail closed. Interne Spezifikationen werden separat gepflegt.
 
 ## Repository-Struktur
 
@@ -104,7 +107,7 @@ Migrationen bis `0009` enthalten Foundation, Identity/Sessions/Audit und Workfor
 - [Öffentliche Reviewübersicht](docs/reviews/g0-handoff.md)
 - [Aktueller Arbeitsabschnitt](docs/planung/aktuelle-woche.md)
 
-Nächster Schritt ist die unabhängige Abnahme des #64/#73-Abschlussnachweises; danach die getrennte SP-10-/#24- und SP-11-/#25-Arbeit mit vorheriger Vertragsfreigabe. E-Mail-Produktion, Browserabnahme und [Security-/Operations-Gates #51](docs/security/pre-staging-gates.md) sind weiter offen. Kein automatisches Issue-Schließen, Merge oder Deployment. [Contribution Guide](CONTRIBUTING.md) beschreibt Branches und Review.
+Nächste Schritte sind das unabhängige SP-10-Code-Review und die tatsächliche Browserabnahme; SP-11 folgt mit eigener Vertragsfreigabe. #64/#73 sind laut GitHub geschlossen; datierte Abschlussunterlagen bleiben als historische Nachweise erhalten. E-Mail-Produktion und [Security-/Operations-Gates #51](docs/security/pre-staging-gates.md) bleiben offen. Kein automatisches Issue-Schließen, Merge oder Deployment. [Contribution Guide](CONTRIBUTING.md) beschreibt Branches und Review.
 
 **Nachweisregel:** DOCUMENTED ≠ IMPLEMENTED ≠ VERIFIED ≠ PRODUCTION READY.
 

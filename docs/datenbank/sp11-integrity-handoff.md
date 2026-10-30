@@ -12,6 +12,30 @@ contracts still require independent Tech Lead/API review. No SP-11 implementatio
 or planning-table migration is delivered by this handoff. Each numbered item has
 its own acceptance checkbox in #25; none inherits a PASS from SP-09 CI.
 
+## SP-10 handoff — 30 October 2026
+
+The owner approved the scoped SP-10 technical contract in
+[#24](https://github.com/takh86/SecurePlan/issues/24#issuecomment-6530983248).
+[ADR-0005](../architektur/adr/0005-availability-batches.md) and
+[executed evidence](../reviews/sp10-availability.md) describe daily facts and the
+internal privacy-neutral Workforce read. Both availability tables are classified
+as non-planning; neither temporary planning guard is disabled.
+
+SP-10 can record a fact without changing a duty. **E-04 remains a required SP-11
+integration:** if a published duty already exists, preserve it exactly and make
+the administrative conflict discoverable through the approved planning model.
+If absence exists first, planning/publish/replacement eligibility must revalidate
+under the approved workflow locks and refuse ineligible assignment. The neutral
+read alone is not complete eligibility, duty-conflict reporting or resolution.
+
+Integrate employee protection before dependent scans and use fresh statements
+after waits. SP-10's approved employee/command order does not ratify global
+LOCK-01 or resolve Duty-first/assignment/plan lock placement below. Duty-date,
+overnight mapping, bounded conflict projection and lifecycle remain explicit
+SP-11 decisions. No quota, automatic reassignment, cancellation or republish is
+introduced. Carry these acceptance obligations into #25/#26; no SP-10 test total
+passes them. The following dated SP-09 handoff remains intact.
+
 ## Existing behavior to preserve
 
 - Assignment correction and removal use `assertPlanningDependencyCheckImplemented`;
