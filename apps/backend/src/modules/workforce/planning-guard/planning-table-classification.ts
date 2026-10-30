@@ -65,6 +65,8 @@ export const KNOWN_NON_PLANNING_TABLES = [
   'projects',
   'project_assignments',
   'shift_configurations',
+  'employee_availability_days',
+  'availability_batch_commands',
 ] as const;
 
 /** Created by the migration runner itself (scripts/migrate.mjs, applied-migration ledger), not by a migration file. */

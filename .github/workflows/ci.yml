@@ -7,6 +7,8 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://secureplan:secureplan_local@127.0.0.1:5432/secureplan
     services:
       postgres:
         image: postgres:17
@@ -15,8 +17,10 @@ jobs:
           POSTGRES_PASSWORD: secureplan_local
           POSTGRES_DB: secureplan
         ports:
-          - 5432:5432
+          - '127.0.0.1:5432:5432'
         options: >-
+          --label secureplan.disposable-test=${{ github.run_id }}-${{ github.run_attempt }}
+          --tmpfs /var/lib/postgresql/data:rw
           --health-cmd "pg_isready -U secureplan -d secureplan"
           --health-interval 2s --health-timeout 3s --health-retries 30
     steps:
@@ -28,6 +32,14 @@ jobs:
       - run: npm run check:public
       - run: npm ci
       - run: cp .env.example .env
+      - name: Verify disposable PostgreSQL identity before any fixture or migration write
+        env:
+          SECUREPLAN_TEST_CONTAINER_ID: ${{ job.services.postgres.id }}
+          SECUREPLAN_TEST_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          SECUREPLAN_TEST_TARGET_RECEIPT: ${{ runner.temp }}/secureplan-disposable-receipt.json
+        run: |
+          node scripts/disposable-test-target.mjs record
+          echo "SECUREPLAN_TEST_TARGET_RECEIPT=$SECUREPLAN_TEST_TARGET_RECEIPT" >> "$GITHUB_ENV"
       - name: Provision ephemeral login-abuse HMAC key (CI-only)
         shell: bash
         run: |
@@ -63,6 +75,8 @@ jobs:
       - run: npm run db:migrate
       - run: npm run db:verify
       - run: npm run test:scripts
+        env:
+          NODE_ENV: development
       - run: npm run test:e2e
       - name: Backend runtime readiness
         shell: bash

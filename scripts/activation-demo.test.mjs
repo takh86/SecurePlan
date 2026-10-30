@@ -8,15 +8,15 @@ import { hashAccountToken } from '../apps/backend/dist/auth/account-token.js';
 import { bootstrapActivationDemo, DEMO_ROLES } from './bootstrap-activation-demo.mjs';
 import { reissueActivationDemo } from './reissue-activation-demo.mjs';
 import { assertLocalDemoEnvironment } from './activation-demo-environment.mjs';
+import { verifyRecordedTestTarget } from './disposable-test-target.mjs';
 
 let database;
 const companies = [];
 // Isolate recovery selection from pre-existing synthetic demos without changing them.
 const since = new Date(Date.now() + 86_400_000).toISOString();
 
-before(() => {
-  if (!process.env.DATABASE_URL)
-    process.loadEnvFile(new URL('../.env', import.meta.url));
+before(async () => {
+  await verifyRecordedTestTarget();
   assertLocalDemoEnvironment();
   database = new DatabaseService();
 });

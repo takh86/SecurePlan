@@ -1,3 +1,7 @@
 *.drawio binary
 *.docx binary
 *.pdf binary
+
+# Keep this new migration's hashed bytes stable on Windows and Linux.
+# Earlier applied migrations deliberately retain their existing attributes.
+apps/backend/migrations/0010_employee_availability.sql text eol=lf

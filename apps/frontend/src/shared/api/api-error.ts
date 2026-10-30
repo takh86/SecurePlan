@@ -43,7 +43,15 @@ export type KnownErrorCode =
   // SP-08b shift configuration (approved backend catalogue). SHIFT_CONFIGURATION_MISSING
   // is reserved for duty creation (SP-11) and deliberately NOT known here.
   | 'SHIFT_CONFIGURATION_INVALID'
-  | 'SHIFT_CONFIGURATION_CONFLICT';
+  | 'SHIFT_CONFIGURATION_CONFLICT'
+  | 'AVAILABILITY_RANGE_INVALID'
+  | 'EMPLOYEE_NOT_EMPLOYED_FOR_DAY'
+  | 'AVAILABILITY_STATUS_CONFLICT'
+  | 'AVAILABILITY_PREVIEW_STALE'
+  | 'INVALID_FIELD_COMBINATION'
+  | 'IDEMPOTENCY_KEY_REQUIRED'
+  | 'IDEMPOTENCY_KEY_INVALID'
+  | 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST';
 
 export type ApiErrorKind = 'http' | 'network' | 'invalid-response';
 
@@ -100,6 +108,14 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   PROJECT_ASSIGNMENT_CORRECTION_CONFLICT: 409,
   SHIFT_CONFIGURATION_INVALID: 400,
   SHIFT_CONFIGURATION_CONFLICT: 409,
+  AVAILABILITY_RANGE_INVALID: 400,
+  EMPLOYEE_NOT_EMPLOYED_FOR_DAY: 409,
+  AVAILABILITY_STATUS_CONFLICT: 409,
+  AVAILABILITY_PREVIEW_STALE: 409,
+  INVALID_FIELD_COMBINATION: 400,
+  IDEMPOTENCY_KEY_REQUIRED: 400,
+  IDEMPOTENCY_KEY_INVALID: 400,
+  IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST: 409,
 };
 
 const POINTER_PATTERN = /^#(?:\/(?:[A-Za-z0-9_-]|~[01])+)+$/;
@@ -235,6 +251,21 @@ export interface UserFacingError {
  * already registered.
  */
 const EMPLOYEE_ERROR_TEXT: Partial<Record<string, { title: string; description: string }>> = {
+  AVAILABILITY_RANGE_INVALID: {
+    title: 'Zeitraum prüfen', description: 'Wählen Sie einen zusammenhängenden Zeitraum von höchstens 93 Kalendertagen einschließlich Anfang und Ende.',
+  },
+  EMPLOYEE_NOT_EMPLOYED_FOR_DAY: {
+    title: 'Beschäftigungsnachweis fehlt', description: 'Der gesamte Zeitraum muss innerhalb der dokumentierten Beschäftigung liegen. Ein Beschäftigungsbeginn ist erforderlich.',
+  },
+  AVAILABILITY_STATUS_CONFLICT: {
+    title: 'Abweichende Einträge vorhanden', description: 'Erstellen Sie eine neue Vorschau zum Ersetzen und bestätigen Sie diese ausdrücklich.',
+  },
+  AVAILABILITY_PREVIEW_STALE: {
+    title: 'Vorschau nicht mehr gültig', description: 'Der Stand oder die Voraussetzungen haben sich geändert. Prüfen Sie eine neue Vorschau und bestätigen Sie diese erneut.',
+  },
+  IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST: {
+    title: 'Vorgang stimmt nicht überein', description: 'Dieser Vorgang kann nicht mit geänderten Eingaben wiederholt werden. Laden und prüfen Sie den aktuellen Stand.',
+  },
   EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_PROJECT_ASSIGNMENTS: {
     title: 'Beschäftigungszeitraum steht im Konflikt mit Projektzuordnungen',
     description: 'Der geänderte Zeitraum würde bisher abgedeckte zukünftige Projektzuordnungen ausschließen. Prüfen Sie die betroffenen Zuordnungen und korrigieren oder entfernen Sie diese bei Bedarf einzeln. Speichern Sie Ihre Änderungen anschließend erneut.',

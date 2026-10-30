@@ -290,7 +290,8 @@ export class EmployeesService {
           `UPDATE employees
            SET employee_number = $3, first_name = $4, last_name = $5,
                employment_start = $6::date, employment_end = $7::date,
-               shift_eligibility = $8, updated_at = clock_timestamp()
+               shift_eligibility = $8, updated_at = clock_timestamp(),
+               availability_revision = availability_revision + CASE WHEN $9::boolean THEN 1 ELSE 0 END
            WHERE company_id = $1 AND id = $2
            RETURNING ${EMPLOYEE_COLUMNS}`,
           [
@@ -302,6 +303,7 @@ export class EmployeesService {
             next.employment_start,
             next.employment_end,
             next.shift_eligibility,
+            datesChanged,
           ],
         );
         updated = requireRow(result);
@@ -353,7 +355,8 @@ export class EmployeesService {
       const updated = requireRow(
         await client.query<EmployeeRow>(
           `UPDATE employees
-           SET status = 'DEACTIVATED', deactivated_at = clock_timestamp(), updated_at = clock_timestamp()
+           SET status = 'DEACTIVATED', deactivated_at = clock_timestamp(), updated_at = clock_timestamp(),
+               availability_revision = availability_revision + 1
            WHERE company_id = $1 AND id = $2 AND status = 'ACTIVE'
            RETURNING ${EMPLOYEE_COLUMNS}`,
           [tenant.companyId, employeeId],

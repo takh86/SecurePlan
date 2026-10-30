@@ -38,6 +38,8 @@ import { ProjectsController } from './modules/workforce/projects/projects.contro
 import { ProjectsService } from './modules/workforce/projects/projects.service.js';
 import { ShiftConfigurationsController } from './modules/workforce/shift-configurations/shift-configurations.controller.js';
 import { ShiftConfigurationsService } from './modules/workforce/shift-configurations/shift-configurations.service.js';
+import { AvailabilityController } from './modules/workforce/availability/availability.controller.js';
+import { AvailabilityService } from './modules/workforce/availability/availability.service.js';
 
 @Module({
   imports: [
@@ -58,6 +60,7 @@ import { ShiftConfigurationsService } from './modules/workforce/shift-configurat
     ProjectsController,
     ProjectAssignmentsController,
     ShiftConfigurationsController,
+    AvailabilityController,
   ],
   providers: [
     AppService,
@@ -87,6 +90,7 @@ import { ShiftConfigurationsService } from './modules/workforce/shift-configurat
     ProjectAssignmentsService,
     // SP-08b: month-versioned project shift configuration (ADR-0003).
     ShiftConfigurationsService,
+    AvailabilityService,
     // Business "current month" rules read the time here (company time zone, never UTC).
     { provide: WALL_CLOCK, useValue: systemWallClock },
   ],

@@ -21,8 +21,10 @@ import {
 import type { EmployeesApi } from './employees-api';
 import type { EmployeeFutureAssignmentsApi } from './employee-future-assignments-api';
 import { EmployeeFutureAssignmentsSection, type FutureAssignmentsHandle } from './EmployeeFutureAssignmentsSection';
+import { EmployeeAvailabilitySection } from './EmployeeAvailabilitySection';
+import type { AvailabilityApi } from './availability-api';
 
-type DetailProps = { employeeId: string; basePath: string; employees: EmployeesApi; assignments: EmployeeFutureAssignmentsApi };
+type DetailProps = { employeeId: string; basePath: string; employees: EmployeesApi; assignments: EmployeeFutureAssignmentsApi; availability: AvailabilityApi };
 
 function noticeFromLocation(state: unknown): EmployeeNotice | null {
   return typeof state === 'object' && state !== null && (state as { notice?: unknown }).notice === 'created'
@@ -30,7 +32,7 @@ function noticeFromLocation(state: unknown): EmployeeNotice | null {
     : null;
 }
 
-export function EmployeeDetailPage({ employeeId, basePath, employees, assignments }: DetailProps) {
+export function EmployeeDetailPage({ employeeId, basePath, employees, assignments, availability }: DetailProps) {
   const location = useLocation();
   const source = useMemo<ReadSource<string, Employee>>(
     () => ({ kind: 'api', load: (id, signal) => employees.get(id, signal) }),
@@ -73,6 +75,7 @@ export function EmployeeDetailPage({ employeeId, basePath, employees, assignment
             employee={employee}
             employees={employees}
             assignments={assignments}
+            availability={availability}
             onChanged={(next, message) => {
               setUpdated(next);
               setNotice(message);
@@ -94,11 +97,12 @@ type DetailsProps = {
   employee: Employee;
   employees: EmployeesApi;
   assignments: EmployeeFutureAssignmentsApi;
+  availability: AvailabilityApi;
   onChanged: (employee: Employee, message: string) => void;
   onStale: () => void;
 };
 
-function EmployeeDetails({ employee, employees, assignments, onChanged, onStale }: DetailsProps) {
+function EmployeeDetails({ employee, employees, assignments, availability, onChanged, onStale }: DetailsProps) {
   const [editing, setEditing] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
   const dataSection = useRef<HTMLElement>(null);
@@ -196,6 +200,7 @@ function EmployeeDetails({ employee, employees, assignments, onChanged, onStale 
       </section>
 
       <EmployeeFutureAssignmentsSection ref={futureAssignments} key={employee.id} employee={employee} api={assignments} />
+      <EmployeeAvailabilitySection key={`availability-${employee.id}`} employee={employee} api={availability} />
 
       {employee.status === 'ACTIVE' && (
         <DeactivationSection

@@ -147,6 +147,9 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 
     // The middleware should already have set this on successful requests.
     response.setHeader('X-Correlation-ID', correlationId);
+    if (/^\/api\/v1\/employees\/[^/]+\/availability(?:\/|$)/.test(request.path)) {
+      response.setHeader('Cache-Control', 'no-store');
+    }
     if (conflict !== undefined) response.setHeader('Cache-Control', 'no-store');
 
     const problemDetails = {

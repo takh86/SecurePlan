@@ -16,6 +16,8 @@ export type SessionRequest = {
   signal?: AbortSignal;
   /** #73: optimistic-concurrency token, sent as the `Expected-Version` header. */
   expectedVersion?: number;
+  /** SP-10: one logical commit attempt, including explicit lost-response retries. */
+  idempotencyKey?: string;
 };
 
 export interface SessionApi {
@@ -30,7 +32,7 @@ export function createSessionApi(
   onUnauthorized: (error: ApiError) => void,
 ): SessionApi {
   return {
-    async request<T>(path: string, { method = 'GET', body, signal, expectedVersion }: SessionRequest = {}): Promise<T> {
+    async request<T>(path: string, { method = 'GET', body, signal, expectedVersion, idempotencyKey }: SessionRequest = {}): Promise<T> {
       if (!path.startsWith(API_PREFIX) || path.includes('//')) {
         throw new Error('Session requests are limited to the SecurePlan API');
       }
@@ -44,6 +46,7 @@ export function createSessionApi(
       if (sendsBody) headers['Content-Type'] = 'application/json';
       if (unsafe) headers['X-CSRF-Token'] = csrfToken;
       if (expectedVersion !== undefined) headers['Expected-Version'] = String(expectedVersion);
+      if (idempotencyKey !== undefined) headers['Idempotency-Key'] = idempotencyKey;
       try {
         return await requestJson<T>(path, {
           method,
