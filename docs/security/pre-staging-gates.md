@@ -45,9 +45,10 @@ SP-09 administrative Schließung, SP-11-Funktionsabnahme und Betriebsfreigabe si
   Retention, DB-Rollen und Restore brauchen die bestehenden #51-Nachweise.
 - **Transport/Abnahme:** Doppelte `Idempotency-Key`-Zeilen sind am echten
   Node-HTTP-Eingang getestet. Der spätere Proxy darf Duplikate nicht verwerfen.
-  Der Browser-Host dieser Sitzung ist nicht verfügbar; die tatsächliche
-  Browserabnahme bleibt **NOT_RUN**. [SP-10-Prüfungen](../reviews/sp10-availability.md)
-  ersetzen weder diese Abnahme noch offene SP-11- und S7-7-Gates.
+  Die [SP-10-Headless-Chrome-Prüfung](../reviews/sp10-acceptance-review.md)
+  besteht 11 echte Browser→API→PG-Gruppen, einschließlich verlorener Antwort,
+  Stale-Recovery und Sitzungswechsel. Das ist keine Abnahme des späteren
+  Deploy-Proxys, der SP-09-Browserabläufe oder offener SP-11-/S7-7-Gates.
 
 ## Behoben im Review
 

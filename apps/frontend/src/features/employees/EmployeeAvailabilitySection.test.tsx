@@ -84,6 +84,22 @@ describe('SP-10 administrator availability interaction', () => {
     expect(screen.queryByRole('checkbox')).toBeNull(); expect(screen.queryByRole('button', { name: 'Bestätigte Entfernung speichern' })).toBeNull();
     expect(api.commit).not.toHaveBeenCalled();
   });
+  it('disclosure reload discards a reviewed destructive preview and preserves input', async () => {
+    const api = client(); api.preview.mockImplementation(async (_id, input) => shown(input, ['CLEAR', 'UNCHANGED']));
+    const { user } = await setup(api);
+    await user.click(screen.getByRole('radio', { name: 'Einträge entfernen' }));
+    await user.click(screen.getByRole('button', { name: 'Vorschau erstellen' }));
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(screen.getByRole('button', { name: 'Verfügbarkeit ausblenden' }));
+    await user.click(screen.getByRole('button', { name: 'Verfügbarkeit anzeigen' }));
+    await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Bestätigte Entfernung speichern' })).toBeNull();
+    expect((screen.getByLabelText('Von einschließlich') as HTMLInputElement).value).toBe('2026-10-28');
+    expect(api.commit).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Vorschau erstellen' }));
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+  });
   it('stale preview retains input, closes confirmation, and requires a fresh preview', async () => {
     const api = client(); api.commit.mockRejectedValue(new ApiError('http', 409, 'AVAILABILITY_PREVIEW_STALE', 'synthetic-reference'));
     const { user } = await setup(api);

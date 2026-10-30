@@ -14,7 +14,7 @@ Stand: 30.10.2026. Einstieg: [Projektstatus](project-status.md), [SP-10-Implemen
 | Planung | [Aktuelle Woche](planung/aktuelle-woche.md), [Backlogkorrektur](planung/g0-backlog.md) |
 | Quellen | [Veröffentlichungsregeln](public-documentation.md), [historische Originalauswahl](sources/README.md) |
 | Review / Nachweise | [SP-09-Abschluss/CI](reviews/sp09-closeout-64-73.md), [G0](reviews/g0-handoff.md), [Setup](reviews/setup-evidence.md) |
-| SP-10 / Testsicherheit | [ADR-0005](architektur/adr/0005-availability-batches.md), [Testnachweise](reviews/sp10-availability.md), [wegwerfbare PG-Testziele](testing/disposable-postgres.md) |
+| SP-10 / Testsicherheit | [ADR-0005](architektur/adr/0005-availability-batches.md), [Testnachweise](reviews/sp10-availability.md), [47-Dateien-Review / Browser](reviews/sp10-acceptance-review.md), [wegwerfbare PG-Testziele](testing/disposable-postgres.md) |
 
 ## Source of Truth
 

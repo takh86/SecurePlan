@@ -103,7 +103,11 @@ export function EmployeeAvailabilitySection({ employee, api }: { employee: Emplo
       <h2 id={`${id}-title`}>Verfügbarkeit</h2>
       <p>Krankheit und bereits genehmigten Urlaub verwalten. Bestehende Dienste bleiben unverändert.</p>
       <button ref={trigger} type="button" className="employees-button" aria-expanded={open} aria-controls={`${id}-panel`}
-        disabled={busy !== null} onClick={() => setOpen(!open)}>{open ? 'Verfügbarkeit ausblenden' : 'Verfügbarkeit anzeigen'}</button>
+        disabled={busy !== null} onClick={() => {
+          // Reopening remounts the authoritative month read. Never carry a
+          // destructive decision across that reload, even if its data is unchanged.
+          setShown(null); setConfirmed(false); setOpen(!open);
+        }}>{open ? 'Verfügbarkeit ausblenden' : 'Verfügbarkeit anzeigen'}</button>
       {open && <div id={`${id}-panel`}>
         <label htmlFor={`${id}-month`}>Anzeigemonat</label>
         <input id={`${id}-month`} type="month" value={month} disabled={locked} onChange={(e) => { invalidate(); setMonth(e.target.value); }} />

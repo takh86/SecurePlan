@@ -20,7 +20,8 @@ export function validateDisposableContainer(container, runId, connectionString) 
       !['127.0.0.1', 'localhost'].includes(url.hostname) ||
       url.pathname !== '/secureplan' || url.username !== 'secureplan' || url.search || url.hash) fail();
   const binding = container.NetworkSettings?.Ports?.['5432/tcp'];
-  if (!binding?.some((port) => port.HostIp === '127.0.0.1' && port.HostPort === url.port)) fail();
+  if (!Array.isArray(binding) || binding.length === 0 ||
+      !binding.every((port) => port.HostIp === '127.0.0.1' && port.HostPort === url.port)) fail();
   const env = container.Config.Env ?? [];
   if (!env.includes('POSTGRES_DB=secureplan') || !env.includes('POSTGRES_USER=secureplan') ||
       env.some((entry) => entry.startsWith('PGDATA=') && entry !== 'PGDATA=/var/lib/postgresql/data')) fail();

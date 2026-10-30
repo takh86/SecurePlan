@@ -21,6 +21,9 @@ for (const [name, change] of [
   ['stopped', (c) => { c.State.Running = false; }],
   ['different port', (c) => { c.NetworkSettings.Ports['5432/tcp'][0].HostPort = '5432'; }],
   ['all-interface binding', (c) => { c.NetworkSettings.Ports['5432/tcp'][0].HostIp = '0.0.0.0'; }],
+  ['additional public IPv4 binding', (c) => { c.NetworkSettings.Ports['5432/tcp'].push({ HostIp: '0.0.0.0', HostPort: '54322' }); }],
+  ['additional public IPv6 binding', (c) => { c.NetworkSettings.Ports['5432/tcp'].push({ HostIp: '::', HostPort: '54322' }); }],
+  ['additional unverified loopback port', (c) => { c.NetworkSettings.Ports['5432/tcp'].push({ HostIp: '127.0.0.1', HostPort: '54322' }); }],
 ]) test(`refuses ${name} container before database access`, () => {
   const value = container(); change(value);
   assert.throws(() => validateDisposableContainer(value, runId, url), /verified disposable/);

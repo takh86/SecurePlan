@@ -12,6 +12,11 @@ supplement and approval record remain private. Missing source versions were not
 represented as reviewed. Approval is separate from independent code review,
 browser acceptance and release authorization.
 
+Follow-up: [complete 47-file critical review and real browser acceptance](sp10-acceptance-review.md).
+Two reproduced P2 defects were corrected; the scoped SP-10 Chrome suite now
+passes all 11 groups. The original native automation-host failure no longer
+blocks headless browser testing. Final human acceptance remains separate.
+
 ## Delivered behavior and files
 
 Migration `0010_employee_availability.sql` adds daily facts, technical batch
@@ -63,13 +68,13 @@ refuses absent/mismatched evidence before loading fixture tests.
 | `npm run typecheck` | PASS, backend source/tests as configured |
 | `npm run build` | PASS, both applications including frontend TypeScript |
 | `npm test` | PASS, 269 tests / 29 files |
-| `npm run test --workspace=frontend` | PASS, 518 tests / 40 files |
+| `npm run test --workspace=frontend` | PASS, 519 tests / 40 files after review correction |
 | `npm run test:e2e` | PASS, 763 tests / 37 files, including actual PostgreSQL |
-| `npm run test:scripts` | PASS, 31 tests, Node 24 in the verified PG network namespace |
+| `npm run test:scripts` | PASS, 34 tests after isolation-gate correction, Node 24 in verified PG namespace |
 | Migration + replay + DB verification | PASS, all ten ledger checksums verified |
 | Migration fault probes | PASS, changed applied **copy** refused; failing new DDL/data/ledger rolled back |
 | `npm run check:public` | PASS; repeated on final staged content before push |
-| Actual browser smoke / browser E2E | **NOT_RUN**; native pipe/browser host unavailable after retry and reinitialization |
+| Automated SP-10 real browser acceptance | **PASS**, 11 headless Chrome groups; normal TLS, real login/API/PG |
 | Independent human code review | Pending; self-review does not replace it |
 
 These totals are executed feature-branch evidence, not inherited green main CI.
@@ -86,7 +91,7 @@ for private sources, personal data and runtime configuration before publication.
 | Competing admins and assignment POST/PATCH/DELETE, employment/deactivation | PASS, both acquisition orders with COMMIT/ROLLBACK |
 | Audit-N / command-completion faults, command cleanup, constraints and migration safety | PASS, actual PostgreSQL assertions |
 | German UI, explicit confirmation, focus, stale/lost-response recovery and input preservation | PASS, React Testing Library/jsdom |
-| Real browser rendering, keyboard flow and browser→API→PG recovery | **NOT_RUN** |
+| Real browser rendering, keyboard flow and browser→API→PG recovery | **PASS**, scoped SP-10 browser suite; manual owner acceptance separate |
 | Existing workforce/auth/project/shift/error/route regressions | PASS, full suites above |
 | SP-11 duty-conflict/eligibility integration | **NOT_RUN / NOT_IMPLEMENTED** here |
 | Operations/production acceptance | **NOT_RUN / NOT_APPROVED**, #51 remains open |
@@ -118,5 +123,6 @@ duplicate-header rejection. S7-7 session-revocation race, audit-role/restore
 controls and the inherited 10 dependency findings (6 moderate, 4 high) remain
 under [pre-staging gates](../security/pre-staging-gates.md).
 
-Next gates: owner/independent code review and actual browser acceptance.
+Next gates: independent human review of the corrected diff and owner acceptance.
+SP-09/browser workflows beyond the scoped SP-10 suite remain NOT_RUN.
 No merge, #24 closure, deployment or production certification is authorized.

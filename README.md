@@ -4,7 +4,7 @@ B2B-SaaS für Personal- und Einsatzplanung in Sicherheitsunternehmen. Praxisphas
 
 **Stand: 30.10.2026 · geprüfte main-Baseline `5752ca8` · SP-10 im Implementierungsreview**
 
-NestJS-Backend und React-Frontend enthalten Account-Aktivierung, Login/Sessions, Rollen-/Tenant-Schutz, Mitarbeiter, Projekte, Monatszuordnungen und deren freigegebene Korrektur-/Entfernungsabläufe. SP-10 ergänzt administrative Krank-/Urlaubsmarker mit Vorschau, Bestätigung und atomaren Zeitraumbatches. [SP-10-Evidenz und Grenzen](docs/reviews/sp10-availability.md) trennen implementiertes Verhalten, ausgeführte Tests und ausstehende Abnahme. Planung/Dienste sind noch nicht implementiert; Browser-Smoke und Browser-E2E bleiben NOT_RUN.
+NestJS-Backend und React-Frontend enthalten Account-Aktivierung, Login/Sessions, Rollen-/Tenant-Schutz, Mitarbeiter, Projekte, Monatszuordnungen und deren freigegebene Korrektur-/Entfernungsabläufe. SP-10 ergänzt administrative Krank-/Urlaubsmarker mit Vorschau, Bestätigung und atomaren Zeitraumbatches. [SP-10-Evidenz und Grenzen](docs/reviews/sp10-availability.md) trennen implementiertes Verhalten, ausgeführte Tests und ausstehende Abnahme. Planung/Dienste sind noch nicht implementiert. Die automatisierte SP-10-Browserprüfung besteht 11 echte Chrome-Gruppen; weitergehende SP-09-/manuelle Browserabnahme bleibt NOT_RUN.
 
 ## Produkt und verbindlicher MVP
 
@@ -107,7 +107,7 @@ Migrationen bis `0010` enthalten Foundation, Identity/Sessions/Audit, Workforce-
 - [Öffentliche Reviewübersicht](docs/reviews/g0-handoff.md)
 - [Aktueller Arbeitsabschnitt](docs/planung/aktuelle-woche.md)
 
-Nächste Schritte sind das unabhängige SP-10-Code-Review und die tatsächliche Browserabnahme; SP-11 folgt mit eigener Vertragsfreigabe. #64/#73 sind laut GitHub geschlossen; datierte Abschlussunterlagen bleiben als historische Nachweise erhalten. E-Mail-Produktion und [Security-/Operations-Gates #51](docs/security/pre-staging-gates.md) bleiben offen. Kein automatisches Issue-Schließen, Merge oder Deployment. [Contribution Guide](CONTRIBUTING.md) beschreibt Branches und Review.
+Nächste Schritte sind die unabhängige menschliche Abnahme des korrigierten SP-10-Diffs und der Browsernachweise; SP-11 folgt mit eigener Vertragsfreigabe. #64/#73 sind laut GitHub geschlossen; datierte Abschlussunterlagen bleiben als historische Nachweise erhalten. E-Mail-Produktion und [Security-/Operations-Gates #51](docs/security/pre-staging-gates.md) bleiben offen. Kein automatisches Issue-Schließen, Merge oder Deployment. [Contribution Guide](CONTRIBUTING.md) beschreibt Branches und Review.
 
 **Nachweisregel:** DOCUMENTED ≠ IMPLEMENTED ≠ VERIFIED ≠ PRODUCTION READY.
 
