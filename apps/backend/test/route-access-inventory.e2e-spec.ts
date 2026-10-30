@@ -167,9 +167,12 @@ describe('SP-06 — runtime route access inventory', () => {
       expect(employeeRoutes.map((h) => h.key)).toEqual([
         'GET /api/v1/employees',
         'GET /api/v1/employees/:employeeId',
+        'GET /api/v1/employees/:employeeId/availability',
         'GET /api/v1/employees/:employeeId/future-project-assignments',
         'PATCH /api/v1/employees/:employeeId',
         'POST /api/v1/employees',
+        'POST /api/v1/employees/:employeeId/availability/batch',
+        'POST /api/v1/employees/:employeeId/availability/preview',
         'POST /api/v1/employees/:employeeId/deactivate',
       ]);
       for (const route of employeeRoutes) {

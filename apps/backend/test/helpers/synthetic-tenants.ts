@@ -198,7 +198,7 @@ export async function removeSyntheticTenants(pool: TestPool, companyIds: string[
     // (SP-08) and employees (SP-07), employees before accounts.
     for (const table of [
       'sessions', 'account_tokens', 'audit_event', 'project_assignments', 'shift_configurations', 'projects',
-      'employees', 'accounts',
+      'availability_batch_commands', 'employee_availability_days', 'employees', 'accounts',
     ]) {
       await client.query(`DELETE FROM ${table} WHERE company_id = ANY($1::uuid[])`, [companyIds]);
     }

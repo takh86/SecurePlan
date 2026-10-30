@@ -1,6 +1,6 @@
 # Projektdokumentation
 
-Stand: 29.10.2026. Einstieg: [Projektstatus](project-status.md), [SP-09-Abschluss #64/#73](reviews/sp09-closeout-64-73.md) und [SP-11-Handoff](datenbank/sp11-integrity-handoff.md). Der [G0-Review](reviews/g0-handoff.md) bleibt ein historischer Design-/Handoff-Nachweis.
+Stand: 30.10.2026. Einstieg: [Projektstatus](project-status.md), [SP-10-Implementierung/Evidenz](reviews/sp10-availability.md) und [SP-11-Handoff](datenbank/sp11-integrity-handoff.md). Der [G0-Review](reviews/g0-handoff.md) und [SP-09-Abschluss #64/#73](reviews/sp09-closeout-64-73.md) bleiben datierte Nachweise.
 
 | Bereich | Einstieg |
 | --- | --- |
@@ -14,6 +14,7 @@ Stand: 29.10.2026. Einstieg: [Projektstatus](project-status.md), [SP-09-Abschlus
 | Planung | [Aktuelle Woche](planung/aktuelle-woche.md), [Backlogkorrektur](planung/g0-backlog.md) |
 | Quellen | [Veröffentlichungsregeln](public-documentation.md), [historische Originalauswahl](sources/README.md) |
 | Review / Nachweise | [SP-09-Abschluss/CI](reviews/sp09-closeout-64-73.md), [G0](reviews/g0-handoff.md), [Setup](reviews/setup-evidence.md) |
+| SP-10 / Testsicherheit | [ADR-0005](architektur/adr/0005-availability-batches.md), [Testnachweise](reviews/sp10-availability.md), [47-Dateien-Review / Browser](reviews/sp10-acceptance-review.md), [wegwerfbare PG-Testziele](testing/disposable-postgres.md) |
 
 ## Source of Truth
 

@@ -29,6 +29,27 @@ Stand: 29.10.2026; ursprüngliche SP-07-Gates vom 26.10. bleiben erhalten. Koord
 
 SP-09 administrative Schließung, SP-11-Funktionsabnahme und Betriebsfreigabe sind getrennt. [Abschlussmatrizen](../reviews/sp09-closeout-64-73.md) geben weder einen Browser-PASS noch eine Bereitstellungsfreigabe.
 
+## SP-10-Übergabe vom 30.10.2026
+
+- **Revisionsprotokoll:** Die vom Owner genehmigte `availability_revision` wird
+  durch Anwendungsschreibpfade fortgeschrieben. SQL außerhalb dieser Pfade kann
+  Vorschau-ABA-Schutz umgehen. Schreibrollen, Betriebszugriffe und Wartung müssen
+  Sperren und Revision beachten; keine ungeprüften direkten Marker-/Lifecycle-Writes.
+- **Technische Retention:** Vorschau-/Wiederholungsautorität ist zeitlich begrenzt;
+  tenantbezogene Bereinigung läuft begrenzt mit `SKIP LOCKED`. Der explizite
+  Wartungseinstieg benötigt Betriebsscheduling, Monitoring und ein Konzept für
+  inaktive Mandanten. Ablaufzeit ist kein Nachweis physischer Löschung.
+- **Minimales Audit:** Pro geändertem Tag wird nur das Datum protokolliert.
+  Frühere SICK-/LEAVE-Werte sind daraus bewusst nicht rekonstruierbar (Owner-
+  Entscheidung). Mitarbeiter-/Datumsbezug bleibt personenbezogen; Zugriff,
+  Retention, DB-Rollen und Restore brauchen die bestehenden #51-Nachweise.
+- **Transport/Abnahme:** Doppelte `Idempotency-Key`-Zeilen sind am echten
+  Node-HTTP-Eingang getestet. Der spätere Proxy darf Duplikate nicht verwerfen.
+  Die [SP-10-Headless-Chrome-Prüfung](../reviews/sp10-acceptance-review.md)
+  besteht 11 echte Browser→API→PG-Gruppen, einschließlich verlorener Antwort,
+  Stale-Recovery und Sitzungswechsel. Das ist keine Abnahme des späteren
+  Deploy-Proxys, der SP-09-Browserabläufe oder offener SP-11-/S7-7-Gates.
+
 ## Behoben im Review
 
 - **S7-1:** Der Versand der Aktivierungs-Mail hat jetzt explizite SMTP-Timeouts (Verbindung 5 s, Begrüßung 5 s, Inaktivität 10 s) und eine Gesamtfrist von 15 s. Ein Timeout gilt als fehlgeschlagene Zustellung; es gibt keinen Retry.

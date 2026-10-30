@@ -3,14 +3,14 @@
  *
  * Mandatory business audit is written on the caller's transaction client, so
  * a failed audit insert rolls the business change back with it. Values must be
- * non-sensitive: never passwords, tokens, raw e-mail addresses or personal names.
+ * bounded and minimized: never passwords, tokens, raw e-mail addresses or personal names.
  */
 import { Injectable } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
-/** Action names chosen for SP-04..SP-08b; no approved audit-action catalogue exists yet. */
+/** Catalogue approvals are scoped: ADR-0004 and ADR-0005 do not ratify unrelated actions. */
 export type BusinessAuditAction =
   /** SP-04 account activation (self-service; the actor is the activated account). */
   | 'ACCOUNT_ACTIVATED'
@@ -37,13 +37,16 @@ export type BusinessAuditAction =
    */
   | 'PROJECT_ASSIGNMENT_REMOVED'
   /** Provisional MVP name (owner 27.10.2026, ADR-0003): shift set of one effective month replaced; resource = project. */
-  | 'SHIFT_CONFIGURATION_UPDATED';
+  | 'SHIFT_CONFIGURATION_UPDATED'
+  /** SP-10 owner technical approval, 30.10.2026: date-only per-day values. */
+  | 'EMPLOYEE_AVAILABILITY_SET'
+  | 'EMPLOYEE_AVAILABILITY_CLEARED';
 
 export type BusinessAuditEntry = {
   companyId: string;
   actorAccountId: string | null;
   action: BusinessAuditAction;
-  resourceType: 'EMPLOYEE' | 'ACCOUNT' | 'PROJECT' | 'PROJECT_ASSIGNMENT' | 'PROJECT_SHIFT_CONFIGURATION';
+  resourceType: 'EMPLOYEE' | 'ACCOUNT' | 'PROJECT' | 'PROJECT_ASSIGNMENT' | 'PROJECT_SHIFT_CONFIGURATION' | 'EMPLOYEE_AVAILABILITY';
   resourceId: string;
   oldValues?: Readonly<Record<string, unknown>> | null;
   newValues?: Readonly<Record<string, unknown>> | null;
