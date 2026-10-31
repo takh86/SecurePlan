@@ -9,6 +9,17 @@
  * Safety: verifyRecordedTestTarget() runs first (same gate as npm run test:e2e);
  * only the own schema is created/dropped; server major version must be 17.
  * Synthetic data only; nothing credential-bearing is printed or written.
+ *
+ * SCOPE LIMITS (read before citing a PASS):
+ *  - PASS means PostgreSQL lock/wait/visibility semantics behaved as modelled. It is not business-rule proof.
+ *  - D4 (project deactivation) and D5 (employment edit / deactivation) stand-ins are SIMPLIFIED predicates
+ *    (any live Duty / membership beyond a date). They do not model the approved D4/D5 semantics (scope of
+ *    "dependent", Employment-period boundaries, SP-10 absence interplay, the E-04 barrier set).
+ *  - publish() locks only the plan row and has no Draft/Publish/Re-Publish version model. The final state
+ *    "PUBLISHED with a Duty committed after the publish-time snapshot" is recorded as observed and classified
+ *    NOT_PROVEN_CONTRACT_UNDECIDED; no lifecycle rule is asserted because the CR-03 source is not available.
+ *  - The "CURRENT order" deactivation control is a model of the code's employee -> account order, not a run
+ *    of the real service. Real-schema concurrency tests are a PR-1 gate and are kept separate from this file.
  */
 import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
@@ -217,11 +228,21 @@ async function runPairs(obs) {
         rec.order = order;
         if (inv) { const v = await INV[inv](obs); rec.invariant = inv; rec.invariantHolds = v === true; if (v !== true) rec.status = 'FAIL'; }
         if (name.startsWith('L:')) {
+          // PROVEN (lock semantics only): publish-time count equals the Duties committed before publish took L.
           const created = [rec.firstResult, rec.secondResult].find((r) => r?.startsWith('PUBLISHED_COUNT_'));
           const creatorFirst = X.name.startsWith('DUTY_CREATE');
           const expected = creatorFirst && ends === 'COMMIT' ? 1 : 0;
-          rec.assertion = `publish sees ${expected} committed duties`;
+          rec.assertion = `publish-time count == Duties committed before publish held L (expected ${expected})`;
           if (created !== `PUBLISHED_COUNT_${expected}`) rec.status = 'FAIL';
+          // OBSERVED final committed state, recorded explicitly (no business rule is asserted here).
+          const fin = (await q(obs, `SELECT p.state, p.published_count,
+              (SELECT count(*)::int FROM duty d WHERE d.plan_id=1 AND d.removed=false) AS live_duties FROM plan p WHERE p.id=1`))[0];
+          rec.finalState = { planState: fin.state, publishedCount: fin.published_count, liveDuties: fin.live_duties };
+          rec.dutyCommittedAfterPublish = fin.state === 'PUBLISHED' && fin.live_duties !== fin.published_count;
+          // NOT_PROVEN: whether "PUBLISHED with a Duty committed after the publish snapshot" is a legal final state
+          // depends on the Draft/Publish/Re-Publish contract (CR-03 source not available to this review). The synthetic
+          // plan has no version/ownership model, so this is classified, not decided, and never turned into a pass/fail rule.
+          rec.lifecycleInvariant = 'NOT_PROVEN_CONTRACT_UNDECIDED';
         }
         // after a ROLLBACK of the first writer the second must never observe a phantom dependency
         if (ends === 'ROLLBACK' && /REFUSED_(DUTY_DEPENDENCY|OVERLAP)/.test(String(rec.secondResult))) { rec.status = 'FAIL'; rec.note = 'phantom dependency'; }
@@ -333,8 +354,13 @@ try {
     ['SELECT 1 FROM account WHERE id=1 FOR SHARE', 'SELECT 1 FROM employee WHERE id=1 FOR UPDATE'], false);
   await auditRollback(obs);
   const failed = results.filter((r) => r.status !== 'PASS');
-  writeFileSync(OUT, JSON.stringify({ ...meta, total: results.length, passed: results.length - failed.length, failed: failed.length, results }, null, 2));
-  console.log(`LOCK01_PROOF server=${ver.s} total=${results.length} passed=${results.length - failed.length} failed=${failed.length}`);
+  const notProven = results.filter((r) => r.lifecycleInvariant);
+  const afterPublish = results.filter((r) => r.dutyCommittedAfterPublish).length;
+  writeFileSync(OUT, JSON.stringify({ ...meta, total: results.length, passed: results.length - failed.length, failed: failed.length,
+    lifecycleNotProven: notProven.length, schedulesWithDutyCommittedAfterPublish: afterPublish, results }, null, 2));
+  console.log(`LOCK01_PROOF server=${ver.s} total=${results.length} passed=${results.length - failed.length} failed=${failed.length} (PASS = synthetic lock semantics only)`);
+  console.log(`LOCK01_PROOF lifecycle=NOT_PROVEN_CONTRACT_UNDECIDED schedules=${notProven.length} dutyCommittedAfterPublish=${afterPublish}`);
+  for (const r of notProven) console.log(`NOT_PROVEN | ${r.order} ${r.first}->${r.second} ${r.firstEnds} | final=${JSON.stringify(r.finalState)}`);
   for (const r of results) console.log(`${r.status} | ${r.scenario} | ${r.order ?? ''} ${r.firstEnds ?? ''} | blocked=${r.blocked ?? ''} | ${r.firstResult ?? ''}/${r.secondResult ?? ''}${r.invariant ? ` inv=${r.invariantHolds}` : ''}${r.error ? ` err=${r.error}` : ''}`);
   exit = failed.length === 0 ? 0 : 1;
 } catch (error) {
