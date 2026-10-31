@@ -1,0 +1,53 @@
+name: SP-11A LOCK-01 proof (review only)
+# Review-only: synthetic schema in a verified disposable PostgreSQL 17 service. No product migration, no app code.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/lock01-proof/**'
+      - '.github/workflows/lock01-proof.yml'
+permissions:
+  contents: read
+jobs:
+  lock01-proof:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://secureplan:secureplan_local@127.0.0.1:5432/secureplan
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: secureplan
+          POSTGRES_PASSWORD: secureplan_local
+          POSTGRES_DB: secureplan
+        ports:
+          - '127.0.0.1:5432:5432'
+        options: >-
+          --label secureplan.disposable-test=${{ github.run_id }}-${{ github.run_attempt }}
+          --tmpfs /var/lib/postgresql/data:rw
+          --health-cmd "pg_isready -U secureplan -d secureplan"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: D6 reference fixtures (Node 24, no database)
+        run: node --test scripts/lock01-proof/d6-reference-resolver.test.mjs
+      - name: Verify disposable PostgreSQL identity before any write
+        env:
+          SECUREPLAN_TEST_CONTAINER_ID: ${{ job.services.postgres.id }}
+          SECUREPLAN_TEST_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          SECUREPLAN_TEST_TARGET_RECEIPT: ${{ runner.temp }}/secureplan-disposable-receipt.json
+        run: |
+          node scripts/disposable-test-target.mjs record
+          echo "SECUREPLAN_TEST_TARGET_RECEIPT=$SECUREPLAN_TEST_TARGET_RECEIPT" >> "$GITHUB_ENV"
+      - name: LOCK-01 proof suite
+        env:
+          LOCK01_PROOF_OUTPUT: ${{ runner.temp }}/lock01-proof-results.json
+        run: node scripts/lock01-proof/lock01-proof.mjs
+      - name: Print result JSON (no credentials inside)
+        if: always()
+        run: cat "$RUNNER_TEMP/lock01-proof-results.json" || true
