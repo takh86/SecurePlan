@@ -1,7 +1,7 @@
 /**
  * E-10 static CI tripwire: every relation a migration visibly creates must be
- * classified, and both temporary planning guards must use the same central
- * list. This test needs no database and fails fast, but it scans text with
+ * classified, and both planning guards must consult the same schema signature
+ * built on the central list. This test needs no database and fails fast, but it scans text with
  * regular expressions: DDL built at run time (EXECUTE strings, SELECT INTO) is
  * out of its reach. What the executed migrations really created is checked
  * against pg_catalog in test/planning-classification-catalog-real.e2e-spec.ts;
@@ -9,13 +9,13 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { assertPlanningDependencyCheckImplemented } from '../project-assignments/planning-dependency-guard.js';
-import { assertShiftConfigurationPlanningCheckImplemented } from '../shift-configurations/shift-configuration-planning-guard.js';
+import { PlanningSchemaError } from '../../planning/planning-schema.js';
+import { assertNoPlanningDependency } from '../project-assignments/planning-dependency-guard.js';
+import { assertNoSavedDutiesForConfiguration } from '../shift-configurations/shift-configuration-planning-guard.js';
 import {
   KNOWN_NON_PLANNING_TABLES,
   MIGRATION_LEDGER_TABLES,
   PLANNING_GUARD_TABLES,
-  countPlanningRelations,
 } from './planning-table-classification.js';
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../../../migrations/', import.meta.url));
@@ -182,36 +182,36 @@ describe('E-10 - every relation created by a migration is classified', () => {
   });
 });
 
-describe('E-10 - both guards share one query and one list', () => {
-  function recordingClient(n: number) {
+describe('E-10 / SP-11 - both guards consult the same schema signature before any dependency read', () => {
+  /** Answers the catalog statement with the given planning relations and records every call. */
+  function recordingClient(relations: { schema: string; name: string; kind: string }[]) {
     const calls: Array<{ text: string; values: unknown[] }> = [];
     const client = {
       query: (text: string, values: unknown[]) => {
         calls.push({ text, values });
-        return Promise.resolve({ rows: [{ n }] });
+        return Promise.resolve({ rows: [{ relations, columns: [], constraints: [], indexes: [] }] });
       },
     };
-    return { calls, client: client as unknown as Parameters<typeof countPlanningRelations>[0] };
+    return { calls, client: client as unknown as Parameters<typeof assertNoPlanningDependency>[0] };
   }
 
-  it('without planning relations both guards pass and send the identical query and list', async () => {
-    const sp09 = recordingClient(0);
-    const sp08b = recordingClient(0);
-    await expect(assertPlanningDependencyCheckImplemented(sp09.client)).resolves.toBeUndefined();
-    await expect(assertShiftConfigurationPlanningCheckImplemented(sp08b.client)).resolves.toBeUndefined();
+  const tuple = { employeeId: 'e', projectId: 'p', monthStart: '2027-01-01' };
+
+  it.each([
+    ['ABSENT (migration 0011 missing)', []],
+    ['an extra planning relation in another schema', [{ schema: 'planning', name: 'duties', kind: 'r' }]],
+    ['a planning view instead of a table', [{ schema: 'public', name: 'plan_entry', kind: 'v' }]],
+  ] as const)('%s: both guards fail closed as a technical error after exactly one identical catalog read', async (_case, relations) => {
+    const sp09 = recordingClient([...relations]);
+    const sp08b = recordingClient([...relations]);
+    await expect(assertNoPlanningDependency(sp09.client, 'c', [tuple])).rejects.toBeInstanceOf(PlanningSchemaError);
+    await expect(assertNoSavedDutiesForConfiguration(sp08b.client, 'c', 'p', '2027-01-01'))
+      .rejects.toBeInstanceOf(PlanningSchemaError);
     expect(sp09.calls).toHaveLength(1);
     expect(sp09.calls).toEqual(sp08b.calls);
-    expect(sp09.calls[0].values).toEqual([[...PLANNING_GUARD_TABLES]]);
+    expect(sp09.calls[0].values[0]).toEqual([...PLANNING_GUARD_TABLES]);
     // Every schema counts except the reserved pg_* system schemas; information_schema is not exempt.
-    expect(sp09.calls[0].text).not.toContain("'public.'");
-    expect(sp09.calls[0].text).not.toContain('information_schema');
     expect(sp09.calls[0].text).toContain("ns.nspname !~ '^pg_'");
-  });
-
-  it('with any planning relation each guard fails closed with its own catalogued code', async () => {
-    await expect(assertPlanningDependencyCheckImplemented(recordingClient(1).client))
-      .rejects.toMatchObject({ response: { code: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' } });
-    await expect(assertShiftConfigurationPlanningCheckImplemented(recordingClient(1).client))
-      .rejects.toMatchObject({ response: { code: 'SHIFT_CONFIGURATION_CONFLICT' } });
+    expect(sp09.calls[0].text).not.toContain("'information_schema'");
   });
 });

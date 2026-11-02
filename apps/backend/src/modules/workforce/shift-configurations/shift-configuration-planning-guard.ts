@@ -1,25 +1,30 @@
 /**
- * SP-08b TEMPORARY planning guard for shift-configuration changes (ADR-0003, O-8).
+ * SP-08b planning guard for shift-configuration changes (ADR-0003 O-8, PO D3).
  *
- * A changed shift configuration must never silently contradict existing
- * monthly plans or duties. Those tables do not exist before SP-11, but their
- * absence is NOT treated as proof that a change is safe: the moment any of them
- * exists, every effective change fails closed (409 SHIFT_CONFIGURATION_CONFLICT)
- * until SP-11 replaces this guard with the real project/month dependency check
- * (docs/datenbank/shift-configuration-sp11-handoff.md). GET and true no-op
- * PATCHes never reach this guard.
+ * SP-11 replaced the temporary fail-closed guard with the real dependency
+ * check (SP11A-R1 T3): an effective replacement of the version of month M is
+ * refused with 409 SHIFT_CONFIGURATION_CONFLICT when a live saved duty of the
+ * project (UNPUBLISHED or PUBLISHED plan, staffed or empty) lies in
+ * [M, next later effective month), regardless of shift kind. Stored duty
+ * snapshots are never recalculated.
  *
- * The table names are classified centrally (planning-table-classification.ts)
- * and shared with the SP-09 guard, so the two guards cannot diverge again.
+ * Call only after the project NO KEY UPDATE lock and the no-op return (GET and
+ * true no-op PATCHes never reach it). An absent, partial or altered planning
+ * schema fails closed with a sanitized 500 (planning-schema.ts).
  */
 import { ConflictException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
-import { countPlanningRelations } from '../planning-guard/planning-table-classification.js';
+import { hasLiveDutiesInConfigurationInterval } from '../../planning/planning-dependencies.js';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
-export async function assertShiftConfigurationPlanningCheckImplemented(client: Queryable): Promise<void> {
-  if (await countPlanningRelations(client) > 0) {
+export async function assertNoSavedDutiesForConfiguration(
+  client: Queryable,
+  companyId: string,
+  projectId: string,
+  month: string,
+): Promise<void> {
+  if (await hasLiveDutiesInConfigurationInterval(client, companyId, projectId, month)) {
     throw new ConflictException({ code: 'SHIFT_CONFIGURATION_CONFLICT' });
   }
 }

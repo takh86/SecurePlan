@@ -48,6 +48,19 @@ describe('SP-07 — field errors and employee codes', () => {
     expect(text.correlationId).toBe('req-1');
   });
 
+  it('trusts the SP-11 dependency codes only as 409, with specific texts and no retry', async () => {
+    for (const code of ['PROJECT_HAS_FUTURE_DUTIES', 'EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_DUTIES'] as const) {
+      expect((await parseApiError(problem(409, { code }))).code).toBe(code);
+      expect((await parseApiError(problem(400, { code }))).code).toBeNull();
+      const text = describeApiError(new ApiError('http', 409, code, 'req-11'));
+      expect(text.title, code).not.toBe('Konflikt');
+      expect(text.canRetry, code).toBe(false);
+      expect(text.correlationId).toBe('req-11');
+    }
+    // Duty creation has no UI yet: its interval code is not trusted by the client.
+    expect((await parseApiError(problem(409, { code: 'DUTY_TIME_RANGE_INVALID' }))).code).toBeNull();
+  });
+
   it('has German texts for every SP-07 code', () => {
     const codes = [
       'EMPLOYEE_CODE_ALREADY_EXISTS',

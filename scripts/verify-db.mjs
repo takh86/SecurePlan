@@ -20,8 +20,18 @@ try {
       ('uq_employee_availability_days__employee_day'::regclass, 'uq_availability_batch_commands__actor_key'::regclass)
       AND indisunique AND indisvalid) AS valid`);
   if (!availability.rows[0]?.valid) throw new Error("Missing availability integrity catalogue");
+  // SP-11: the runtime planning guards check the full schema signature; this is the operational smoke check.
+  const planning = await client.query(`SELECT
+    EXISTS (SELECT 1 FROM schema_migrations WHERE name = '0011_planning_foundation.sql')
+    AND (SELECT count(*) = 3 FROM pg_class WHERE oid IN
+      ('monthly_plans'::regclass, 'duties'::regclass, 'plan_assignments'::regclass) AND relkind = 'r')
+    AND (SELECT count(*) = 2 FROM pg_index WHERE indexrelid IN
+      ('uq_duties__live_slot'::regclass, 'uq_plan_assignments__active_employee'::regclass)
+      AND indisunique AND indisvalid AND indpred IS NOT NULL) AS valid`);
+  if (!planning.rows[0]?.valid) throw new Error("Missing planning integrity catalogue");
   console.log("PostgreSQL connection and foundation migration verified.");
   console.log("SP-10 migration, revision and unique indexes verified.");
+  console.log("SP-11 planning relations and live unique indexes verified.");
 } catch {
   console.error(
     "Database verification failed. Check connection and run migrations.",

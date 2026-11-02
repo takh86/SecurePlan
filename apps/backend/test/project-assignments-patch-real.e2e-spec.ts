@@ -34,8 +34,9 @@ import {
   type SyntheticTenant,
   type TestPool,
 } from './helpers/synthetic-tenants.js';
-import { assertPlanningDependencyCheckImplemented } from '../src/modules/workforce/project-assignments/planning-dependency-guard.js';
+import { assertNoPlanningDependency } from '../src/modules/workforce/project-assignments/planning-dependency-guard.js';
 import { PLANNING_GUARD_TABLES } from '../src/modules/workforce/planning-guard/planning-table-classification.js';
+import { PLANNING_RELATIONS, PlanningSchemaError } from '../src/modules/planning/planning-schema.js';
 import { FailingAudit, ORIGIN, RecordingDelivery, bootEmployeesApp } from './helpers/employees-test-app.js';
 
 const BASE = '/api/v1/project-assignments';
@@ -966,19 +967,20 @@ describe('SP-09 PATCH — rollback and planning protection', () => {
       .rejects.toMatchObject({ code: '23505', constraint: 'uq_project_assignments__employee_month' });
   });
 
-  it('SP-11 tripwire: once ANY planning table exists, corrections fail closed until the real dependency check replaces the guard', async () => {
-    // Today none of the planning tables exists; that is not treated as proof of safety by itself.
+  it('SP-11 real guard: the canonical planning schema alone never blocks; any extra planning-named relation fails closed as a technical error', async () => {
+    const tuple = { employeeId: mira.employeeId, projectId: north.projectId, monthStart: '2027-02-01' };
     const probe = await db().connect();
     try {
-      await expect(assertPlanningDependencyCheckImplemented(probe)).resolves.toBeUndefined();
-      for (const table of PLANNING_GUARD_TABLES) {
+      // Migration 0011 is applied: the real D2 check runs and finds no dependency.
+      await expect(assertNoPlanningDependency(probe, tenantA.companyId, [tuple])).resolves.toBeUndefined();
+      for (const table of PLANNING_GUARD_TABLES.filter((name) => !(PLANNING_RELATIONS as readonly string[]).includes(name))) {
         // DDL inside a transaction is invisible to every other connection and rolled back afterwards.
         await probe.query('BEGIN');
         try {
           await probe.query(`CREATE TABLE public.${table} (id uuid)`);
-          await expect(assertPlanningDependencyCheckImplemented(probe)).rejects.toMatchObject({
-            response: { code: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' },
-          });
+          // Never the business 409: an unknown planning relation is not proof of "no dependency".
+          await expect(assertNoPlanningDependency(probe, tenantA.companyId, [tuple]), table)
+            .rejects.toBeInstanceOf(PlanningSchemaError);
         } finally {
           await probe.query('ROLLBACK');
         }

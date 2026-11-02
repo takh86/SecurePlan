@@ -30,7 +30,7 @@ import { WALL_CLOCK, type WallClock } from '../../../common/time/wall-clock.js';
 import { BusinessAuditService } from '../../audit/business-audit.service.js';
 import { isMonthStart } from '../project-assignments/project-assignment.mapper.js';
 import type { ShiftConfigurationQueryDto, UpdateShiftConfigurationDto } from './dto/shift-configuration.dto.js';
-import { assertShiftConfigurationPlanningCheckImplemented } from './shift-configuration-planning-guard.js';
+import { assertNoSavedDutiesForConfiguration } from './shift-configuration-planning-guard.js';
 import {
   shiftKindToDb,
   shiftRuleColumns,
@@ -100,8 +100,8 @@ export class ShiftConfigurationsService {
    * -> [transaction] actor re-check (401/403) -> 404 project (unknown, foreign,
    * ARCHIVED) -> 409 PROJECT_INACTIVE -> 400 SHIFT_CONFIGURATION_INVALID (month
    * before the company's current month, O-3) -> no-op 200 without write or
-   * audit -> 409 SHIFT_CONFIGURATION_CONFLICT (temporary planning guard, O-8)
-   * -> write + audit in the same transaction.
+   * audit -> 409 SHIFT_CONFIGURATION_CONFLICT (live saved duty in the effective
+   * interval, O-8/D3) -> write + audit in the same transaction.
    */
   async replace(
     tenant: TenantContext,
@@ -152,7 +152,7 @@ export class ShiftConfigurationsService {
       // (older) version: creating a version is a change even if its times are equal.
       if (isSameShiftSet(current, desired)) return toShiftConfigurationResponse(project.id, before);
 
-      await assertShiftConfigurationPlanningCheckImplemented(client);
+      await assertNoSavedDutiesForConfiguration(client, tenant.companyId, project.id, month);
 
       // Diff-apply keeps the ids of kinds that stay: drop kinds missing from the
       // new set, insert new kinds, update changed times in place.

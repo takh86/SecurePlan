@@ -158,6 +158,30 @@ export class AvailabilityService {
     return found.rowCount === 0 ? 'AVAILABLE' : 'NOT_AVAILABLE';
   }
 
+  /**
+   * SP-11 planning read (E-04): the days in [fromDay, toDay] on which the given
+   * employees are factually NOT_AVAILABLE. Neutral by design: SICK and LEAVE are
+   * indistinguishable and no status or marker id leaves Workforce. Set-based
+   * counterpart of getDailyAvailability for already tenant-validated employees;
+   * the caller owns the transaction and the employee locks.
+   */
+  async listUnavailableDays(
+    client: Pick<PoolClient, 'query'>,
+    tenant: TenantContext,
+    employeeIds: readonly string[],
+    fromDay: string,
+    toDay: string,
+  ): Promise<{ employeeId: string; day: string }[]> {
+    if (employeeIds.length === 0) return [];
+    if (!validCivilDate(fromDay) || !validCivilDate(toDay)) throw new BadRequestException({ code: 'INVALID_DATE' });
+    const found = await client.query<{ employee_id: string; day: string }>(
+      `SELECT employee_id, to_char(day, 'YYYY-MM-DD') AS day FROM employee_availability_days
+       WHERE company_id = $1 AND employee_id = ANY($2::uuid[]) AND day BETWEEN $3::date AND $4::date`,
+      [tenant.companyId, [...employeeIds], fromDay, toDay],
+    );
+    return found.rows.map((row) => ({ employeeId: row.employee_id, day: row.day }));
+  }
+
   /** Explicit bounded maintenance application entry point; no new HTTP route. */
   async pruneExpired(tenant: TenantContext, limit = 100): Promise<number> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new BadRequestException({ code: 'VALIDATION_FAILED' });

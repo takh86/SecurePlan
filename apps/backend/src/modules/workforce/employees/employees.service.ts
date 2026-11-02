@@ -29,6 +29,9 @@ import type { TenantContext } from '../../../auth/authorization/tenant-context.j
 import { uniqueViolationConstraint } from '../../../common/database/unique-violation.js';
 import { WALL_CLOCK, type WallClock } from '../../../common/time/wall-clock.js';
 import { checkEmploymentPeriodImpact, type EmploymentPeriodImpact } from './employment-period-impact.js';
+import { lockAccountsPrefix } from '../../identity/account-prefix-lock.js';
+import { hasFutureDutyMemberships, hasNewlyExcludedFutureDuties } from '../../planning/planning-dependencies.js';
+import { PLANNING_WRITER_TIMEOUTS } from '../../planning/planning-locks.js';
 import {
   AccountLifecycleService,
   type PendingActivation,
@@ -280,9 +283,17 @@ export class EmployeesService {
       }
 
       const datesChanged = changed.includes('employment_start') || changed.includes('employment_end');
-      const impact = datesChanged
-        ? await checkEmploymentPeriodImpact(client, tenant.companyId, employeeId, current, next, this.clock().toISOString())
-        : undefined;
+      let impact: EmploymentPeriodImpact | undefined;
+      if (datesChanged) {
+        // One reference instant, read after the employee lock wait, for both checks.
+        const evaluatedAt = this.clock().toISOString();
+        // The existing monthly check runs first and keeps its own bounded 409.
+        impact = await checkEmploymentPeriodImpact(client, tenant.companyId, employeeId, current, next, evaluatedAt);
+        // D5: only duties NEWLY excluded by this change block (planning writers hold employee NO KEY UPDATE).
+        if (await hasNewlyExcludedFutureDuties(client, tenant.companyId, employeeId, evaluatedAt, current, next)) {
+          throw new ConflictException({ code: 'EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_DUTIES' });
+        }
+      }
 
       let updated: EmployeeRow;
       try {
@@ -329,9 +340,18 @@ export class EmployeesService {
    * Deactivates the employee and its account; all sessions and unused tokens
    * are revoked in the same transaction. The employee row is kept (history).
    *
-   * EMPLOYEE_HAS_FUTURE_ASSIGNMENTS is not checked: per Phase 8.4 D-8.4-11 it
-   * concerns future DUTY assignments, which do not exist before SP-11. Monthly
-   * project assignments (SP-09) do not block deactivation; they stay as history.
+   * Lock order (LOCK-01-L1 DEC-1.4): non-locking discovery of the linked
+   * account -> actor SHARE and target account UPDATE in UUID order -> company
+   * SHARE -> actor revalidation (401/403) -> employee FOR UPDATE. The target
+   * account is therefore held BEFORE the employee, so a future self-service
+   * writer (own account, then employee) cannot form an account -> employee ->
+   * account cycle. A link that changed after discovery aborts (sanitized 500);
+   * a newly discovered account is never locked late.
+   *
+   * Precedence after the actor: 404 -> 409 EMPLOYEE_INACTIVE -> 409
+   * EMPLOYEE_HAS_FUTURE_ASSIGNMENTS (Phase 8.4 D-8.4-11: any live membership on
+   * an unresolved future duty; separate from the D5 employment rule). Monthly
+   * project assignments (SP-09) alone still do not block; they stay as history.
    */
   async deactivate(
     tenant: TenantContext,
@@ -339,7 +359,14 @@ export class EmployeesService {
     correlationId: string,
   ): Promise<EmployeeResponse> {
     return this.database.withTransaction(async (client) => {
-      await assertActorInTransaction(client, tenant, ADMIN_ONLY);
+      await client.query(PLANNING_WRITER_TIMEOUTS);
+      // A missing row is not thrown yet: 401/403 must stay ahead of the 404.
+      const discovered = await client.query<{ account_id: string }>(
+        'SELECT account_id FROM employees WHERE company_id = $1 AND id = $2',
+        [tenant.companyId, employeeId],
+      );
+      const discoveredAccount = discovered.rows[0]?.account_id;
+      await lockAccountsPrefix(client, tenant, ADMIN_ONLY, discoveredAccount ? [discoveredAccount] : []);
       const current = requireRow(
         await client.query<EmployeeRow>(
           `SELECT ${EMPLOYEE_COLUMNS} FROM employees
@@ -348,8 +375,15 @@ export class EmployeesService {
           [tenant.companyId, employeeId],
         ),
       );
+      if (current.account_id !== discoveredAccount) {
+        throw new Error('deactivate: linked account changed after discovery');
+      }
       if (current.status === 'DEACTIVATED') {
         throw new ConflictException({ code: 'EMPLOYEE_INACTIVE' });
+      }
+      // One reference instant after every lock wait; planning writers hold employee NO KEY UPDATE.
+      if (await hasFutureDutyMemberships(client, tenant.companyId, employeeId, this.clock().toISOString())) {
+        throw new ConflictException({ code: 'EMPLOYEE_HAS_FUTURE_ASSIGNMENTS' });
       }
 
       const updated = requireRow(

@@ -12,8 +12,9 @@ import type { App } from 'supertest/types.js';
 import type { SessionService } from '../src/auth/session.service.js';
 import type { DatabaseService } from '../src/database/database.service.js';
 import { BusinessAuditService } from '../src/modules/audit/business-audit.service.js';
-import { assertShiftConfigurationPlanningCheckImplemented } from '../src/modules/workforce/shift-configurations/shift-configuration-planning-guard.js';
+import { assertNoSavedDutiesForConfiguration } from '../src/modules/workforce/shift-configurations/shift-configuration-planning-guard.js';
 import { PLANNING_GUARD_TABLES } from '../src/modules/workforce/planning-guard/planning-table-classification.js';
+import { PLANNING_RELATIONS, PlanningSchemaError } from '../src/modules/planning/planning-schema.js';
 import { ShiftConfigurationsService } from '../src/modules/workforce/shift-configurations/shift-configurations.service.js';
 import {
   createSyntheticProject,
@@ -512,7 +513,7 @@ describe('SP-08b — tenant isolation, integrity, rollback and planning guard', 
       .rejects.toMatchObject({ code: '23503', constraint: 'fk_shift_configurations__projects' });
   });
 
-  it('temporary planning guard: with a planning table present, GET and a true no-op work, every effective change fails closed', async () => {
+  it('real planning guard: with an extra planning-named relation present, GET and a true no-op work, every effective change fails closed as a technical error', async () => {
     const stored = (await patch(north.projectId, { effectiveFromMonth: '2027-01-01', shifts: [DAY, NIGHT] }).expect(200)).body;
     const probe = await db().connect();
     // The real service SQL, driven inside the probe transaction that alone sees the table.
@@ -529,9 +530,10 @@ describe('SP-08b — tenant isolation, integrity, rollback and planning guard', 
       audit: (await probe.query('SELECT count(*)::int AS n FROM audit_event WHERE company_id = $1', [tenantA.companyId])).rows[0].n,
     });
     try {
-      // Today none of the planning tables exists; that alone is not treated as proof of safety.
-      await expect(assertShiftConfigurationPlanningCheckImplemented(probe)).resolves.toBeUndefined();
-      for (const table of PLANNING_GUARD_TABLES) {
+      // Migration 0011 is applied: the real D3 check runs and finds no saved duty.
+      await expect(assertNoSavedDutiesForConfiguration(probe, tenantA.companyId, north.projectId, '2027-01-01'))
+        .resolves.toBeUndefined();
+      for (const table of PLANNING_GUARD_TABLES.filter((name) => !(PLANNING_RELATIONS as readonly string[]).includes(name))) {
         // DDL inside a transaction is invisible to every other connection and rolled back afterwards.
         await probe.query('BEGIN');
         try {
@@ -544,8 +546,9 @@ describe('SP-08b — tenant isolation, integrity, rollback and planning guard', 
             { effectiveFromMonth: '2027-01-01', shifts: [DAY] },
             { effectiveFromMonth: '2027-02-01', shifts: [DAY, NIGHT] },
           ]) {
+            // Never the business 409: an unknown planning relation is not proof of "no dependency".
             await expect(service.replace(tenant, north.projectId, change, randomUUID()), table)
-              .rejects.toMatchObject({ response: { code: 'SHIFT_CONFIGURATION_CONFLICT' } });
+              .rejects.toBeInstanceOf(PlanningSchemaError);
           }
           expect(await inProbe()).toEqual(before);
         } finally {

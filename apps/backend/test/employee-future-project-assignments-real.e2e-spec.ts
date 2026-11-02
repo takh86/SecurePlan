@@ -7,6 +7,7 @@ import type { App } from 'supertest/types.js';
 import { vi } from 'vitest';
 import { DatabaseService } from '../src/database/database.service.js';
 import { BusinessAuditService } from '../src/modules/audit/business-audit.service.js';
+import { PlanningSchemaError } from '../src/modules/planning/planning-schema.js';
 import { ProjectAssignmentsService } from '../src/modules/workforce/project-assignments/project-assignments.service.js';
 import type { FutureProjectAssignmentResponse } from '../src/modules/workforce/project-assignments/project-assignment.types.js';
 import {
@@ -354,7 +355,7 @@ describe('S-9 — discovery to approved DELETE', () => {
     expect(await businessState()).toEqual(before); expect(await listed()).toEqual([]);
   });
 
-  it('keeps E-10 fail closed for a discovered row; uncommitted planning DDL is rolled back', async () => {
+  it('keeps the planning guard fail closed (technical error) for a discovered row; uncommitted planning DDL is rolled back', async () => {
     await seed('2026-11-01'); const [row] = await listed(); const before = await businessState();
     const client = await pool.connect();
     try {
@@ -365,8 +366,9 @@ describe('S-9 — discovery to approved DELETE', () => {
         { withTransaction: <T>(work: (value: PoolClient) => Promise<T>) => work(client) } as DatabaseService,
         new BusinessAuditService(), clock,
       );
+      // SP-11: a planning relation outside the canonical schema is a broken deployment, not a business 409.
       await expect(service.remove({ accountId: tenant.admin.accountId, companyId: tenant.companyId, sessionId: randomUUID(), role: 'COMPANY_ADMIN' }, row.id, row.version, randomUUID()))
-        .rejects.toMatchObject({ status: 409, response: { code: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' } });
+        .rejects.toBeInstanceOf(PlanningSchemaError);
     } finally {
       await client.query('ROLLBACK'); client.release();
     }

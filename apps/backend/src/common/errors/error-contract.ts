@@ -1,6 +1,10 @@
 /**
  * SecurePlan API codes: Phase 8.5 FINAL (06.10.2026), plus the Phase 8.7 additions
  * consolidated by Phase 8.11 FINAL. Status mappings are immutable public v1 contracts.
+ * SP-11 (owner ratification C1 of SP11A-R1 Rev3.1, 31.10.2026) adds exactly three
+ * 409 codes: PROJECT_HAS_FUTURE_DUTIES (D4), EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_DUTIES
+ * (D5) and DUTY_TIME_RANGE_INVALID (a well-formed duty request that the currently
+ * saved configuration cannot resolve to a valid interval; structural input stays 400).
  *
  * Operational 503/SERVICE_UNAVAILABLE is a PROVISIONAL exception for readiness;
  * it is NOT listed in the approved Phase 8.5 application-code catalogue.
@@ -75,6 +79,9 @@ const codesByStatus = {
     'EMPLOYEE_NOT_EMPLOYED_FOR_DAY',
     'AVAILABILITY_STATUS_CONFLICT',
     'AVAILABILITY_PREVIEW_STALE',
+    'PROJECT_HAS_FUTURE_DUTIES',
+    'EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_DUTIES',
+    'DUTY_TIME_RANGE_INVALID',
   ],
   413: ['REQUEST_BODY_TOO_LARGE'],
   415: ['UNSUPPORTED_MEDIA_TYPE'],

@@ -9,16 +9,20 @@
  *
  * API v1 exposes name + ACTIVE/INACTIVE only (owner decision 26.10.2026).
  * INACTIVE blocks new month assignments; history stays readable (Phase 8.4
- * D-8.4-12). The shift configuration is ShiftConfigurationsService (SP-08b);
- * the FOR NO KEY UPDATE lock below also serializes against its writes.
+ * D-8.4-12). Since SP-11 (PO D4) ACTIVE -> INACTIVE is refused while the
+ * project has unresolved future duties. The shift configuration is
+ * ShiftConfigurationsService (SP-08b); the FOR NO KEY UPDATE lock below also
+ * serializes against its writes and against every duty creator (SHARE).
  */
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../../database/database.service.js';
 import { assertActorInTransaction } from '../../../auth/authorization/actor-in-transaction.js';
 import { requireRow } from '../../../auth/authorization/require-row.js';
 import type { TenantContext } from '../../../auth/authorization/tenant-context.js';
 import { uniqueViolationConstraint } from '../../../common/database/unique-violation.js';
+import { WALL_CLOCK, type WallClock } from '../../../common/time/wall-clock.js';
 import { BusinessAuditService } from '../../audit/business-audit.service.js';
+import { hasUnresolvedFutureDuties } from '../../planning/planning-dependencies.js';
 import type { CreateProjectDto, ListProjectsQueryDto, UpdateProjectDto } from './dto/project.dto.js';
 import {
   PROJECT_COLUMNS,
@@ -47,6 +51,7 @@ export class ProjectsService {
   constructor(
     private readonly database: DatabaseService,
     private readonly audit: BusinessAuditService,
+    @Inject(WALL_CLOCK) private readonly clock: WallClock,
   ) {}
 
   async list(tenant: TenantContext, query: ListProjectsQueryDto): Promise<ProjectPage> {
@@ -177,6 +182,15 @@ export class ProjectsService {
           [tenant.companyId, nextName, projectId],
         );
         if (taken.rowCount !== 0) nameTaken();
+      }
+
+      // D4: no ACTIVE -> INACTIVE while unresolved future duties (empty ones too) remain.
+      // Every duty creator holds this project FOR SHARE, which the NO KEY UPDATE above
+      // excludes; the reference instant is read after that wait. A mixed rename +
+      // deactivation is refused as a whole. Monthly assignments alone never block (3b).
+      if (current.status === 'ACTIVE' && nextStatus === 'INACTIVE'
+        && await hasUnresolvedFutureDuties(client, tenant.companyId, projectId, this.clock().toISOString())) {
+        throw new ConflictException({ code: 'PROJECT_HAS_FUTURE_DUTIES' });
       }
 
       let updated: ProjectRow;
