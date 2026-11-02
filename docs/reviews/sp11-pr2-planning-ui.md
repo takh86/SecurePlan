@@ -24,22 +24,25 @@ in the UI, and no business rule was changed.
 | States | Loading, empty, retryable read errors, 403/404 safe states, pending/double-submit lock, per-code German error texts that say nothing was saved, "outcome unknown" for a lost response (no automatic retry, explicit re-read), unsaved-input navigation guard, inactive project read-only |
 | Security | Session/CSRF via the existing `SessionApi` (token only in memory, sent on unsafe methods); no tenant, role, status, instant or version is ever sent; every response is shape-checked; conflicts keep only `{code, assignmentId, employeeId}` |
 
-## Design decisions to review
+## Review outcome and follow-ups (owner review of PR #81, 2026-11-02)
 
-- **A10 deviation.** The approved UX for the plan screen is an employee-by-day matrix with a
-  focus editor. Its per-cell editing needs membership changes on existing duties (SP-12).
-  This slice therefore shows a duty-centric list plus a creation form. The matrix belongs to
-  the edit slice and needs a UX decision then.
-- **Time display (gap).** No API exposes the company's IANA time zone; duty responses carry
-  UTC instants only. The UI shows them in the device's zone and always names it (zone
-  abbreviation per endpoint when a DST change lies inside a duty, and a hint naming the IANA
-  zone). The instants are never recalculated. Exposing the company zone (or local times in
-  the entry DTO) is an API decision, not taken here.
+- **A10 matrix remains an outstanding SP-12 UX requirement.** The approved UX for the plan
+  screen is an employee-by-day matrix with a focus editor. Its per-cell editing needs
+  membership changes on existing duties (SP-12). The duty-centric list plus creation form in
+  this PR is accepted only as an **interim create/read representation**. It does not replace
+  or close the A10 requirement.
+- **Time display: interim, follow-up recommended.** No API exposes the company's IANA time
+  zone; duty responses carry UTC instants only. As an interim, the UI shows the instants in
+  the device's zone and always names it (zone abbreviation per endpoint when a DST change lies
+  inside a duty, plus a hint naming the IANA zone). The instants are never recalculated.
+  **Recommended follow-up:** display duty times in the authoritative company time zone. This
+  needs a separately approved API contract decision. PR #81 proposes no API field and changes
+  no backend code.
+- **Approved German wording:** "Mitarbeitende" and "Schichtleitung" for the duty roles (API
+  `EMPLOYEE`/`SHIFT_LEAD`) and "Unveröffentlicht" for `UNPUBLISHED`. They stay unchanged.
 - **Neutral availability.** The planning UI reads no availability data of its own, so it
   cannot reveal sickness or leave. It displays only the API's neutral
   `EMPLOYEE_UNAVAILABLE` conflicts and refusal.
-- **Wording.** Duty roles are shown as "Mitarbeitende" and "Schichtleitung" (API
-  `EMPLOYEE`/`SHIFT_LEAD`); the status `UNPUBLISHED` as "Unveröffentlicht". To confirm in UX review.
 - The client now trusts the ten planning creation codes only with their catalogued status
   (`INVALID_DATE`, `DUTY_DATE_OUTSIDE_PLAN_MONTH`, `MONTHLY_PLAN_ALREADY_EXISTS`,
   `DUTY_ALREADY_EXISTS`, `SHIFT_CONFIGURATION_MISSING`, `DUTY_TIME_RANGE_INVALID`,
@@ -62,7 +65,15 @@ development database. Migrations `0001`–`0011` applied once, replay no-op, `ve
 | `npm run test:e2e` (backend, unchanged code, disposable target) | 43 files / 946 tests passed |
 | `check-public`, `disposable-test-target`, `migration-safety` script tests | 17 / 17 passed |
 | `npm run check:public`, `git diff --check`, harness `node --check` | passed |
-| Browser harness (below) | 12 / 12 groups passed, no uncaught page errors, exact-tenant cleanup PASS |
+| Browser harness (below) | 12 / 12 groups passed on clean head `0ce4c25`, no uncaught page errors, exact-tenant cleanup PASS |
+| GitHub CI ("Foundation CI") on exact head `0ce4c2516516e3b0359c28916f0125bb0a448307` | push run [41460633530](https://github.com/takh86/SecurePlan/actions/runs/41460633530) **success**; pull_request run [41460718228](https://github.com/takh86/SecurePlan/actions/runs/41460718228) **success**. CI has no browser job, so these runs do not cover the browser harness |
+
+The local gates cover the content of code head `0ce4c25`. Backend unit/E2E and the script
+tests ran before the commits on the same, unchanged backend and scripts. Lint and typecheck ran
+after the last code edit. The frontend suite, build and browser harness were re-run on the
+committed clean head. The later documentation-only commit with this update changes no code or
+test. Its own CI result is recorded on PR #81, because a document cannot name the CI run of
+the commit that contains it.
 
 New frontend tests: API client validation and requests, eligibility rules (inclusive
 employment boundaries, case-insensitive ids, precedence), time display (DST end, year
@@ -108,17 +119,21 @@ Playwright 1.64.1 (`SECUREPLAN_PLAYWRIGHT_MODULE` = absolute `playwright/index.m
 `SECUREPLAN_BROWSER_OUTPUT_DIR` outside Git, then `node scripts/sp11-planning-browser-acceptance.mjs`.
 
 NOT_RUN: `activation-demo` script tests (their guard accepts only the development database),
-CI on this branch (to be assessed on the pushed head), screen-reader, cross-browser and device
-acceptance, owner UX sign-off, production performance and load.
+screen-reader, cross-browser and device acceptance, owner UX sign-off, production performance
+and load.
 
 ## Open points and integration requirements
 
-- **Stacking.** This branch contains PR #79 unchanged and must be rebased or retargeted only
-  after #79 is approved and merged; it must not be merged before #79.
+- **Stacking.** This branch contains PR #79 unchanged. It is rebased or retargeted only after
+  #79 is approved and merged, and only on explicit instruction. It must not be merged before #79.
 - The root README and `docs/project-status.md` still describe the state before SP-11 PR-1
   (e.g. "Planung/Dienste sind noch nicht implementiert"); updating them belongs to the
   integration after #79.
-- A10 matrix and focus editor, publish (SP-13), duty edit/removal and leases (SP-12), and
-  employee-facing plan reads remain separate approvals.
-- Company time zone exposure (see above) is an open API decision.
-- Independent technical and UX review of this diff remain separate gates.
+- **Outstanding SP-12 UX requirement:** the A10 employee-by-day matrix with focus editor. The
+  duty list here is only the accepted interim create/read representation.
+- **Recommended follow-up:** show duty times in the authoritative company time zone, after a
+  separately approved API contract decision. No API field is proposed here and no backend
+  change is part of this PR.
+- Publish (SP-13), duty edit/removal and leases (SP-12) and employee-facing plan reads remain
+  separate approvals.
+- Independent technical review and owner UX sign-off of this diff remain separate gates.
