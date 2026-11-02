@@ -41,7 +41,7 @@ export type KnownErrorCode =
   | 'PROJECT_ASSIGNMENT_CONFLICT'
   | 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT'
   // SP-08b shift configuration (approved backend catalogue). SHIFT_CONFIGURATION_MISSING
-  // is reserved for duty creation (SP-11) and deliberately NOT known here.
+  // belongs to duty creation (SP-11, listed below); the shift screens never receive it.
   | 'SHIFT_CONFIGURATION_INVALID'
   | 'SHIFT_CONFIGURATION_CONFLICT'
   | 'AVAILABILITY_RANGE_INVALID'
@@ -52,10 +52,21 @@ export type KnownErrorCode =
   | 'IDEMPOTENCY_KEY_REQUIRED'
   | 'IDEMPOTENCY_KEY_INVALID'
   | 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST'
-  // SP-11 (ratification C1): planning dependencies refused by existing project/employee
-  // writes. DUTY_TIME_RANGE_INVALID belongs to duty creation (no UI yet) and is NOT known here.
+  // SP-11 (ratification C1): planning dependencies refused by existing project/employee writes.
   | 'PROJECT_HAS_FUTURE_DUTIES'
-  | 'EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_DUTIES';
+  | 'EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_DUTIES'
+  // SP-11 PR-2 monthly planning UI: plan and duty creation (approved backend catalogue).
+  // Their German texts are context-specific and live in the planning feature.
+  | 'INVALID_DATE'
+  | 'DUTY_DATE_OUTSIDE_PLAN_MONTH'
+  | 'MONTHLY_PLAN_ALREADY_EXISTS'
+  | 'DUTY_ALREADY_EXISTS'
+  | 'SHIFT_CONFIGURATION_MISSING'
+  | 'DUTY_TIME_RANGE_INVALID'
+  | 'EMPLOYEE_NOT_ASSIGNED_TO_PROJECT_MONTH'
+  | 'EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT'
+  | 'EMPLOYEE_UNAVAILABLE'
+  | 'DUTY_ASSIGNMENT_CONFLICT';
 
 export type ApiErrorKind = 'http' | 'network' | 'invalid-response';
 
@@ -122,6 +133,16 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST: 409,
   PROJECT_HAS_FUTURE_DUTIES: 409,
   EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_DUTIES: 409,
+  INVALID_DATE: 400,
+  DUTY_DATE_OUTSIDE_PLAN_MONTH: 400,
+  MONTHLY_PLAN_ALREADY_EXISTS: 409,
+  DUTY_ALREADY_EXISTS: 409,
+  SHIFT_CONFIGURATION_MISSING: 409,
+  DUTY_TIME_RANGE_INVALID: 409,
+  EMPLOYEE_NOT_ASSIGNED_TO_PROJECT_MONTH: 409,
+  EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT: 409,
+  EMPLOYEE_UNAVAILABLE: 409,
+  DUTY_ASSIGNMENT_CONFLICT: 409,
 };
 
 const POINTER_PATTERN = /^#(?:\/(?:[A-Za-z0-9_-]|~[01])+)+$/;

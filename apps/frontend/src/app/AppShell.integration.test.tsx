@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // @vitest-environment-options {"url":"https://localhost:8443/"}
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode, type ComponentType } from 'react';
 import App from '../App';
@@ -521,9 +521,12 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
     expect(window.location.pathname).toBe('/');
   });
 
-  it('keeps identity and CSRF token out of storage, DOM and URL and calls only the auth endpoints', async () => {
+  it('keeps identity and CSRF token out of storage, DOM and URL; besides auth only safe GET reads of the visited page', async () => {
+    // SP-11 PR-2: the monthly-planning overview reads projects and plans of December 2026.
+    const planningReads = [`${PROJECTS}?pageSize=100`, '/api/v1/monthly-plans?monthStart=2026-12-01&pageSize=100'];
     enqueue(queues, '/api/v1/me', unauthorized);
     enqueue(queues, '/api/v1/auth/login', authorized('COMPANY_ADMIN'));
+    for (const url of planningReads) enqueue(queues, url, emptyPage);
     enqueue(queues, '/api/v1/auth/logout', noContent);
     const fetchMock = stubApi(queues);
     renderAt('/');
@@ -534,6 +537,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
     await user.click(screen.getByRole('button', { name: 'Anmelden' }));
     await expectShell('Arbeitsübersicht');
     await user.click(screen.getByRole('link', { name: /^Monatsplanung/ }));
+    expect(await screen.findByText('Noch keine Projekte')).toBeTruthy();
     expect(document.body.innerHTML).not.toContain(CSRF);
     expect(window.location.href).not.toContain(CSRF);
     await user.click(screen.getByRole('button', { name: 'Abmelden' }));
@@ -541,15 +545,24 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
 
     expect(setItemSpy).not.toHaveBeenCalled();
     for (const [url, init] of fetchMock.mock.calls) {
-      expect(ALLOWED_REQUESTS.has(String(url)), String(url)).toBe(true);
+      const read = planningReads.includes(String(url));
+      expect(ALLOWED_REQUESTS.has(String(url)) || read, String(url)).toBe(true);
+      if (read) {
+        // Reads are GET without body; the CSRF token is reserved for unsafe methods.
+        expect(init?.method).toBe('GET');
+        expect(init?.body).toBeUndefined();
+        expect(new Headers(init?.headers).has('X-CSRF-Token')).toBe(false);
+      }
       const body = typeof init?.body === 'string' ? init.body : '';
       expect(body).not.toContain(IDENTITIES.COMPANY_ADMIN.companyId);
       expect(body).not.toContain('COMPANY_ADMIN');
       expect(body).not.toContain('accountId');
+      expect(String(url)).not.toContain(IDENTITIES.COMPANY_ADMIN.companyId);
     }
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
       '/api/v1/me',
       '/api/v1/auth/login',
+      ...planningReads,
       '/api/v1/auth/logout',
     ]);
   });
@@ -722,6 +735,117 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       expectNoProtectedContent('COMPANY_ADMIN');
       expect(document.body.textContent).not.toMatch(projectName);
       expect(refreshed.mock.calls.map(([url]) => String(url))).toEqual(['/api/v1/me']);
+    });
+  });
+
+  describe('SP-11 PR-2 — monthly plan deep link (December 2026)', () => {
+    // Synthetic example records, not business rules.
+    const project = { id: '7a2be0c4-1d3e-4f5a-8b6c-9d0e1f2a3b4c', name: 'Demo-Objekt Hafen', status: 'ACTIVE' };
+    const plan = { id: '0b5f0c1e-2d3a-4b4c-8d5e-6f7a8b9c0d1e', projectId: project.id, monthStart: '2026-12-01', status: 'UNPUBLISHED', publishedAt: null };
+    const planPath = `/monatsplanung/${plan.id}`;
+    const PLAN_URL = `/api/v1/monthly-plans/${plan.id}`;
+    const ENTRIES_URL = `${PLAN_URL}/entries`;
+    const MONTH_PLANS = '/api/v1/monthly-plans?monthStart=2026-12-01&pageSize=100';
+    const planTitle = `${project.name} – Dezember 2026`;
+
+    /** One visit of the plan page: plan, duties, project, member names, the form's month reads. */
+    function enqueuePlanVisit() {
+      enqueue(queues, PLAN_URL, json(200, plan));
+      enqueue(queues, ENTRIES_URL, json(200, { items: [] }));
+      enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project));
+      enqueue(queues, `${EMPLOYEES}?pageSize=100`, emptyPage);
+      enqueue(queues, MONTH_ASSIGNMENTS, emptyPage);
+      enqueue(queues, shiftConfiguration(project.id, '2026-12-01'), noShifts(project.id));
+    }
+
+    function enqueueOverviewVisit() {
+      enqueue(queues, `${PROJECTS}?pageSize=100`, json(200, { items: [project], pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 } }));
+      enqueue(queues, MONTH_PLANS, json(200, { items: [plan], pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 } }));
+    }
+
+    it('never brings the plan back after logout; Back, Forward and Refresh show only the login', async () => {
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+      enqueuePlanVisit();
+      enqueueOverviewVisit();
+      enqueuePlanVisit();
+      enqueueOverviewVisit();
+      enqueue(queues, '/api/v1/auth/logout', noContent);
+      const fetchMock = stubApi(queues);
+      renderAt(planPath);
+      await expectShell(planTitle);
+      expect(await screen.findByText('Noch keine Dienste')).toBeTruthy();
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('link', { name: 'Zurück zur Übersicht' }));
+      expect(await screen.findByRole('link', { name: 'Monatsplan Demo-Objekt Hafen, Dezember 2026 öffnen' })).toBeTruthy();
+      await traverse('back', planPath);
+      expect(await screen.findByRole('heading', { level: 1, name: planTitle })).toBeTruthy();
+      await traverse('forward', '/monatsplanung');
+      expect(await screen.findByRole('link', { name: /^Monatsplan Demo-Objekt Hafen/ })).toBeTruthy();
+      await user.click(screen.getByRole('button', { name: 'Abmelden' }));
+      await screen.findByRole('heading', { name: 'Anmelden' });
+      expect(window.location.pathname).toBe('/');
+      const callsAfterLogout = fetchMock.mock.calls.length;
+
+      await traverse('back', planPath);
+      expectNoProtectedContent('COMPANY_ADMIN');
+      expect(document.body.textContent).not.toContain(project.name);
+      await traverse('forward', '/');
+      expectNoProtectedContent('COMPANY_ADMIN');
+      expect(fetchMock.mock.calls.length).toBe(callsAfterLogout);
+
+      await traverse('back', planPath);
+      cleanup();
+      // Simulated browser refresh: fresh module graph, the server rejects the revoked session.
+      vi.resetModules();
+      const me = deferred();
+      enqueue(queues, '/api/v1/me', me.handler);
+      const refreshed = stubApi(queues);
+      const FreshApp = (await import('../App')).default;
+      renderAt(planPath, FreshApp);
+      expect(screen.getByRole('heading', { name: 'Sitzung wird geprüft' })).toBeTruthy();
+      await act(async () => me.resolve(unauthorized()));
+      expect(await screen.findByRole('heading', { name: 'Anmelden' })).toBeTruthy();
+      expectNoProtectedContent('COMPANY_ADMIN');
+      expect(document.body.textContent).not.toContain(project.name);
+      expect(refreshed.mock.calls.map(([url]) => String(url))).toEqual(['/api/v1/me']);
+    });
+
+    it('a duty write carries the in-memory CSRF token and only date, kind and members', async () => {
+      const created = {
+        id: 'd1111111-1111-4111-8111-111111111111',
+        dutyDate: '2026-12-03',
+        shiftKind: 'DAY',
+        startsAt: '2026-12-03T05:00:00Z',
+        endsAt: '2026-12-03T17:00:00Z',
+        version: 1,
+        assignments: [],
+        availabilityConflicts: [],
+      };
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+      enqueuePlanVisit();
+      enqueue(queues, ENTRIES_URL, json(201, created));
+      const fetchMock = stubApi(queues);
+      renderAt(planPath);
+      await expectShell(planTitle);
+      const date = await screen.findByLabelText('Datum');
+      fireEvent.change(date, { target: { value: '2026-12-03' } });
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('radio', { name: 'Tagdienst' }));
+      await user.click(screen.getByRole('button', { name: 'Dienst anlegen' }));
+      expect(await screen.findByText('Der Tagdienst am Do., 03.12.2026 wurde angelegt.')).toBeTruthy();
+
+      const writes = fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
+      expect(writes).toHaveLength(1);
+      const [url, init] = writes[0];
+      expect(String(url)).toBe(ENTRIES_URL);
+      const headers = new Headers(init?.headers);
+      expect(headers.get('X-CSRF-Token')).toBe(CSRF);
+      expect(headers.get('Content-Type')).toBe('application/json');
+      expect(init?.credentials).toBe('same-origin');
+      expect(JSON.parse(String(init?.body))).toEqual({ dutyDate: '2026-12-03', shiftKind: 'DAY', assignments: [] });
+      expect(document.body.innerHTML).not.toContain(CSRF);
+      expect(setItemSpy).not.toHaveBeenCalled();
     });
   });
 

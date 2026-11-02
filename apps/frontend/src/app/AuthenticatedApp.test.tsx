@@ -106,7 +106,7 @@ describe('F1 — role-based routes (UI gating only; the server authorizes every 
     });
   });
 
-  it('shows only the admin navigation for COMPANY_ADMIN, with planned items marked as text', async () => {
+  it('shows only the admin navigation for COMPANY_ADMIN; since SP-11 PR-2 no admin item is marked as planned', async () => {
     renderApp('COMPANY_ADMIN', '/arbeitsuebersicht');
     const nav = screen.getByRole('navigation', { name: 'Hauptnavigation' });
     const links = within(nav).getAllByRole('link');
@@ -114,7 +114,7 @@ describe('F1 — role-based routes (UI gating only; the server authorizes every 
       'Arbeitsübersicht',
       'Mitarbeitende',
       'Projekte & Zuordnungen',
-      'Monatsplanung folgt',
+      'Monatsplanung',
     ]);
     expect(links[0].getAttribute('aria-current')).toBe('page');
     expect(within(nav).queryByText('Mein Monatsplan')).toBeNull();

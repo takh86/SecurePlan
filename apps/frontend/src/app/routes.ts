@@ -68,8 +68,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: '/monatsplanung',
     role: 'COMPANY_ADMIN',
     title: 'Monatsplanung',
-    availability: 'planned',
-    plannedScope: 'Monatspläne je Projekt erstellen, veröffentlichen und anpassen.',
+    lead: 'Monatspläne je Projekt erstellen und Tag- und Nachtdienste mit ihrer Besetzung anlegen.',
+    availability: 'available',
+    nested: true,
   },
   {
     id: 'my-month-plan',
