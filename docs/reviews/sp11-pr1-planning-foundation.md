@@ -13,8 +13,9 @@ Date: 2026-11-02. Branch `feat/sp11-planning-foundation`, based on verified `mai
   revision 3.1, with three corrections, after an independent Tech Lead review. The controlled design
   and approval record stay outside this repository; this page summarizes only what the code does.
 - The original handoff reported a preflight of the controlled originals. Remediation did not
-  modify those records. Two documentary clarifications remain pending; see the
-  [findings-closure report](sp11-pr79-remediation.md), L-6 and L-8.
+  modify those records. The Product Owner approved both T5/C1 API clarifications on
+  2026-11-02; owner-controlled record amendment and T6 integrity recording remain pending.
+  See the [decision and findings-closure report](sp11-pr79-remediation.md), L-6 and L-8.
 
 ## What this PR delivers
 
@@ -86,8 +87,11 @@ on the actual PR head; prior green runs do not verify a later commit.
 - A later migration that alters the three relations must update the schema signature in the same change.
 - The role's search path must resolve tenant tables in public. Missing-public requests fail
   closed but can cause an outage; tested deployment assumptions are in the closure report.
-- Structural-400 precedence and C1 year-range wording need owner/API documentary clarification;
-  the implemented behavior is preserved and tested. No private approval record was edited.
+- Product Owner API decisions (2026-11-02): structural HTTP 400 precedes business HTTP 409;
+  structurally valid input/configuration yielding an unrepresentable interval returns 409
+  `DUTY_TIME_RANGE_INVALID`, while structurally invalid dates remain 400. Existing tested
+  semantics are ratified without implementation changes. Private controlled-record amendment
+  and T6 hash recording remain owner actions; no private approval record was edited.
 - Twelve npm audit package findings remain under [#51](https://github.com/takh86/SecurePlan/issues/51);
   see [paths, reachability inferences and lockfile integrity](sp11-dependency-review.md).
 - The review-only proof branch still describes CR-03 as unavailable; its synthetic results must not be

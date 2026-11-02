@@ -53,7 +53,7 @@ PostgreSQL deadlocks, lock timeouts and serialization failures.
 | L-3 Temporal runtime | Millions of full civil-date Intl conversions during transition discovery | Read Intl numeric offsets directly; retain all 13 zones, every 15-minute discovery probe from 2020–2040 and all 481 local-minute comparisons per transition in normal CI `npm test` | Full mandatory differential test and boot goldens; no skip flag or reduced local/CI grid | PASS | Standalone differential run: about 50 s; complete final unit gate: about 60 s. Runtime varies with hardware/load; both sides still use runtime ICU data |
 | L-4 performance | Per-member audit round trips and two availability reads hold locks longer | Retained deliberately in this remediation; batching/caching would enlarge the transactional change | Existing atomic roster/overlap/absence races plus late audit rollback regressions | Behavior PASS; new load benchmark NOT_RUN | No latency or production capacity claim. Audit batching and availability-result reuse remain measured follow-up optimizations |
 | L-5 Location | Entry URI is reserved but single-entry GET is deferred | Preserve the approved URI; canonicalize UUID case and explicitly document deferred dereferencing | Monthly-plan HTTP suite follows returned entry Location → concealed 404, and reads the entries collection successfully | PASS for documented behavior | Clients must use the collection until SP-12; this is not a new GET endpoint |
-| L-6 contract clarity | Annex order and structural-400 test rule need reconciliation; C1's year-range wording is incomplete | Preserve implemented structural 400 before business 409, and existing unrepresentable-interval 409. Flag the two owner clarifications below | Existing HTTP precedence and extreme-year resolver tests | Behavior PASS; documentary decision PENDING | Independent owner/API decision required; this remediation does not invent or ratify a business rule |
+| L-6 contract clarity | Annex order and structural-400 test rule needed reconciliation; C1's year-range wording was incomplete | Product Owner explicitly approved both clarifications on 2026-11-02; preserve existing semantics | Existing HTTP precedence and extreme-year resolver tests; resolver suite re-executed: 39 PASS | Behavior PASS; owner API decision APPROVED | Owner-controlled amendment/cross-reference in the private records remains pending; independent implementation and documentary review still required |
 | L-7 regression gaps | Important boot/security/audit cases lacked explicit assertions | Added every listed case | Resolver boot failure; DAY-before-NIGHT with reverse insertion; ARCHIVED detail/list/create concealment; MONTHLY_PLAN_CREATED and DUTY_CREATED audit failures; staffed D4 in both orders and outcomes; company suspension during both planning creates | PASS | Browser acceptance and later lifecycle operations remain outside this slice |
 | L-8 approval integrity | Controlled T6 record lacked exact lockfile SHA-256 | Computed hash and verified package registry integrity; [dependency record](sp11-dependency-review.md) identifies intended controlled record | `npm ci`, unchanged lockfile hash, registry integrity comparison | Computation PASS; private-record transfer PENDING | Owner must enter/accept the hash in the private T6 record; no private approval was edited or inferred |
 | L-9 audit vocabulary | ADR lacked an explicit API-vocabulary statement | Clarified DAY/NIGHT, EMPLOYEE/SHIFT_LEAD, source/status and relation/resource names; aligned scoped code comments | Existing exact DTO/audit assertions and mapper tests; [ADR-0004](../architektur/adr/0004-related-business-audit-catalogue.md) | PASS for implementation; documentary acceptance PENDING | Independent catalogue acceptance and audit operations remain separate gates |
@@ -75,10 +75,40 @@ Entry `Location` is the contract's reserved resource URI. Following it returns
 404 in this slice; clients read `GET /monthly-plans/{planId}/entries`. A successful
 create does not imply that a single-entry GET, edit or removal route exists.
 
-Owner/API clarification remains required for (1) literal T5 project-status order
-versus the structural-400-before-business-409 rule, and (2) making the existing
-year-range use of `DUTY_TIME_RANGE_INVALID` explicit in C1. Current behavior is
-tested and unchanged. No private annex was modified or published.
+## Owner API contract decision — 2026-11-02
+
+The Product Owner explicitly approved both clarifications in the PR #79 review
+handoff on 2026-11-02:
+
+1. **T5:** structural HTTP 400 validation errors take precedence over business
+   HTTP 409 conflicts. This resolves the contradictory ordering wording.
+2. **C1:** when structurally valid input and saved shift configuration produce
+   an unrepresentable duty interval outside the supported instant range, return
+   HTTP 409 `DUTY_TIME_RANGE_INVALID`. Structurally invalid dates remain HTTP 400.
+
+These decisions ratify existing tested behavior. No implementation, migration,
+error code, payload or test change is required or made. Source inspection
+confirmed that structural duty-date validation precedes business conflicts,
+the resolver rejects unrepresentable instants, and the service maps its invalid
+interval result to the existing 409. The existing resolver suite was re-executed:
+**1 file / 39 tests PASS**, including representable-range boundaries. Existing
+HTTP evidence for structural precedence, invalid dates and interval rejection
+remains the 946-test E2E run recorded above; no new local database run is claimed
+for this documentation update.
+
+The API decision is **APPROVED**, while transferring it into the private
+controlled decision annex and approval record remains **PENDING**. The owner
+must reconcile their packaged decision/API/approval copies through a controlled
+amendment or superseding revision, preserving the original records and checksum
+history. Exact local amendment targets were identified read-only and supplied
+to the owner separately; private paths and controlled contents are not published
+here. No private file or archive was modified.
+
+Remaining PR approval items are independent implementation/security review,
+independent documentary acceptance (including ADR-0004), owner-controlled T5/C1
+record amendment and T6 lockfile-hash recording, and green checks on the final PR
+head. The two substantive API decisions are no longer awaiting owner approval.
+The separate browser, dependency-security and release gates below remain open.
 
 **NOT_RUN / not accepted here:** real browser planning acceptance, production
 load/latency, privileged online-DDL rollout, staging/production, operational audit
