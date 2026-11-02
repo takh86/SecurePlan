@@ -12,8 +12,9 @@ Date: 2026-11-02. Branch `feat/sp11-planning-foundation`, based on verified `mai
 - Technical design: the owner's conditional approval (31.10.2026) of the SP-11A technical design,
   revision 3.1, with three corrections, after an independent Tech Lead review. The controlled design
   and approval record stay outside this repository; this page summarizes only what the code does.
-- A local preflight on 2026-11-02 compared the controlled originals (by checksum) and the
-  repository rules with that design before any product change; no contradiction remained.
+- The original handoff reported a preflight of the controlled originals. Remediation did not
+  modify those records. Two documentary clarifications remain pending; see the
+  [findings-closure report](sp11-pr79-remediation.md), L-6 and L-8.
 
 ## What this PR delivers
 
@@ -43,7 +44,8 @@ boundary is therefore pre-publication.
 - The D2 check also runs for effective HISTORICAL corrections, exactly where the temporary guard ran.
 - Resolved instants outside 0001-01-01T00:00:00Z … 9999-12-31T23:59:59Z count as an invalid
   interval (`DUTY_TIME_RANGE_INVALID`); the strict ISO date DTO already rejects year 0000.
-- `Location` names the created plan or entry; single-entry GET, PATCH and DELETE belong to SP-12.
+- `Location` names the created plan or reserved entry URI. Entry Location returns 404 in this
+  slice; clients use the entries collection. Single-entry GET, PATCH and DELETE belong to SP-12.
 
 ## Executed evidence (local, Windows, Node 24.21.0, ICU 78.3, tz 2026c)
 
@@ -52,22 +54,28 @@ Disposable PostgreSQL 17.11 container (tmpfs, loopback-only, labelled run, recei
 
 | Gate | Result |
 |---|---|
-| Baseline before any change (`787ba08`) | `npm run test:e2e`: 37 files / 763 tests passed |
+| Historical baseline (`787ba08`, original handoff; NOT_RERUN in remediation) | Author-reported: 37 files / 763 E2E tests |
 | `node scripts/migrate.mjs` ×2, `node scripts/verify-db.mjs` | 0011 applied once, replay no-op, verification including the new planning check passed |
 | `npm run lint` / `npm run typecheck` / `npm run build` | passed (0 lint warnings) |
-| `npm test` (backend unit) | 33 files / 339 tests passed, including the 151,515-comparison differential test |
+| `npm test` (backend unit) | 33 files / 352 tests passed, including the complete 13-zone 2020–2040 differential matrix |
 | `npm run test --workspace=frontend` | 40 files / 520 tests passed |
-| `npm run test:e2e` | 41 files / 871 tests passed (new: monthly plans 20, dependencies 19, concurrency 35, schema constraints 24; rewritten guards suite 30) |
-| Script tests (check-public, reissue, disposable target, migration safety) | 21/21 passed |
-| PostgreSQL server log | 0 deadlocks in any run. Each full E2E run, the unchanged baseline included, logs the same 3 lock timeouts from pre-existing tests that exercise `lock_timeout`; the planning suites run alone log none |
+| `npm run test:e2e` | 43 files / 946 tests passed, including new LOCK-01 and planning failure suites |
+| `npm run test:scripts` (Node 24 container, same verified disposable cluster) | 34/34 passed, including activation demo and migration safety; none skipped |
+| Technical failure regressions | Real 55P03 lock timeout, deliberately constructed 40P01 deadlock and 40001 serialization failure: sanitized 500, full rollback, no automatic replay |
 
 The concurrency suite runs every writer pair (D2, D3, D4, D5, deactivation) in both acquisition
 orders with COMMIT and ROLLBACK of the first writer, plus insert-key races, an absence-fact race,
 a stale-snapshot negative control and the account-prefix proofs (UUID order, actor = target,
 revoked/downgraded actor, linked-account drift, stand-in self-service writer, parallel deactivations).
 
-NOT_RUN locally: `scripts/activation-demo.test.mjs` (its guard accepts only the development database;
-CI covers it), real browser acceptance (no planning UI exists). CI evidence is recorded on the PR.
+The added LOCK-01 suite exercises both actual helpers against a test-only company-exclusive
+writer. The failure suite checks account/company changes after HTTP authentication and
+after planning holds its authority locks. See the
+[full closure matrix and test boundaries](sp11-pr79-remediation.md).
+
+NOT_RUN: real browser acceptance (no planning UI exists), production performance/load,
+privileged online-DDL rollout and the later publish/edit/lease workflows. CI must be assessed
+on the actual PR head; prior green runs do not verify a later commit.
 
 ## Open points
 
@@ -76,6 +84,12 @@ CI covers it), real browser acceptance (no planning UI exists). CI evidence is r
   writers must not run side by side after scheduling is enabled; drain and restart are an
   operations decision (#51), not granted here.
 - A later migration that alters the three relations must update the schema signature in the same change.
+- The role's search path must resolve tenant tables in public. Missing-public requests fail
+  closed but can cause an outage; tested deployment assumptions are in the closure report.
+- Structural-400 precedence and C1 year-range wording need owner/API documentary clarification;
+  the implemented behavior is preserved and tested. No private approval record was edited.
+- Twelve npm audit package findings remain under [#51](https://github.com/takh86/SecurePlan/issues/51);
+  see [paths, reachability inferences and lockfile integrity](sp11-dependency-review.md).
 - The review-only proof branch still describes CR-03 as unavailable; its synthetic results must not be
   cited without that correction. This PR does not use them as evidence.
 - Independent technical review of this implementation, independent documentary acceptance of the
