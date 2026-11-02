@@ -1,15 +1,18 @@
-import { Body, Controller, Get, Header, HttpCode, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Headers, HttpCode, Param, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { RequireRoles } from '../../auth/authorization/access-metadata.js';
 import { CurrentTenant } from '../../auth/authorization/current-tenant.decorator.js';
 import type { TenantContext } from '../../auth/authorization/tenant-context.js';
 import { CorrelationId } from '../../common/http/correlation-id.decorator.js';
 import { ResourceIdPipe } from '../../common/http/resource-id.pipe.js';
+import { parseExpectedVersion } from '../../common/http/expected-version.js';
+import { requireEditLeaseHeader } from './duty-edit-leases.js';
 import {
   CreateMonthlyPlanDto,
   CreateMonthlyPlanEntryDto,
   ListMonthlyPlanEntriesQueryDto,
   ListMonthlyPlansQueryDto,
+  UpdateMonthlyPlanEntryDto,
 } from './dto/monthly-plan.dto.js';
 import { MonthlyPlansService } from './monthly-plans.service.js';
 import { PlanningJsonGuard } from './planning-json.guard.js';
@@ -18,9 +21,8 @@ import { PlanningJsonGuard } from './planning-json.guard.js';
  * SP-11 foundation and SP-12 single-entry read: COMPANY_ADMIN of the session's own
  * company only. Origin, session, CSRF (unsafe methods) and the live role are
  * enforced by the global AccessControlGuard; tenant scope and 404 concealment
- * in MonthlyPlansService SQL. No publish, edit, removal or lease route exists
- * yet (SP-12/SP-13), and no Idempotency-Key is required on these creates
- * (Phase 8.7: database uniqueness prevents duplicate effects).
+ * in MonthlyPlansService SQL. SP-12 interactive PATCH/DELETE require a lease
+ * and Expected-Version. First publish/replacement remain separate slices.
  */
 @Controller('api/v1/monthly-plans')
 export class MonthlyPlansController {
@@ -76,6 +78,78 @@ export class MonthlyPlansController {
     @Param('entryId', ResourceIdPipe) entryId: string,
   ) {
     return this.plans.getEntry(tenant, planId, entryId);
+  }
+
+  @Patch(':planId/entries/:entryId')
+  @UseGuards(PlanningJsonGuard)
+  @RequireRoles('COMPANY_ADMIN')
+  @Header('Cache-Control', 'no-store')
+  updateEntry(
+    @CurrentTenant() tenant: TenantContext,
+    @CorrelationId() correlationId: string,
+    @Param('planId', ResourceIdPipe) planId: string,
+    @Param('entryId', ResourceIdPipe) entryId: string,
+    @Headers('expected-version') versionHeader: string | string[] | undefined,
+    @Headers('edit-lease-token') leaseHeader: string | string[] | undefined,
+    @Body() dto: UpdateMonthlyPlanEntryDto,
+  ) {
+    const version = parseExpectedVersion(versionHeader);
+    const token = requireEditLeaseHeader(leaseHeader);
+    return this.plans.updateEntry(tenant, planId, entryId, dto, version, token, correlationId);
+  }
+
+  @Delete(':planId/entries/:entryId')
+  @HttpCode(204)
+  @RequireRoles('COMPANY_ADMIN')
+  @Header('Cache-Control', 'no-store')
+  removeEntry(
+    @CurrentTenant() tenant: TenantContext,
+    @CorrelationId() correlationId: string,
+    @Param('planId', ResourceIdPipe) planId: string,
+    @Param('entryId', ResourceIdPipe) entryId: string,
+    @Headers('expected-version') versionHeader: string | string[] | undefined,
+    @Headers('edit-lease-token') leaseHeader: string | string[] | undefined,
+  ) {
+    const version = parseExpectedVersion(versionHeader);
+    const token = requireEditLeaseHeader(leaseHeader);
+    return this.plans.removeEntry(tenant, planId, entryId, version, token, correlationId);
+  }
+
+  @Post(':planId/entries/:entryId/edit-lease')
+  @HttpCode(200)
+  @RequireRoles('COMPANY_ADMIN')
+  @Header('Cache-Control', 'no-store')
+  acquireLease(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('planId', ResourceIdPipe) planId: string,
+    @Param('entryId', ResourceIdPipe) entryId: string,
+  ) {
+    return this.plans.acquireLease(tenant, planId, entryId);
+  }
+
+  @Put(':planId/entries/:entryId/edit-lease')
+  @RequireRoles('COMPANY_ADMIN')
+  @Header('Cache-Control', 'no-store')
+  renewLease(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('planId', ResourceIdPipe) planId: string,
+    @Param('entryId', ResourceIdPipe) entryId: string,
+    @Headers('edit-lease-token') leaseHeader: string | string[] | undefined,
+  ) {
+    return this.plans.renewLease(tenant, planId, entryId, requireEditLeaseHeader(leaseHeader));
+  }
+
+  @Delete(':planId/entries/:entryId/edit-lease')
+  @HttpCode(204)
+  @RequireRoles('COMPANY_ADMIN')
+  @Header('Cache-Control', 'no-store')
+  releaseLease(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('planId', ResourceIdPipe) planId: string,
+    @Param('entryId', ResourceIdPipe) entryId: string,
+    @Headers('edit-lease-token') leaseHeader: string | string[] | undefined,
+  ) {
+    return this.plans.releaseLease(tenant, planId, entryId, requireEditLeaseHeader(leaseHeader));
   }
 
   /** Location names the entry resource (Phase 8.2/8.3; dereferenceable since SP-12). */

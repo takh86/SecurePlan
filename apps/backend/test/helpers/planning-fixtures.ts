@@ -137,7 +137,8 @@ export async function planningState(pool: TestPool, companyId: string) {
   return {
     plans: await query('SELECT id, project_id, planning_month::text, status, updated_at FROM monthly_plans WHERE company_id = $1 ORDER BY id'),
     duties: await query('SELECT id, duty_date::text, shift_kind, concurrency_version, starts_at, ends_at, removed_at, updated_at FROM duties WHERE company_id = $1 ORDER BY id'),
-    members: await query('SELECT id, duty_id, employee_id, state, updated_at FROM plan_assignments WHERE company_id = $1 ORDER BY id'),
+    members: await query('SELECT id, duty_id, employee_id, duty_function, source, state, removed_at, updated_at FROM plan_assignments WHERE company_id = $1 ORDER BY id'),
+    leases: await query('SELECT id, duty_id, owner_account_id, token_hash, acquired_at, renewed_at, expires_at, released_at FROM edit_leases WHERE company_id = $1 ORDER BY id'),
     employees: await query('SELECT id, status, employment_start::text, employment_end::text, updated_at FROM employees WHERE company_id = $1 ORDER BY id'),
     projects: await query('SELECT id, status, updated_at FROM projects WHERE company_id = $1 ORDER BY id'),
     assignments: await query('SELECT id, employee_id, project_id, planning_month::text, updated_at FROM project_assignments WHERE company_id = $1 ORDER BY id'),

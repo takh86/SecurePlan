@@ -176,6 +176,10 @@ describe('E-10 - every relation created by a migration is classified', () => {
       ['monthly_plan_entry', 'monthly_plan_entries'],
       ['plan_entry', 'plan_entries'],
       ['plan', 'plans'],
+      ['edit_lease', 'edit_leases'],
+      ['cancellation_request', 'cancellation_requests'],
+      ['replacement_need', 'replacement_needs'],
+      ['replacement_offer', 'replacement_offers'],
     ];
     for (const pair of pairs) for (const name of pair) expect([...planning], name).toContain(name);
     expect(pairs.flat().sort()).toEqual([...PLANNING_GUARD_TABLES].sort());

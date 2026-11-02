@@ -11,8 +11,8 @@
  * Defense in three layers:
  * 1. Runtime: the schema signature matches relations from PLANNING_GUARD_TABLES
  *    in ANY schema, including temporary schemas and information_schema.
- *    Only the three canonical relations of
- *    migration 0011, unaltered and in `public`, are trusted; any other
+ *    Only the four canonical relations of
+ *    migrations 0011/0012, unaltered and in `public`, are trusted; any other
  *    planning-named relation makes every planning check fail closed.
  * 2. CI, static tripwire: planning-table-classification.spec.ts scans the
  *    migration files without a database and fails on a visible unclassified
@@ -31,7 +31,7 @@
 /**
  * Names a planning relation may plausibly get: physical design (plural),
  * logical design (singular), API vocabulary (DutyAssignment, MonthlyPlanEntry).
- * Migration 0011 created monthly_plans, duties and plan_assignments.
+ * Migration 0011 created monthly_plans, duties and plan_assignments; 0012 adds edit_leases.
  */
 export const PLANNING_GUARD_TABLES = [
   'monthly_plans',
@@ -48,9 +48,19 @@ export const PLANNING_GUARD_TABLES = [
   'plan_entry',
   'plans',
   'plan',
+  'edit_leases',
+  'edit_lease',
+  // These workflow relations are not implemented. Their appearance must fail
+  // closed until a reviewed integration supplies reconciliation and a signature.
+  'cancellation_requests',
+  'cancellation_request',
+  'replacement_needs',
+  'replacement_need',
+  'replacement_offers',
+  'replacement_offer',
 ] as const;
 
-/** Every non-planning relation created by migrations 0001-0011; none of them holds planning data. */
+/** Every non-planning relation created by migrations 0001-0012; none holds planning data. */
 export const KNOWN_NON_PLANNING_TABLES = [
   'foundation_probe',
   'companies',

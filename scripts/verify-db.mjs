@@ -30,9 +30,17 @@ try {
       ('public.uq_duties__live_slot'::regclass, 'public.uq_plan_assignments__active_employee'::regclass)
       AND indisunique AND indisvalid AND indpred IS NOT NULL) AS valid`);
   if (!planning.rows[0]?.valid) throw new Error("Missing planning integrity catalogue");
+  const leases = await client.query(`SELECT
+    EXISTS (SELECT 1 FROM schema_migrations WHERE name = '0012_duty_edit_leases.sql')
+    AND EXISTS (SELECT 1 FROM pg_class WHERE oid = 'public.edit_leases'::regclass
+      AND relkind = 'r' AND relpersistence = 'p' AND NOT relrowsecurity AND NOT relforcerowsecurity)
+    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.edit_leases'::regclass
+      AND conname = 'uq_edit_leases__duty' AND contype = 'u') AS valid`);
+  if (!leases.rows[0]?.valid) throw new Error("Missing edit-lease integrity catalogue");
   console.log("PostgreSQL connection and foundation migration verified.");
   console.log("SP-10 migration, revision and unique indexes verified.");
   console.log("SP-11 planning relations and live unique indexes verified.");
+  console.log("SP-12 duty edit-lease relation and uniqueness verified.");
 } catch {
   console.error(
     "Database verification failed. Check connection and run migrations.",

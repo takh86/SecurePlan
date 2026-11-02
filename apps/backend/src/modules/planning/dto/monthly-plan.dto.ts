@@ -119,3 +119,26 @@ export class ListMonthlyPlanEntriesQueryDto {
   @IsEnum(ShiftKind)
   shiftKind?: ShiftKind;
 }
+
+export class UpdateMonthlyPlanEntryDto {
+  @ValidateIf(sent)
+  @IsString()
+  @Matches(CALENDAR_DATE_PATTERN)
+  @IsISO8601({ strict: true })
+  dutyDate?: string;
+
+  @ValidateIf(sent)
+  @IsEnum(ShiftKind)
+  shiftKind?: ShiftKind;
+
+  @ValidateIf(sent)
+  @IsArray()
+  @IsObject({ each: true })
+  @ArrayUnique((item: unknown) => {
+    const id = (item as { employeeId?: unknown } | null)?.employeeId;
+    return typeof id === 'string' ? id.toLowerCase() : id;
+  })
+  @ValidateNested({ each: true })
+  @Type(() => DutyAssignmentInputDto)
+  assignments?: DutyAssignmentInputDto[];
+}

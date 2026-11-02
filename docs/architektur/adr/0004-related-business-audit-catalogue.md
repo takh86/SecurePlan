@@ -111,6 +111,46 @@ full plan copies are recorded. Accepted D4/D5 edits keep the existing
 `PROJECT_UPDATED` / `EMPLOYEE_UPDATED` events without new fields. Independent
 documentary acceptance of this supplement remains pending like the four above.
 
+## Supplement 2026-11-02 — SP-12 duty mutation audit
+
+**Authority:** explicit Product Owner approval in the SP-12 implementation
+conversation on 2026-11-02. This is business-contract approval, separate from
+independent technical/code/security and documentary review, which remain required.
+The earlier creation-only approval above is preserved as history.
+
+Let `D = {planId, dutyDate, shiftKind, startsAt, endsAt, version}` and
+`M = {dutyId, employeeId, dutyRole, source}`. These are fixed-size per-resource
+records in public API vocabulary, never full plan or roster copies.
+
+| Action | Resource | `oldValues` | `newValues` |
+|---|---|---|---|
+| `DUTY_UPDATED` | `DUTY`, duty ID | Previous D | Resulting D |
+| `DUTY_REMOVED` | `DUTY`, duty ID | Previous D | `{version: newVersion, removedAt: persistedRemovalTimestamp}` |
+| `DUTY_MEMBERSHIP_ADDED` | `DUTY_ASSIGNMENT`, new membership ID | SQL null | M; extends the existing creation event to edits |
+| `DUTY_MEMBERSHIP_UPDATED` | `DUTY_ASSIGNMENT`, retained membership ID | Previous M | Resulting M for a role change |
+| `DUTY_MEMBERSHIP_REMOVED` | `DUTY_ASSIGNMENT`, retained membership ID | Previous M | `{dutyId, state: "REMOVED", removedAt: persistedRemovalTimestamp}` |
+
+Every effective aggregate PATCH increments the duty version once and emits
+exactly one DUTY_UPDATED, including membership-only changes, plus only its
+effective membership delta events. Duty removal emits DUTY_REMOVED and one
+removal event per active member. Tombstones and REMOVED rows retain historical
+references and UTC snapshots; rejoining creates a new membership. Role changes
+retain membership ID/source. Removal timestamps come from PostgreSQL RETURNING,
+formatted in UTC with six fractional digits, matching the persisted instant.
+
+After authorization, visibility, valid lease and matching version, a true
+normalized no-op changes no domain timestamp/version and emits no business audit;
+it does not force eligibility validation. Session validation retains its normal
+session-touch behavior. Repeated removal is concealed 404. Refusals/stale writes
+emit no success audit. All events use the domain transaction and trusted company,
+actor and server correlation ID; any audit/late failure rolls back all earlier
+domain and audit changes. No blind replay. Names, email, tokens, medical data,
+free text and unbounded roster snapshots are excluded.
+
+Lease reconciliation and the concrete L1 protocol are recorded in
+[ADR-0006](0006-duty-edit-leases.md). CR-03 direct Published mutation is preserved;
+publish and the future replacement workflow are not activated by this supplement.
+
 Retention period, database-role append-only enforcement, privileged access,
 privacy policy, backups and restore proof are separately tracked in
 [#51](https://github.com/takh86/SecurePlan/issues/51) and the

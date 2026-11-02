@@ -129,7 +129,7 @@ describe('SP-11 — planning schema signature, real PostgreSQL', () => {
     });
   });
 
-  it('the migrated database is COMPLETE: exactly the three canonical relations exist and both guards pass without dependencies', async () => {
+  it('the migrated database is COMPLETE: exactly the canonical relations exist and both guards pass without dependencies', async () => {
     const found = await db().query<{ schema: string; name: string; kind: string }>(
       `SELECT ns.nspname AS schema, c.relname AS name, c.relkind::text AS kind
        FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
@@ -138,6 +138,7 @@ describe('SP-11 — planning schema signature, real PostgreSQL', () => {
     );
     expect(found.rows).toEqual([
       { schema: 'public', name: 'duties', kind: 'r' },
+      { schema: 'public', name: 'edit_leases', kind: 'r' },
       { schema: 'public', name: 'monthly_plans', kind: 'r' },
       { schema: 'public', name: 'plan_assignments', kind: 'r' },
     ]);
@@ -316,6 +317,7 @@ describe('SP-11 — ABSENT schema and committed versus uncommitted DDL across se
       expect(await guardOutcomes(sessionA), 'no planning relation at all').toEqual(ABSENT);
       await sessionB.query('BEGIN');
       await sessionB.query(migration('0011_planning_foundation.sql'));
+      await sessionB.query(migration('0012_duty_edit_leases.sql'));
       expect(await guardOutcomes(sessionA), 'uncommitted DDL is invisible').toEqual(ABSENT);
       await sessionB.query('COMMIT');
       expect(await guardOutcomes(sessionA), 'committed canonical schema, same open transaction').toEqual(OPEN);

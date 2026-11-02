@@ -207,16 +207,20 @@ describe('SP-06 — runtime route access inventory', () => {
         expect({ route: route.key, roles: route.roles }).toEqual({ route: route.key, roles: ['COMPANY_ADMIN'] });
       }
 
-      // SP-11 foundation plus SP-12 single-entry GET: six COMPANY_ADMIN-only
-      // planning routes; publish, edit, removal, leases and employee reads are deferred.
+      // SP-11 foundation and SP-12 duty mutations/leases; no publish/employee route.
       const planningRoutes = handlers.filter((h) => h.key.includes(' /api/v1/monthly-plans'));
       expect(planningRoutes.map((h) => h.key)).toEqual([
+        'DELETE /api/v1/monthly-plans/:planId/entries/:entryId',
+        'DELETE /api/v1/monthly-plans/:planId/entries/:entryId/edit-lease',
         'GET /api/v1/monthly-plans',
         'GET /api/v1/monthly-plans/:planId',
         'GET /api/v1/monthly-plans/:planId/entries',
         'GET /api/v1/monthly-plans/:planId/entries/:entryId',
+        'PATCH /api/v1/monthly-plans/:planId/entries/:entryId',
         'POST /api/v1/monthly-plans',
         'POST /api/v1/monthly-plans/:planId/entries',
+        'POST /api/v1/monthly-plans/:planId/entries/:entryId/edit-lease',
+        'PUT /api/v1/monthly-plans/:planId/entries/:entryId/edit-lease',
       ]);
       for (const route of planningRoutes) {
         expect({ route: route.key, roles: route.roles }).toEqual({ route: route.key, roles: ['COMPANY_ADMIN'] });
