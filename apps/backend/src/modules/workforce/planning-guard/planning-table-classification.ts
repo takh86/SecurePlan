@@ -60,7 +60,7 @@ export const PLANNING_GUARD_TABLES = [
   'replacement_offer',
 ] as const;
 
-/** Every non-planning relation created by migrations 0001-0012; none holds planning data. */
+/** Non-planning domain tables and technical command reservations (0001-0013). */
 export const KNOWN_NON_PLANNING_TABLES = [
   'foundation_probe',
   'companies',
@@ -75,6 +75,7 @@ export const KNOWN_NON_PLANNING_TABLES = [
   'shift_configurations',
   'employee_availability_days',
   'availability_batch_commands',
+  'idempotency_records', // Technical claim/result reference; no duties or memberships.
 ] as const;
 
 /** Created by the migration runner itself (scripts/migrate.mjs, applied-migration ledger), not by a migration file. */

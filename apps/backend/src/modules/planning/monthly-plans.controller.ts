@@ -1,11 +1,12 @@
-import { Body, Controller, Delete, Get, Header, Headers, HttpCode, Param, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
-import type { Response } from 'express';
+import { BadRequestException, Body, Controller, Delete, Get, Header, Headers, HttpCode, HttpException, Param, Patch, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { RequireRoles } from '../../auth/authorization/access-metadata.js';
 import { CurrentTenant } from '../../auth/authorization/current-tenant.decorator.js';
 import type { TenantContext } from '../../auth/authorization/tenant-context.js';
 import { CorrelationId } from '../../common/http/correlation-id.decorator.js';
 import { ResourceIdPipe } from '../../common/http/resource-id.pipe.js';
 import { parseExpectedVersion } from '../../common/http/expected-version.js';
+import { parseIdempotencyKey } from '../../common/http/idempotency-key.js';
 import { requireEditLeaseHeader } from './duty-edit-leases.js';
 import {
   CreateMonthlyPlanDto,
@@ -22,7 +23,7 @@ import { PlanningJsonGuard } from './planning-json.guard.js';
  * company only. Origin, session, CSRF (unsafe methods) and the live role are
  * enforced by the global AccessControlGuard; tenant scope and 404 concealment
  * in MonthlyPlansService SQL. SP-12 interactive PATCH/DELETE require a lease
- * and Expected-Version. First publish/replacement remain separate slices.
+ * and Expected-Version. First publish requires request idempotency (SP-13).
  */
 @Controller('api/v1/monthly-plans')
 export class MonthlyPlansController {
@@ -56,6 +57,33 @@ export class MonthlyPlansController {
   @Header('Cache-Control', 'no-store')
   get(@CurrentTenant() tenant: TenantContext, @Param('planId', ResourceIdPipe) planId: string) {
     return this.plans.get(tenant, planId);
+  }
+
+  @Post(':planId/publish')
+  @HttpCode(200)
+  @RequireRoles('COMPANY_ADMIN')
+  @Header('Cache-Control', 'no-store')
+  async publish(
+    @CurrentTenant() tenant: TenantContext,
+    @CorrelationId() correlationId: string,
+    @Param('planId', ResourceIdPipe) planId: string,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const key = parseIdempotencyKey(request);
+    if (request.headers['transfer-encoding'] !== undefined || Number(request.headers['content-length'] ?? 0) > 0) {
+      throw new BadRequestException({ code: 'INVALID_REQUEST_BODY' });
+    }
+    try {
+      const outcome = await this.plans.publish(tenant, planId, key, correlationId);
+      response.setHeader('Idempotency-Replayed', String(outcome.replayed));
+      return outcome.result;
+    } catch (error) {
+      if (error instanceof HttpException && (error.getResponse() as { code?: string }).code === 'IDEMPOTENCY_REQUEST_IN_PROGRESS') {
+        response.setHeader('Retry-After', '1');
+      }
+      throw error;
+    }
   }
 
   @Get(':planId/entries')

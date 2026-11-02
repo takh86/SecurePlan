@@ -37,10 +37,18 @@ try {
     AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.edit_leases'::regclass
       AND conname = 'uq_edit_leases__duty' AND contype = 'u') AS valid`);
   if (!leases.rows[0]?.valid) throw new Error("Missing edit-lease integrity catalogue");
+  const publish = await client.query(`SELECT
+    EXISTS (SELECT 1 FROM schema_migrations WHERE name = '0013_initial_publish_idempotency.sql')
+    AND EXISTS (SELECT 1 FROM pg_class WHERE oid = 'public.idempotency_records'::regclass
+      AND relkind = 'r' AND relpersistence = 'p' AND NOT relrowsecurity AND NOT relforcerowsecurity)
+    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.idempotency_records'::regclass
+      AND conname = 'uq_idempotency_records__scope' AND contype = 'u') AS valid`);
+  if (!publish.rows[0]?.valid) throw new Error("Missing publish idempotency integrity catalogue");
   console.log("PostgreSQL connection and foundation migration verified.");
   console.log("SP-10 migration, revision and unique indexes verified.");
   console.log("SP-11 planning relations and live unique indexes verified.");
   console.log("SP-12 duty edit-lease relation and uniqueness verified.");
+  console.log("SP-13 publish idempotency relation and scope uniqueness verified.");
 } catch {
   console.error(
     "Database verification failed. Check connection and run migrations.",

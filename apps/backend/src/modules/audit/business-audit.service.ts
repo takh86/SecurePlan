@@ -53,7 +53,9 @@ export type BusinessAuditAction =
   | 'DUTY_UPDATED'
   | 'DUTY_REMOVED'
   | 'DUTY_MEMBERSHIP_UPDATED'
-  | 'DUTY_MEMBERSHIP_REMOVED';
+  | 'DUTY_MEMBERSHIP_REMOVED'
+  /** SP-13 owner approval 2026-11-02: bounded first-publication transition only. */
+  | 'MONTHLY_PLAN_PUBLISHED';
 
 export type BusinessAuditEntry = {
   companyId: string;

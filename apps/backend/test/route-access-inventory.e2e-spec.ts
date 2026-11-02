@@ -207,7 +207,8 @@ describe('SP-06 — runtime route access inventory', () => {
         expect({ route: route.key, roles: route.roles }).toEqual({ route: route.key, roles: ['COMPANY_ADMIN'] });
       }
 
-      // SP-11 foundation and SP-12 duty mutations/leases; no publish/employee route.
+      // SP-11 foundation, SP-12 mutations/leases and SP-13 initial publish;
+      // no SP-14 employee route or platform-role business bypass.
       const planningRoutes = handlers.filter((h) => h.key.includes(' /api/v1/monthly-plans'));
       expect(planningRoutes.map((h) => h.key)).toEqual([
         'DELETE /api/v1/monthly-plans/:planId/entries/:entryId',
@@ -220,6 +221,7 @@ describe('SP-06 — runtime route access inventory', () => {
         'POST /api/v1/monthly-plans',
         'POST /api/v1/monthly-plans/:planId/entries',
         'POST /api/v1/monthly-plans/:planId/entries/:entryId/edit-lease',
+        'POST /api/v1/monthly-plans/:planId/publish',
         'PUT /api/v1/monthly-plans/:planId/entries/:entryId/edit-lease',
       ]);
       for (const route of planningRoutes) {

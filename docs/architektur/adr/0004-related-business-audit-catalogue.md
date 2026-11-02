@@ -151,6 +151,22 @@ Lease reconciliation and the concrete L1 protocol are recorded in
 [ADR-0006](0006-duty-edit-leases.md). CR-03 direct Published mutation is preserved;
 publish and the future replacement workflow are not activated by this supplement.
 
+## Supplement 2026-11-02 — SP-13 initial publication audit
+
+The Product Owner explicitly approved the bounded contract proposed in the
+[SP-13 review](../../reviews/sp13-initial-publish-contract.md), in the SP-13
+implementation conversation on 2026-11-02, before introducing the endpoint.
+Independent implementation/security review remains separate.
+
+Exactly one `MONTHLY_PLAN_PUBLISHED` event targets `MONTHLY_PLAN` / plan UUID.
+Old values are `{status: "UNPUBLISHED", publishedAt: null}`; new values are
+`{status: "PUBLISHED", publishedAt: persistedTimestamp}`. The existing envelope
+supplies company, publishing actor, server correlation ID and database event time.
+No roster, names, absence information, raw idempotency key, token or complete
+plan copy is included. Replay and refusal produce no success event. Publication
+metadata, mandatory audit and idempotency completion commit together; failure
+of any of them rolls back the business transaction. No republish event exists.
+
 Retention period, database-role append-only enforcement, privileged access,
 privacy policy, backups and restore proof are separately tracked in
 [#51](https://github.com/takh86/SecurePlan/issues/51) and the

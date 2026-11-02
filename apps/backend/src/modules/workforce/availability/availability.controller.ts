@@ -1,23 +1,15 @@
 import { Body, Controller, Get, Header, HttpCode, HttpException, Param, Post, Query, Req, Res } from '@nestjs/common';
-import { BadRequestException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { RequireRoles } from '../../../auth/authorization/access-metadata.js';
 import { CurrentTenant } from '../../../auth/authorization/current-tenant.decorator.js';
 import type { TenantContext } from '../../../auth/authorization/tenant-context.js';
 import { CorrelationId } from '../../../common/http/correlation-id.decorator.js';
 import { ResourceIdPipe } from '../../../common/http/resource-id.pipe.js';
+import { parseIdempotencyKey } from '../../../common/http/idempotency-key.js';
 import { AvailabilityService } from './availability.service.js';
 import { AvailabilityCommitDto, AvailabilityMonthQueryDto, AvailabilitySelectionDto } from './dto/availability.dto.js';
 
-export function parseIdempotencyKey(request: Pick<Request, 'headers' | 'rawHeaders'>): string {
-  const key = request.headers['idempotency-key'];
-  if (key === undefined) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED' });
-  const count = request.rawHeaders.filter((value, index) => index % 2 === 0 && value.toLowerCase() === 'idempotency-key').length;
-  if (count !== 1 || typeof key !== 'string' || !/^[\x21-\x7e]{8,128}$/.test(key)) {
-    throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_INVALID' });
-  }
-  return key;
-}
+export { parseIdempotencyKey } from '../../../common/http/idempotency-key.js';
 
 @Controller('api/v1/employees/:employeeId/availability')
 export class AvailabilityController {
