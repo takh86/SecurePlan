@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { RequireRoles } from '../../auth/authorization/access-metadata.js';
 import { CurrentTenant } from '../../auth/authorization/current-tenant.decorator.js';
@@ -12,6 +12,7 @@ import {
   ListMonthlyPlansQueryDto,
 } from './dto/monthly-plan.dto.js';
 import { MonthlyPlansService } from './monthly-plans.service.js';
+import { PlanningJsonGuard } from './planning-json.guard.js';
 
 /**
  * SP-11 PR-1 planning slice: five routes, COMPANY_ADMIN of the session's own
@@ -33,6 +34,7 @@ export class MonthlyPlansController {
   }
 
   @Post()
+  @UseGuards(PlanningJsonGuard)
   @HttpCode(201)
   @RequireRoles('COMPANY_ADMIN')
   @Header('Cache-Control', 'no-store')
@@ -67,6 +69,7 @@ export class MonthlyPlansController {
 
   /** Location names the entry resource that the SP-12 PATCH/DELETE address (Phase 8.2/8.3). */
   @Post(':planId/entries')
+  @UseGuards(PlanningJsonGuard)
   @HttpCode(201)
   @RequireRoles('COMPANY_ADMIN')
   @Header('Cache-Control', 'no-store')
@@ -78,7 +81,7 @@ export class MonthlyPlansController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const entry = await this.plans.createEntry(tenant, planId, dto, correlationId);
-    response.location(`/api/v1/monthly-plans/${planId}/entries/${entry.id}`);
+    response.location(`/api/v1/monthly-plans/${planId.toLowerCase()}/entries/${entry.id}`);
     return entry;
   }
 }

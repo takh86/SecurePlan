@@ -19,6 +19,7 @@ import {
   IsEnum,
   IsISO8601,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -100,6 +101,9 @@ export class CreateMonthlyPlanEntryDto {
 
   @ValidateIf(sent)
   @IsArray()
+  // ValidateNested recurses into arrays, including an empty array with no
+  // children to validate. Require one object at each roster position first.
+  @IsObject({ each: true })
   // No silent deduplication: the same employee twice (any letter case) is DUPLICATE_ITEM.
   @ArrayUnique((item: unknown) => {
     const id = (item as { employeeId?: unknown } | null)?.employeeId;

@@ -127,8 +127,59 @@ afterAll(async () => {
 });
 
 describe('SP-11 — access control on every new route (SEC-01, SEC-03)', () => {
+  it('both creates reject unsupported media types, charsets and encodings with 415 and no business/audit writes', async () => {
+    const planId = await createPlan();
+    const before = await planningState(db(), tenantA.companyId);
+    for (const [path, body] of [
+      [BASE, { projectId: north.projectId, monthStart: '2027-04-01' }],
+      [`${BASE}/${planId}/entries`, { dutyDate: '2027-03-10', shiftKind: 'DAY' }],
+    ] as const) {
+      for (const contentType of ['text/plain', 'application/x-www-form-urlencoded', 'application/vnd.api+json', 'application/json; charset=iso-8859-1', 'application/jsonish']) {
+        const response = await http().post(path).set('Origin', ORIGIN).set('Cookie', adminA.cookie)
+          .set('X-CSRF-Token', adminA.csrf).set('Content-Type', contentType).send(JSON.stringify(body));
+        expect([response.status, response.body.code], contentType).toEqual([415, 'UNSUPPORTED_MEDIA_TYPE']);
+        expect(response.headers['content-type']).toMatch(/^application\/problem\+json/);
+        expect(response.body.correlationId).toBe(response.headers['x-correlation-id']);
+      }
+      const encoded = await http().post(path).set('Origin', ORIGIN).set('Cookie', adminA.cookie)
+        .set('X-CSRF-Token', adminA.csrf).set('Content-Type', 'application/json')
+        .set('Content-Encoding', 'unsupported').send(JSON.stringify(body));
+      expect([encoded.status, encoded.body.code]).toEqual([415, 'UNSUPPORTED_MEDIA_TYPE']);
+      const untyped = await http().post(path).set('Origin', ORIGIN).set('Cookie', adminA.cookie)
+        .set('X-CSRF-Token', adminA.csrf).send(JSON.stringify(body)).unset('Content-Type');
+      expect([untyped.status, untyped.body.code]).toEqual([415, 'UNSUPPORTED_MEDIA_TYPE']);
+      const malformed = await http().post(path).set('Origin', ORIGIN).set('Cookie', adminA.cookie)
+        .set('X-CSRF-Token', adminA.csrf).set('Content-Type', 'application/json').send('{');
+      expect([malformed.status, malformed.body.code]).toEqual([400, 'INVALID_REQUEST_BODY']);
+      const empty = await http().post(path).set('Origin', ORIGIN).set('Cookie', adminA.cookie)
+        .set('X-CSRF-Token', adminA.csrf);
+      expect([empty.status, empty.body.code]).toEqual([400, 'VALIDATION_FAILED']);
+    }
+    expect(await planningState(db(), tenantA.companyId)).toEqual(before);
+    const json = await http().post(`${BASE}/${planId.toUpperCase()}/entries`).set('Origin', ORIGIN)
+      .set('Cookie', adminA.cookie).set('X-CSRF-Token', adminA.csrf)
+      .set('Content-Type', 'Application/JSON; charset=UTF-8').send(JSON.stringify({ dutyDate: '2027-03-10', shiftKind: 'DAY' }));
+    expect(json.status).toBe(201);
+    expect(json.headers.location).toBe(`${BASE}/${planId}/entries/${json.body.id}`);
+  });
+
+  it('malformed roster members, including nested empty arrays, return 400 without mutation or audit', async () => {
+    const planId = await createPlan();
+    const before = await planningState(db(), tenantA.companyId);
+    const valid = { employeeId: mira.employeeId, dutyRole: 'EMPLOYEE' };
+    for (const assignments of [[[]], [[valid]], [[[valid]]], [null], [false], [17], ['private-rejected-value'], [{}],
+      [{ employeeId: mira.employeeId }], [{ dutyRole: 'EMPLOYEE' }], [valid, []], {}, 'invalid']) {
+      const response = await write(`${BASE}/${planId}/entries`, adminA, { dutyDate: '2027-03-10', shiftKind: 'DAY', assignments });
+      expect([response.status, response.body.code], JSON.stringify(assignments)).toEqual([400, 'VALIDATION_FAILED']);
+      expect(JSON.stringify(response.body)).not.toContain('private-rejected-value');
+      expect(await auditRows(tenantA.companyId, response.headers['x-correlation-id'])).toEqual([]);
+      expect(await planningState(db(), tenantA.companyId)).toEqual(before);
+    }
+  });
+
   it('anonymous 401, EMPLOYEE 403, foreign admin 404; CSRF and Origin are enforced on the creates', async () => {
     const planId = await createPlan();
+    const before = await planningState(db(), tenantA.companyId);
     const routes = [
       ['GET', BASE], ['GET', `${BASE}/${planId}`], ['GET', `${BASE}/${planId}/entries`],
       ['POST', BASE], ['POST', `${BASE}/${planId}/entries`],
@@ -153,10 +204,40 @@ describe('SP-11 — access control on every new route (SEC-01, SEC-03)', () => {
     expect(oversized.status).toBe(413);
     expect(oversized.body.code).toBe('REQUEST_BODY_TOO_LARGE');
     expect((await db().query('SELECT count(*)::int AS n FROM duties WHERE company_id = $1', [tenantA.companyId])).rows[0].n).toBe(0);
+    expect(await planningState(db(), tenantA.companyId)).toEqual(before);
   });
 });
 
 describe('SP-11 — monthly plans (API-01, AUD-01)', () => {
+  it('ARCHIVED projects conceal plan detail, entry list and entry creation without mutation or audit', async () => {
+    const planId = await createPlan();
+    await write(`${BASE}/${planId}/entries`, adminA, { dutyDate: '2027-03-10', shiftKind: 'DAY' }).expect(201);
+    await db().query("UPDATE projects SET status = 'ARCHIVED' WHERE id = $1", [north.projectId]);
+    const before = await planningState(db(), tenantA.companyId);
+    for (const response of [
+      await read(`${BASE}/${planId}`, adminA),
+      await read(`${BASE}/${planId}/entries`, adminA),
+      await write(`${BASE}/${planId}/entries`, adminA, { dutyDate: '2027-03-11', shiftKind: 'DAY' }),
+    ]) {
+      expect([response.status, response.body.code]).toEqual([404, 'RESOURCE_NOT_FOUND']);
+      expect(JSON.stringify(response.body)).not.toContain(planId);
+    }
+    expect(await planningState(db(), tenantA.companyId)).toEqual(before);
+  });
+
+  it.each(['MONTHLY_PLAN_CREATED', 'DUTY_CREATED'] as const)('%s audit insertion failure rolls back the entire create', async (action) => {
+    const planId = await createPlan();
+    await bootApp(new FailingAudit(action));
+    const before = await planningState(db(), tenantA.companyId);
+    const response = action === 'MONTHLY_PLAN_CREATED'
+      ? await write(BASE, adminA, { projectId: north.projectId, monthStart: '2027-04-01' })
+      : await write(`${BASE}/${planId}/entries`, adminA, { dutyDate: '2027-03-10', shiftKind: 'DAY',
+        assignments: [{ employeeId: mira.employeeId, dutyRole: 'EMPLOYEE' }] });
+    expect([response.status, response.body.code]).toEqual([500, 'INTERNAL_ERROR']);
+    expect(JSON.stringify(response.body)).not.toMatch(/synthetic|INSERT|audit_event/);
+    expect(await planningState(db(), tenantA.companyId)).toEqual(before);
+  });
+
   it('creates an UNPUBLISHED plan with Location and exactly one bounded audit event', async () => {
     const response = await write(BASE, adminA, { projectId: north.projectId.toUpperCase(), monthStart: MONTH }).expect(201);
     expect(response.headers['cache-control']).toBe('no-store');
@@ -227,6 +308,19 @@ describe('SP-11 — monthly plans (API-01, AUD-01)', () => {
 });
 
 describe('SP-11 — duty creation (API-02..06, AUD-01..03)', () => {
+  it('DAY precedes NIGHT on the same date regardless of insertion order; entry Location is reserved for SP-12', async () => {
+    const planId = await createPlan();
+    for (const shiftKind of ['NIGHT', 'DAY']) {
+      const created = await write(`${BASE}/${planId}/entries`, adminA, { dutyDate: '2027-03-10', shiftKind }).expect(201);
+      // The approved create contract reserves this resource URI. No single-entry
+      // GET ships in this slice; clients use the entries collection until SP-12.
+      const deferred = await read(created.headers.location, adminA);
+      expect([deferred.status, deferred.body.code]).toEqual([404, 'RESOURCE_NOT_FOUND']);
+    }
+    const entries = await read(`${BASE}/${planId}/entries`, adminA).expect(200);
+    expect(entries.body.items.map((entry: { shiftKind: string }) => entry.shiftKind)).toEqual(['DAY', 'NIGHT']);
+  });
+
   it('creates an empty duty and a staffed duty atomically, with exact snapshots, DTO and audit events', async () => {
     const planId = await createPlan();
     const empty = await write(`${BASE}/${planId}/entries`, adminA, { dutyDate: '2027-03-10', shiftKind: 'DAY' }).expect(201);
