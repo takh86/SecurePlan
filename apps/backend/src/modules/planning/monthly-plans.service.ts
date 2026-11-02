@@ -1,8 +1,7 @@
 /**
- * SP-11 PR-1 planning slice (SP11A-R1 Rev3.1 with K1-K3; COMPANY_ADMIN only):
- * create/list/read monthly plans and create/list/read duties (MonthlyPlanEntry).
- * No publish, edit, removal, lease or replacement route exists in this slice,
- * so plans created here stay UNPUBLISHED (the accepted pre-publication boundary).
+ * SP-11 foundation plus owner-approved SP-12 duty edits/removal and leases.
+ * COMPANY_ADMIN only. First publish and replacement remain separate slices;
+ * CR-03 allows authorized, revalidated mutation of current PUBLISHED plans.
  *
  * Tenant rules (SP-06): companyId, accountId and role come only from the
  * trusted TenantContext; every statement filters by company_id on every
@@ -11,8 +10,9 @@
  *
  * Writes follow LOCK-01-L1 (T1): A accounts (lockAccountsPrefix, actor SHARE)
  * -> C company SHARE -> E employees (sorted, NO KEY UPDATE) -> P project SHARE
- * -> M monthly assignments (sorted, SHARE) -> L plan SHARE -> D/A2 inserts ->
- * Z audit. Every check after a lock is a NEW statement (READ COMMITTED sees
+ * -> M monthly assignments (sorted, SHARE) -> L plan SHARE -> D UPDATE/inserts
+ * -> A2 memberships UPDATE/inserts -> Q lease UPDATE -> Z audit. Every check
+ * after a lock is a NEW statement (READ COMMITTED sees
  * what the writers it waited for committed). The parent locks also protect
  * absent rows: assignment, employment, absence and deactivation writers hold
  * conflicting employee locks; project status and configuration writers hold
@@ -41,6 +41,7 @@ import type {
   CreateMonthlyPlanEntryDto,
   ListMonthlyPlanEntriesQueryDto,
   ListMonthlyPlansQueryDto,
+  UpdateMonthlyPlanEntryDto,
 } from './dto/monthly-plan.dto.js';
 import { DutyTimeZoneError, assertDutyTimeResolverReady, resolveDutyInterval } from './duty-time-resolver.js';
 import {
@@ -51,6 +52,8 @@ import {
   monthlyPlanColumns,
   toMonthlyPlanEntryResponse,
   toMonthlyPlanResponse,
+  toDutyAssignmentResponse,
+  toDutyVersion,
   type DutyRow,
   type MembershipRow,
   type MonthlyPlanRow,
@@ -63,6 +66,7 @@ import type {
 } from './monthly-plan.types.js';
 import { PLANNING_WRITER_TIMEOUTS } from './planning-locks.js';
 import { assertPlanningSchemaComplete } from './planning-schema.js';
+import { acquireDutyLease, assertDutyLease, editLeaseTtl, releaseDutyLease, renewDutyLease, type EditLeaseResponse } from './duty-edit-leases.js';
 
 const ADMIN_ONLY = ['COMPANY_ADMIN'] as const;
 const DEFAULT_PAGE_SIZE = 25;
@@ -98,6 +102,26 @@ type LockedEmployee = {
   shift_eligibility: string;
 };
 
+type DutySnapshot = DutyRow & {
+  time_zone: string;
+  config_month: string;
+  start_local: string;
+  end_local: string;
+};
+const snapshotColumns = (alias: string) => `${dutyColumns(alias)}, ${alias}.time_zone,
+  to_char(${alias}.config_effective_from_month, 'YYYY-MM-DD') AS config_month,
+  left(${alias}.start_local::text, 5) AS start_local, left(${alias}.end_local::text, 5) AS end_local`;
+const removalColumn = `to_char(removed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS removed_at`;
+const memberValues = (row: MembershipRow) => {
+  const member = toDutyAssignmentResponse(row);
+  return { dutyId: row.duty_id, employeeId: member.employeeId, dutyRole: member.dutyRole, source: member.source };
+};
+const dutyValues = (planId: string, row: DutyRow) => {
+  const entry = toMonthlyPlanEntryResponse(row, [], new Set());
+  return { planId, dutyDate: entry.dutyDate, shiftKind: entry.shiftKind, startsAt: entry.startsAt, endsAt: entry.endsAt, version: entry.version };
+};
+const memberSignature = (members: MembershipRow[]) => JSON.stringify([...members].sort((a, b) => a.id.localeCompare(b.id)));
+
 @Injectable()
 export class MonthlyPlansService implements OnModuleInit {
   constructor(
@@ -109,6 +133,7 @@ export class MonthlyPlansService implements OnModuleInit {
   /** T6: the application does not start if the resolver misses an approved D6 golden. */
   onModuleInit(): void {
     assertDutyTimeResolverReady();
+    editLeaseTtl();
   }
 
   async list(tenant: TenantContext, query: ListMonthlyPlansQueryDto): Promise<MonthlyPlanPage> {
@@ -440,6 +465,233 @@ export class MonthlyPlansService implements OnModuleInit {
     });
   }
 
+  acquireLease(tenant: TenantContext, planId: string, dutyId: string): Promise<EditLeaseResponse> {
+    return this.leaseCommand(tenant, planId, dutyId, (client) => acquireDutyLease(client, tenant, dutyId));
+  }
+
+  renewLease(tenant: TenantContext, planId: string, dutyId: string, token: string | string[]): Promise<EditLeaseResponse> {
+    return this.leaseCommand(tenant, planId, dutyId, (client) => renewDutyLease(client, tenant, dutyId, token));
+  }
+
+  releaseLease(tenant: TenantContext, planId: string, dutyId: string, token: string | string[]): Promise<void> {
+    return this.leaseCommand(tenant, planId, dutyId, (client) => releaseDutyLease(client, tenant, dutyId, token));
+  }
+
+  /** Lease commands have no employee work: A/C -> P SHARE -> L SHARE -> D UPDATE -> Q. */
+  private leaseCommand<T>(tenant: TenantContext, planId: string, dutyId: string, work: (client: PoolClient) => Promise<T>): Promise<T> {
+    return this.database.withTransaction(async (client) => {
+      await client.query(PLANNING_WRITER_TIMEOUTS);
+      await lockAccountsPrefix(client, tenant, ADMIN_ONLY);
+      await assertPlanningSchemaComplete(client);
+      const plan = await this.visiblePlan(client, tenant, planId);
+      requireRow(await client.query(
+        `SELECT 1 FROM projects WHERE company_id = $1 AND id = $2 AND status IN ('ACTIVE', 'INACTIVE') FOR SHARE`,
+        [tenant.companyId, plan.project_id],
+      ));
+      requireRow(await client.query('SELECT 1 FROM public.monthly_plans WHERE company_id = $1 AND id = $2 FOR SHARE', [tenant.companyId, plan.id]));
+      requireRow(await client.query(
+        `SELECT 1 FROM public.duties WHERE company_id = $1 AND monthly_plan_id = $2 AND id = $3 AND removed_at IS NULL FOR UPDATE`,
+        [tenant.companyId, plan.id, dutyId],
+      ));
+      return work(client);
+    });
+  }
+
+  /**
+   * Discovery determines the complete employee lock set; it never authorizes
+   * eligibility. Fresh reads after every wait, then L/D/A2/Q in L1 order.
+   * A changed discovery set aborts; never acquire a newly discovered E lock late.
+   * Lease authentication precedes version/drift conflicts and true no-op.
+   */
+  private async lockMutation(
+    client: PoolClient, tenant: TenantContext, planId: string, dutyId: string,
+    expectedVersion: number, token: string | string[], dto?: UpdateMonthlyPlanEntryDto,
+  ) {
+    await client.query(PLANNING_WRITER_TIMEOUTS);
+    await lockAccountsPrefix(client, tenant, ADMIN_ONLY);
+    await assertPlanningSchemaComplete(client);
+    const plan = await this.visiblePlan(client, tenant, planId);
+    if (dto?.dutyDate !== undefined && dto.dutyDate.slice(0, 8) !== plan.month_start.slice(0, 8)) {
+      throw new BadRequestException({ code: 'DUTY_DATE_OUTSIDE_PLAN_MONTH' });
+    }
+    const discovery = requireRow(await client.query<DutySnapshot>(
+      `SELECT ${snapshotColumns('d')} FROM public.duties AS d
+       WHERE d.company_id = $1 AND d.monthly_plan_id = $2 AND d.id = $3 AND d.removed_at IS NULL`,
+      [tenant.companyId, plan.id, dutyId],
+    ));
+    const discoveredMembers = await this.activeMembers(client, tenant, [dutyId]);
+    const roster = dto?.assignments === undefined
+      ? new Map(discoveredMembers.map((member) => [member.employee_id, member.duty_function]))
+      : new Map(dto.assignments.map((member) => [member.employeeId.toLowerCase(), dutyRoleToDb(member.dutyRole)]));
+    const employeeIds = [...new Set([...roster.keys(), ...discoveredMembers.map((member) => member.employee_id)])].sort();
+    const employees = employeeIds.length === 0 ? [] : (await client.query<LockedEmployee>(
+      `SELECT id, status, shift_eligibility, to_char(employment_start, 'YYYY-MM-DD') AS employment_start,
+              to_char(employment_end, 'YYYY-MM-DD') AS employment_end
+       FROM employees WHERE company_id = $1 AND id = ANY($2::uuid[]) ORDER BY id FOR NO KEY UPDATE`,
+      [tenant.companyId, employeeIds],
+    )).rows;
+    if (employees.length !== employeeIds.length) throw new NotFoundException({ code: 'RESOURCE_NOT_FOUND' });
+    const project = requireRow(await client.query<{ status: string }>(
+      `SELECT status FROM projects WHERE company_id = $1 AND id = $2 AND status IN ('ACTIVE', 'INACTIVE') FOR SHARE`,
+      [tenant.companyId, plan.project_id],
+    ));
+    const links = employeeIds.length === 0 ? [] : (await client.query<{ employee_id: string; project_id: string }>(
+      `SELECT employee_id, project_id FROM project_assignments
+       WHERE company_id = $1 AND employee_id = ANY($2::uuid[]) AND planning_month = $3::date ORDER BY id FOR SHARE`,
+      [tenant.companyId, employeeIds, plan.month_start],
+    )).rows;
+    requireRow(await client.query('SELECT 1 FROM public.monthly_plans WHERE company_id = $1 AND id = $2 FOR SHARE', [tenant.companyId, plan.id]));
+    const duty = requireRow(await client.query<DutySnapshot>(
+      `SELECT ${snapshotColumns('d')} FROM public.duties AS d
+       WHERE d.company_id = $1 AND d.monthly_plan_id = $2 AND d.id = $3 AND d.removed_at IS NULL FOR UPDATE`,
+      [tenant.companyId, plan.id, dutyId],
+    ));
+    const members = (await client.query<MembershipRow>(
+      `SELECT ${MEMBERSHIP_COLUMNS} FROM public.plan_assignments AS pa
+       WHERE pa.company_id = $1 AND pa.duty_id = $2 AND pa.state = 'ACTIVE' ORDER BY pa.id FOR UPDATE`,
+      [tenant.companyId, dutyId],
+    )).rows;
+    await assertDutyLease(client, tenant, dutyId, token);
+    if (toDutyVersion(duty.version) !== expectedVersion || JSON.stringify(discovery) !== JSON.stringify(duty)
+      || memberSignature(discoveredMembers) !== memberSignature(members)) conflict('PLAN_CONCURRENT_MODIFICATION');
+    return { plan, duty, members, roster, employees, links, project };
+  }
+
+  async updateEntry(
+    tenant: TenantContext, planId: string, dutyId: string, dto: UpdateMonthlyPlanEntryDto,
+    expectedVersion: number, token: string | string[], correlationId: string,
+  ): Promise<MonthlyPlanEntryResponse> {
+    if (dto.dutyDate === undefined && dto.shiftKind === undefined && dto.assignments === undefined) {
+      throw new BadRequestException({ code: 'EMPTY_PATCH' });
+    }
+    if (dto.dutyDate !== undefined && !validCivilDate(dto.dutyDate)) throw new BadRequestException({ code: 'INVALID_DATE' });
+    return this.database.withTransaction(async (client) => {
+      const { plan, duty, members, roster, employees, links, project } =
+        await this.lockMutation(client, tenant, planId, dutyId, expectedVersion, token, dto);
+      const day = dto.dutyDate ?? duty.duty_date;
+      const kind = dto.shiftKind === undefined ? duty.shift_kind : shiftKindToDb(dto.shiftKind);
+      const timeChanged = day !== duty.duty_date || kind !== duty.shift_kind;
+      const rosterChanged = roster.size !== members.length || members.some((member) => roster.get(member.employee_id) !== member.duty_function);
+      if (!timeChanged && !rosterChanged) {
+        return toMonthlyPlanEntryResponse(duty, members, await this.unavailableKeys(client, tenant, members, day, day));
+      }
+      if (project.status !== 'ACTIVE') conflict('PROJECT_INACTIVE');
+      const slot = await client.query(
+        `SELECT 1 FROM public.duties WHERE company_id = $1 AND monthly_plan_id = $2 AND duty_date = $3::date
+           AND shift_kind = $4 AND id <> $5 AND removed_at IS NULL`,
+        [tenant.companyId, plan.id, day, kind, dutyId],
+      );
+      if (slot.rowCount !== 0) conflict('DUTY_ALREADY_EXISTS');
+      const rule = await client.query<{ effective_from_month: string; start_local: string; end_local: string }>(
+        `SELECT to_char(sc.effective_from_month, 'YYYY-MM-DD') AS effective_from_month,
+                left(sc.start_local::text, 5) AS start_local, left(sc.end_local::text, 5) AS end_local
+         FROM shift_configurations AS sc WHERE sc.company_id = $1 AND sc.project_id = $2 AND sc.shift_kind = $4
+           AND sc.effective_from_month = (SELECT max(v.effective_from_month) FROM shift_configurations AS v
+             WHERE v.company_id = $1 AND v.project_id = $2 AND v.effective_from_month <= $3::date)`,
+        [tenant.companyId, plan.project_id, plan.month_start, kind],
+      );
+      if (rule.rowCount !== 1) conflict('SHIFT_CONFIGURATION_MISSING');
+      const configuration = rule.rows[0];
+      const zone = timeChanged ? await this.companyZone(client, tenant) : duty.time_zone;
+      const interval = timeChanged ? resolveDutyInterval({ zone, dutyDate: day, startLocal: configuration.start_local, endLocal: configuration.end_local })
+        : { startsAt: duty.starts_at, endsAt: duty.ends_at };
+      if (interval === null) conflict('DUTY_TIME_RANGE_INVALID');
+      await this.assertStaffing(client, tenant, employees.filter((employee) => roster.has(employee.id)), links,
+        plan.project_id, day, kind, interval, dutyId);
+
+      let updated: DutyRow;
+      try {
+        const result = await client.query<DutyRow>(
+          `UPDATE public.duties AS d SET duty_date = $4::date, shift_kind = $5, starts_at = $6::timestamptz, ends_at = $7::timestamptz,
+             time_zone = $8, config_effective_from_month = $9::date, start_local = $10::time, end_local = $11::time,
+             concurrency_version = concurrency_version + 1, updated_at = clock_timestamp()
+           WHERE d.company_id = $1 AND d.monthly_plan_id = $2 AND d.id = $3 AND d.removed_at IS NULL
+             AND d.concurrency_version = $12 RETURNING ${dutyColumns('d')}`,
+          [tenant.companyId, plan.id, dutyId, day, kind, interval.startsAt, interval.endsAt, zone,
+            timeChanged ? configuration.effective_from_month : duty.config_month,
+            timeChanged ? configuration.start_local : duty.start_local, timeChanged ? configuration.end_local : duty.end_local, expectedVersion],
+        );
+        if (result.rowCount !== 1) conflict('PLAN_CONCURRENT_MODIFICATION');
+        updated = result.rows[0];
+      } catch (error) {
+        if (uniqueViolationConstraint(error) === LIVE_SLOT_CONSTRAINT) conflict('DUTY_ALREADY_EXISTS');
+        throw error;
+      }
+      const removed = members.filter((member) => !roster.has(member.employee_id));
+      const removedRows = removed.length === 0 ? [] : (await client.query<MembershipRow & { removed_at: string }>(
+        `UPDATE public.plan_assignments AS pa SET state = 'REMOVED', removed_at = clock_timestamp(), updated_at = clock_timestamp()
+         WHERE pa.company_id = $1 AND pa.duty_id = $2 AND pa.id = ANY($3::uuid[]) AND pa.state = 'ACTIVE'
+         RETURNING ${MEMBERSHIP_COLUMNS}, ${removalColumn}`,
+        [tenant.companyId, dutyId, removed.map((member) => member.id)],
+      )).rows;
+      const changed = members.filter((member) => roster.has(member.employee_id) && roster.get(member.employee_id) !== member.duty_function);
+      const changedRows = changed.length === 0 ? [] : (await client.query<MembershipRow>(
+        `UPDATE public.plan_assignments AS pa SET duty_function = t.role, updated_at = clock_timestamp()
+         FROM unnest($3::uuid[], $4::text[]) AS t(id, role)
+         WHERE pa.company_id = $1 AND pa.duty_id = $2 AND pa.id = t.id AND pa.state = 'ACTIVE' RETURNING ${MEMBERSHIP_COLUMNS}`,
+        [tenant.companyId, dutyId, changed.map((member) => member.id), changed.map((member) => roster.get(member.employee_id))],
+      )).rows;
+      const oldIds = new Set(members.map((member) => member.employee_id));
+      const added = [...roster.keys()].filter((id) => !oldIds.has(id)).sort();
+      const addedRows = added.length === 0 ? [] : (await client.query<MembershipRow>(
+        `INSERT INTO public.plan_assignments AS pa (company_id, duty_id, employee_id, duty_function)
+         SELECT $1, $2, t.employee_id, t.role FROM unnest($3::uuid[], $4::text[]) AS t(employee_id, role)
+         RETURNING ${MEMBERSHIP_COLUMNS}`,
+        [tenant.companyId, dutyId, added, added.map((id) => roster.get(id))],
+      )).rows;
+      await this.audit.recordBusinessAction(client, {
+        companyId: tenant.companyId, actorAccountId: tenant.accountId, action: 'DUTY_UPDATED',
+        resourceType: 'DUTY', resourceId: dutyId, oldValues: dutyValues(plan.id, duty), newValues: dutyValues(plan.id, updated), correlationId,
+      });
+      for (const member of removedRows) await this.audit.recordBusinessAction(client, {
+        companyId: tenant.companyId, actorAccountId: tenant.accountId, action: 'DUTY_MEMBERSHIP_REMOVED',
+        resourceType: 'DUTY_ASSIGNMENT', resourceId: member.id, oldValues: memberValues(member),
+        newValues: { dutyId, state: 'REMOVED', removedAt: member.removed_at }, correlationId,
+      });
+      for (const member of changedRows) await this.audit.recordBusinessAction(client, {
+        companyId: tenant.companyId, actorAccountId: tenant.accountId, action: 'DUTY_MEMBERSHIP_UPDATED',
+        resourceType: 'DUTY_ASSIGNMENT', resourceId: member.id, oldValues: memberValues(members.find((old) => old.id === member.id)!),
+        newValues: memberValues(member), correlationId,
+      });
+      for (const member of addedRows) await this.audit.recordBusinessAction(client, {
+        companyId: tenant.companyId, actorAccountId: tenant.accountId, action: 'DUTY_MEMBERSHIP_ADDED',
+        resourceType: 'DUTY_ASSIGNMENT', resourceId: member.id, newValues: memberValues(member), correlationId,
+      });
+      const currentMembers = await this.activeMembers(client, tenant, [dutyId]);
+      return toMonthlyPlanEntryResponse(updated, currentMembers, await this.unavailableKeys(client, tenant, currentMembers, day, day));
+    });
+  }
+
+  async removeEntry(
+    tenant: TenantContext, planId: string, dutyId: string, expectedVersion: number, token: string | string[], correlationId: string,
+  ): Promise<void> {
+    await this.database.withTransaction(async (client) => {
+      const { plan, duty } = await this.lockMutation(client, tenant, planId, dutyId, expectedVersion, token);
+      const removed = await client.query<DutyRow & { removed_at: string }>(
+        `UPDATE public.duties AS d SET removed_at = clock_timestamp(), concurrency_version = concurrency_version + 1, updated_at = clock_timestamp()
+         WHERE d.company_id = $1 AND d.monthly_plan_id = $2 AND d.id = $3 AND d.concurrency_version = $4 AND d.removed_at IS NULL
+         RETURNING ${dutyColumns('d')}, ${removalColumn}`,
+        [tenant.companyId, plan.id, dutyId, expectedVersion],
+      );
+      if (removed.rowCount !== 1) conflict('PLAN_CONCURRENT_MODIFICATION');
+      const timestamp = removed.rows[0].removed_at;
+      const memberships = await client.query<MembershipRow & { removed_at: string }>(
+        `UPDATE public.plan_assignments AS pa SET state = 'REMOVED', removed_at = $3::timestamptz, updated_at = clock_timestamp()
+         WHERE pa.company_id = $1 AND pa.duty_id = $2 AND pa.state = 'ACTIVE' RETURNING ${MEMBERSHIP_COLUMNS}, ${removalColumn}`,
+        [tenant.companyId, dutyId, timestamp],
+      );
+      await client.query('UPDATE public.edit_leases SET released_at = $3::timestamptz WHERE company_id = $1 AND duty_id = $2', [tenant.companyId, dutyId, timestamp]);
+      await this.audit.recordBusinessAction(client, {
+        companyId: tenant.companyId, actorAccountId: tenant.accountId, action: 'DUTY_REMOVED', resourceType: 'DUTY', resourceId: dutyId,
+        oldValues: dutyValues(plan.id, duty), newValues: { version: toDutyVersion(removed.rows[0].version), removedAt: timestamp }, correlationId,
+      });
+      for (const member of memberships.rows) await this.audit.recordBusinessAction(client, {
+        companyId: tenant.companyId, actorAccountId: tenant.accountId, action: 'DUTY_MEMBERSHIP_REMOVED', resourceType: 'DUTY_ASSIGNMENT', resourceId: member.id,
+        oldValues: memberValues(member), newValues: { dutyId, state: 'REMOVED', removedAt: member.removed_at }, correlationId,
+      });
+    });
+  }
+
   /**
    * Staffing rules per employee in ascending id order; the first violation
    * rejects the whole command. Employment uses the inclusive local duty date
@@ -457,6 +709,7 @@ export class MonthlyPlansService implements OnModuleInit {
     dutyDate: string,
     kind: string,
     interval: { startsAt: string; endsAt: string },
+    excludingDuty: string | null = null,
   ): Promise<void> {
     if (employees.length === 0) return;
     const ids = employees.map((employee) => employee.id);
@@ -469,8 +722,9 @@ export class MonthlyPlansService implements OnModuleInit {
        JOIN public.duties AS d ON d.company_id = pa.company_id AND d.id = pa.duty_id
        WHERE pa.company_id = $1 AND pa.employee_id = ANY($2::uuid[]) AND pa.state = 'ACTIVE'
          AND d.removed_at IS NULL
+         AND ($5::uuid IS NULL OR d.id <> $5::uuid)
          AND d.starts_at < $4::timestamptz AND d.ends_at > $3::timestamptz`,
-      [tenant.companyId, ids, interval.startsAt, interval.endsAt],
+      [tenant.companyId, ids, interval.startsAt, interval.endsAt, excludingDuty],
     )).rows.map((row) => row.employee_id));
 
     for (const employee of employees) {

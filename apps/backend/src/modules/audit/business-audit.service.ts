@@ -43,12 +43,17 @@ export type BusinessAuditAction =
   | 'EMPLOYEE_AVAILABILITY_CLEARED'
   /**
    * SP-11 owner ratification C2 (SP11A-R1 Rev3.1, 31.10.2026; ADR-0004 supplement):
-   * exactly these three bounded creation events. Edit, removal and publish
-   * actions are separate later decisions.
+   * exactly these three bounded creation events. The SP-12 approval below
+   * extends membership addition to edits and adds mutation actions; publish is separate.
    */
   | 'MONTHLY_PLAN_CREATED'
   | 'DUTY_CREATED'
-  | 'DUTY_MEMBERSHIP_ADDED';
+  | 'DUTY_MEMBERSHIP_ADDED'
+  /** Owner approval 2026-11-02 / ADR-0004 SP-12 supplement; independent review separate. */
+  | 'DUTY_UPDATED'
+  | 'DUTY_REMOVED'
+  | 'DUTY_MEMBERSHIP_UPDATED'
+  | 'DUTY_MEMBERSHIP_REMOVED';
 
 export type BusinessAuditEntry = {
   companyId: string;
