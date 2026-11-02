@@ -15,7 +15,7 @@ import { MonthlyPlansService } from './monthly-plans.service.js';
 import { PlanningJsonGuard } from './planning-json.guard.js';
 
 /**
- * SP-11 PR-1 planning slice: five routes, COMPANY_ADMIN of the session's own
+ * SP-11 foundation and SP-12 single-entry read: COMPANY_ADMIN of the session's own
  * company only. Origin, session, CSRF (unsafe methods) and the live role are
  * enforced by the global AccessControlGuard; tenant scope and 404 concealment
  * in MonthlyPlansService SQL. No publish, edit, removal or lease route exists
@@ -67,7 +67,18 @@ export class MonthlyPlansController {
     return this.plans.listEntries(tenant, planId, query);
   }
 
-  /** Location names the entry resource that the SP-12 PATCH/DELETE address (Phase 8.2/8.3). */
+  @Get(':planId/entries/:entryId')
+  @RequireRoles('COMPANY_ADMIN')
+  @Header('Cache-Control', 'no-store')
+  getEntry(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('planId', ResourceIdPipe) planId: string,
+    @Param('entryId', ResourceIdPipe) entryId: string,
+  ) {
+    return this.plans.getEntry(tenant, planId, entryId);
+  }
+
+  /** Location names the entry resource (Phase 8.2/8.3; dereferenceable since SP-12). */
   @Post(':planId/entries')
   @UseGuards(PlanningJsonGuard)
   @HttpCode(201)

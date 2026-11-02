@@ -16,8 +16,24 @@ export async function isolatedPlanningDatabase() {
   const connectionString = url.href;
   const pool = new pg.Pool({ connectionString, max: 10, connectionTimeoutMillis: 5000 });
   const close = async () => {
-    await pool.end();
-    try { await admin.query(`DROP DATABASE ${name} WITH (FORCE)`); } finally { await admin.end(); }
+    try {
+      // Never terminate active test connections with DROP DATABASE ... FORCE:
+      // PostgreSQL reports 57P01 to their clients, which becomes an unhandled
+      // error in Vitest even when individual assertions have passed.
+      await pool.end();
+      const sessions = await admin.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM pg_stat_activity WHERE datname = $1',
+        [name],
+      );
+      if (Number(sessions.rows[0].count) !== 0) {
+        throw new Error('Isolated planning database still has active connections after pool shutdown');
+      }
+      // Normal DROP is intentionally strict: unexpected clients must be
+      // diagnosed and closed, never killed in order to make a test go green.
+      await admin.query(`DROP DATABASE ${name}`);
+    } finally {
+      await admin.end();
+    }
   };
   try {
     const dir = fileURLToPath(new URL('../../migrations/', import.meta.url));
