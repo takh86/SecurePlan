@@ -493,10 +493,14 @@ describe('T1 DEC-1.4 — account prefix and deactivation (§3.5 real-schema proo
       const changer = await begin();
       await changer.client.query(`UPDATE accounts SET ${change} WHERE id = $1`, [tenantA.admin.accountId]);
       const worker = await begin();
-      const locking = lockAccountsPrefix(worker.client, adminContext(tenantA.admin), ['COMPANY_ADMIN']);
+      // Attach rejection handling immediately: the account update may commit and
+      // reject the lock promise before the wait-observation finishes on a fast CI runner.
+      // Otherwise Vitest may report an unhandled rejection despite a passing assertion.
+      const locking = lockAccountsPrefix(worker.client, adminContext(tenantA.admin), ['COMPANY_ADMIN'])
+        .then(() => ({ outcome: 'resolved' as const }), (error: unknown) => ({ outcome: 'rejected' as const, error }));
       await waitForBlocked(changer.pid, 1);
       await finish(changer, 'COMMIT');
-      await expect(locking).rejects.toMatchObject({ response: { code } });
+      expect(await locking).toMatchObject({ outcome: 'rejected', error: { response: { code } } });
       await finish(worker, 'ROLLBACK');
       await db().query("UPDATE accounts SET status = 'ACTIVE', role = 'COMPANY_ADMIN' WHERE id = $1", [tenantA.admin.accountId]);
     }
