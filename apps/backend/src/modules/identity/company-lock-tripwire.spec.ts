@@ -4,7 +4,7 @@
  * planner. It is cycle-free only because the company row is a SHARE-only leaf:
  * no application code or migration writes or exclusively locks `companies`.
  * This test enforces that invariant (DEC-1.2) without a database:
- * - no UPDATE / DELETE FROM / INSERT INTO / TRUNCATE of companies;
+ * - no UPDATE / DELETE FROM / INSERT INTO / MERGE INTO / TRUNCATE of companies;
  * - no LOCK TABLE naming companies;
  * - no FOR UPDATE / FOR NO KEY UPDATE that covers the company row (an OF list
  *   naming its alias, or no OF list in a statement reading companies);
@@ -56,18 +56,25 @@ export function sqlFragments(text: string, isSql: boolean): string[] {
   ].map((match) => match[0]);
 }
 
-const WRITE = /\b(?:UPDATE|DELETE\s+FROM|INSERT\s+INTO|TRUNCATE)\s+(?:ONLY\s+)?(?:public\.)?companies\b/i;
+/** Normalize static quoted identifiers, including quotes escaped in TS strings. */
+function normalizeIdentifiers(text: string): string {
+  return text.replaceAll('\\"', '"').replace(/"([A-Za-z_][A-Za-z0-9_$]*)"/g, '$1');
+}
+
+const WRITE = /\b(?:UPDATE|DELETE\s+FROM|INSERT\s+INTO|MERGE\s+INTO|TRUNCATE(?:\s+TABLE)?)\s+(?:ONLY\s+)?(?:public\s*\.\s*)?companies\b/i;
 const LOCK_TABLE = /\bLOCK\s+(?:TABLE\s+)?(?:ONLY\s+)?[^;`'"]*\bcompanies\b/i;
-const READS_COMPANIES = /\b(?:FROM|JOIN)\s+(?:public\.)?companies\b(?:\s+(?:AS\s+)?(?!WHERE\b|ON\b|JOIN\b|FOR\b)([A-Za-z_]\w*))?/i;
+const READS_COMPANIES = /\b(?:FROM|JOIN)\s+(?:ONLY\s+)?(?:public\s*\.\s*)?companies\b(?:\s+(?:AS\s+)?(?!WHERE\b|ON\b|JOIN\b|FOR\b)([A-Za-z_]\w*))?/i;
 const EXCLUSIVE = /\bFOR\s+(?:NO\s+KEY\s+)?UPDATE\b(?:\s+OF\s+([A-Za-z_][\w\s,]*?))?(?=\s*(?:\bFOR\b|\bNOWAIT\b|\bSKIP\b|[`'";)]|$))/gi;
-const JOINED_LOCK = /\bFROM\s+accounts\b[\s\S]*\bJOIN\s+companies\b[\s\S]*\bFOR\s+(?:NO\s+KEY\s+UPDATE|KEY\s+SHARE|UPDATE|SHARE)\b/i;
+const JOINED_LOCK = /\bFROM\s+(?:public\s*\.\s*)?accounts\b[\s\S]*\bJOIN\s+(?:public\s*\.\s*)?companies\b[\s\S]*\bFOR\s+(?:NO\s+KEY\s+UPDATE|KEY\s+SHARE|UPDATE|SHARE)\b/i;
 
 export function violations(source: Source): { problems: string[]; joinedLocks: number } {
   const problems: string[] = [];
-  if (WRITE.test(source.text)) problems.push(`${source.file}: writes companies`);
-  if (LOCK_TABLE.test(source.text)) problems.push(`${source.file}: LOCK TABLE on companies`);
+  const text = normalizeIdentifiers(source.text);
+  if (WRITE.test(text)) problems.push(`${source.file}: writes companies`);
+  if (LOCK_TABLE.test(text)) problems.push(`${source.file}: LOCK TABLE on companies`);
   let joinedLocks = 0;
-  for (const fragment of source.sql) {
+  for (const sql of source.sql) {
+    const fragment = normalizeIdentifiers(sql);
     const reads = READS_COMPANIES.exec(fragment);
     if (reads) {
       const alias = (reads[1] ?? 'companies').toLowerCase();
@@ -127,6 +134,16 @@ describe('LOCK-01-L1 DEC-1.3 — tripwire self-check (red/green)', () => {
     ['DELETE FROM companies', '`DELETE FROM public.companies WHERE id = $1`'],
     ['INSERT INTO companies', 'INSERT INTO companies (id) VALUES (1);'],
     ['TRUNCATE companies', 'TRUNCATE ONLY companies;'],
+    ['quoted UPDATE', '`UPDATE "public" . "companies" SET status = $2 WHERE id = $1`'],
+    ['quoted DELETE', '`DELETE FROM "companies" WHERE id = $1`'],
+    ['quoted DELETE FROM ONLY', '`DELETE FROM ONLY "companies" WHERE id = $1`'],
+    ['quoted INSERT', '`INSERT INTO "public"."companies" (id) VALUES ($1)`'],
+    ['MERGE', '`MERGE INTO public.companies c USING source s ON c.id = s.id WHEN MATCHED THEN UPDATE SET status = s.status`'],
+    ['quoted MERGE', '`MERGE INTO "public" . "companies" AS "c" USING source s ON "c".id = s.id WHEN MATCHED THEN DELETE`'],
+    ['quoted TRUNCATE TABLE', 'TRUNCATE TABLE ONLY "public"."companies";'],
+    ['quoted LOCK TABLE', 'LOCK TABLE "public"."companies" IN EXCLUSIVE MODE;'],
+    ['quoted exclusive alias', '`SELECT 1 FROM "public"."companies" AS "c" FOR UPDATE OF "c"`'],
+    ['quoted FOR NO KEY UPDATE', '`SELECT 1 FROM "companies" FOR NO KEY UPDATE`'],
     ['LOCK TABLE companies', 'LOCK TABLE companies IN SHARE ROW EXCLUSIVE MODE;'],
     ['FOR UPDATE without OF', '`SELECT status FROM companies WHERE id = $1 FOR UPDATE`'],
     ['FOR UPDATE before a line break and the closing backtick', '`SELECT status FROM companies\n WHERE id = $1\n FOR UPDATE\n `'],
@@ -139,6 +156,7 @@ describe('LOCK-01-L1 DEC-1.3 — tripwire self-check (red/green)', () => {
 
   it.each([
     ['company FOR SHARE in its own statement', "'SELECT status FROM companies WHERE id = $1 FOR SHARE'"],
+    ['quoted company SHARE', '`SELECT 1 FROM "public"."companies" AS "c" FOR SHARE OF "c"`'],
     ['plain company read', '`SELECT c.time_zone FROM companies AS c WHERE c.id = $1`'],
     ['account UPDATE lock, company SHARE lock', '`SELECT a.role FROM accounts AS a JOIN companies AS c ON c.id = a.company_id FOR UPDATE OF a FOR SHARE OF c`'],
     ['commented-out write', '// UPDATE companies SET x = 1\n/* DELETE FROM companies */ const url = "https://example.invalid";'],

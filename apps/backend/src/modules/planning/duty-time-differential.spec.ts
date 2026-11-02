@@ -24,13 +24,18 @@ function offsetMs(utcMs: number, zone: string): number {
   let format = formatters.get(zone);
   if (!format) {
     format = new Intl.DateTimeFormat('en-US', {
-      timeZone: zone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      timeZone: zone, hourCycle: 'h23', hour: '2-digit', timeZoneName: 'longOffset',
     });
     formatters.set(zone, format);
   }
-  const parts = Object.fromEntries(format.formatToParts(new Date(utcMs)).map((part) => [part.type, part.value]));
-  return Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second) - utcMs;
+  // Ask ICU for its numeric offset directly. Every 15-minute discovery probe
+  // and every oracle candidate is retained; avoid allocating full civil-date
+  // parts and rebuilding a UTC Date for millions of probes.
+  const name = format.formatToParts(utcMs).find((part) => part.type === 'timeZoneName')?.value ?? '';
+  if (name === 'GMT') return 0;
+  const match = /^GMT([+-])(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(name);
+  if (!match) throw new Error(`Unexpected Intl numeric offset: ${name}`);
+  return (match[1] === '-' ? -1 : 1) * (+match[2] * 3600 + +match[3] * 60 + +(match[4] ?? 0)) * 1000;
 }
 
 /** Oracle of the approved policy: gap -> pre-transition offset (later instant); fold -> earliest valid instant. */
@@ -71,5 +76,6 @@ describe('D6 differential: production adapter vs. Intl oracle (Appendix-E matrix
     // Guards against a silently shrunken matrix (e.g. a runtime without these zones' rules).
     expect(transitions).toBeGreaterThanOrEqual(300);
     expect(comparisons).toBe(transitions * 481);
+    console.info(JSON.stringify({ event: 'planning.differential.checked', zones: ZONES.length, transitions, comparisons }));
   }, 300_000);
 });

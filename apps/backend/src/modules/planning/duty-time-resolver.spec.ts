@@ -10,6 +10,7 @@ import {
   resolveDutyEndpoint,
   resolveDutyInterval,
 } from './duty-time-resolver.js';
+import { Temporal } from '@js-temporal/polyfill';
 
 const B = 'Europe/Berlin';
 const NY = 'America/New_York';
@@ -107,5 +108,15 @@ describe('D6 rejected intervals and invalid input (DST-03)', () => {
 
   it('the boot self-test passes on this runtime', () => {
     expect(() => assertDutyTimeResolverReady({ log: () => undefined } as never)).not.toThrow();
+  });
+
+  it('a resolver that misses a golden fails the boot self-test before reporting readiness', () => {
+    const wrong = Temporal.ZonedDateTime.from('2026-01-01T00:00:00Z[UTC]');
+    const from = vi.spyOn(Temporal.ZonedDateTime, 'from').mockReturnValue(wrong);
+    const logger = { log: vi.fn() };
+    try {
+      expect(() => assertDutyTimeResolverReady(logger as never)).toThrow('Duty time resolver failed its D6 golden self-test');
+      expect(logger.log).not.toHaveBeenCalled();
+    } finally { from.mockRestore(); }
   });
 });
