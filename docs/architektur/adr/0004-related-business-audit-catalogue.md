@@ -72,16 +72,44 @@ scope, no-op/refusal and audit rollback. See the
 [CI and closeout matrix](../../reviews/sp09-closeout-64-73.md) for actual run IDs
 and totals. No database tests are executed by this documentation audit.
 
-The source comments in `business-audit.service.ts` still describe these names as
-provisional and say no catalogue exists. That wording predates PO D1. This
-documentation-only change records the later authority; it deliberately leaves
-application files untouched. Other actions in that union retain their own
+The source comments in `business-audit.service.ts` now refer to the scoped PO D1
+approval recorded here. This reconciles the vocabulary without renaming events
+or changing emitted payloads. Other actions in that union retain their own
 approval status, including development-only activation recovery.
 
 The ignored local canonical amendment records the baseline comparison and these
 four definitions. Independent Tech Lead/API/audit-owner acceptance of that
 document remains required before #64/#73 administrative closure. Original
 baselines and earlier ADR history remain preserved.
+
+## Supplement 2026-11-02 — SP-11 PR-1 planning creation events
+
+The owner ratified exactly three further actions with the SP-11A technical design
+(31.10.2026). They are implemented in SP-11 PR-1 ([evidence](../../reviews/sp11-pr1-planning-foundation.md));
+edit, removal, publish and workflow actions are later, separate decisions.
+
+| Action | Resource | `oldValues` | `newValues` |
+|---|---|---|---|
+| `MONTHLY_PLAN_CREATED` | `MONTHLY_PLAN`, plan ID | SQL null | `{projectId, monthStart, status}` |
+| `DUTY_CREATED` | `DUTY`, duty ID | SQL null | `{planId, dutyDate, shiftKind, startsAt, endsAt, version}` |
+| `DUTY_MEMBERSHIP_ADDED` | `DUTY_ASSIGNMENT`, membership ID | SQL null | `{dutyId, employeeId, dutyRole, source}` |
+
+Audit payload values use the public API vocabulary: DAY/NIGHT and
+EMPLOYEE/SHIFT_LEAD. The API/audit vocabulary differs from some SQL names:
+`MONTHLY_PLAN.status` uses `UNPUBLISHED` / `PUBLISHED`; `shiftKind` is DAY/NIGHT
+(stored as TAG/NACHT); `dutyRole` is EMPLOYEE/SHIFT_LEAD (stored as
+MITARBEITER/SCHICHTLEITER); `source` is NORMAL/REPLACEMENT in both. An audit
+membership resource is `DUTY_ASSIGNMENT`, while its SQL relation is
+`public.plan_assignments`. `MONTHLY_PLAN_CREATED.newValues.status` is always
+UNPUBLISHED in this slice. This describes existing mapper output, not new events.
+
+One plan event per plan creation; one duty event plus one membership event per
+initial member per duty creation, all on the caller's transaction. A failure on
+any event rolls back the plan, duty, every membership and all earlier events.
+Refusals write nothing. No names, e-mail, absence status or reason, tokens or
+full plan copies are recorded. Accepted D4/D5 edits keep the existing
+`PROJECT_UPDATED` / `EMPLOYEE_UPDATED` events without new fields. Independent
+documentary acceptance of this supplement remains pending like the four above.
 
 Retention period, database-role append-only enforcement, privileged access,
 privacy policy, backups and restore proof are separately tracked in

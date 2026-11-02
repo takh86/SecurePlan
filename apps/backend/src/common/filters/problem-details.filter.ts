@@ -105,6 +105,10 @@ function safeDetail(status: number, code: string): string {
   if (status === 404) return 'The requested resource was not found.';
   if (code === 'PLAN_CONCURRENT_MODIFICATION') return 'The plan has changed. Reload the current state and try again.';
   if (code === EMPLOYMENT_PERIOD_CONFLICT) return 'The changed employment period would no longer cover existing future monthly project assignments. Review and correct or remove the conflicting assignments first.';
+  // SP-11 C1: static details only; no duty IDs, counts, names or resolved instants.
+  if (code === 'PROJECT_HAS_FUTURE_DUTIES') return 'The project has scheduled duties that require explicit resolution.';
+  if (code === 'EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_DUTIES') return 'The employment period excludes scheduled duties.';
+  if (code === 'DUTY_TIME_RANGE_INVALID') return 'The configured shift times do not produce a valid duty interval for this date.';
   if (status === 401) return 'Authentication is required or no longer valid.';
   if (status === 403) return 'You are not permitted to perform this action.';
   if (status === 429) return 'Too many requests. Please try again later.';

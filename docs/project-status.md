@@ -15,8 +15,8 @@ Stand: 30.10.2026. Geprüfter Remote-main: `5752ca82838a62a54e4bcb4395709d5ff4e3
 | SP-09 / #64 | Monatliche Regeln umgesetzt; GitHub-Issue geschlossen. Historische Abschlussmatrizen dokumentieren den damaligen Stand |
 | #73 | Zukunfts-DELETE/Expected-Version/Audit, Discovery und Fall-2-Recovery umgesetzt; GitHub-Issue geschlossen. SP-11/Operations bleiben separat |
 | SP-10 / #24 | Funktional/technisch freigegeben; vollständiges Agent-Code-Review und automatisierte Browserprüfung bestanden, unabhängige menschliche Abnahme ausstehend; Issue bleibt offen |
-| SP-11 / #25/#26 | Echte Planungsintegration und globaler LOCK-01-Vertrag weiterhin offen; keine Dienstkonflikt-Auflösung durch SP-10 |
-| Planung/Ersatz | Nicht implementiert; aktuelle temporäre Guards unverändert fail closed |
+| SP-11 / #25/#26 | SP-11A-Design vom Owner bedingt freigegeben (31.10.2026); [PR-1 als Draft](reviews/sp11-pr1-planning-foundation.md): Planungstabellen, echte D2/D3-Guards, D4/D5/Deaktivierung, LOCK-01-L1 für neue Writer, D6-Resolver, Anlegen/Lesen-API. Review, CI-Abnahme, UI (PR-2), Bearbeitung/Lease (PR-3) und Veröffentlichung (PR-4) offen |
+| Planung/Ersatz | Erst ab Merge von PR-1 vorhanden (nur unveröffentlichte Pläne anlegen/lesen); Ersatz-Workflow nicht implementiert |
 | Browser | [SP-10: 11 echte Headless-Chrome-Gruppen PASS](reviews/sp10-acceptance-review.md); weitergehende SP-09-/manuelle Browserabnahme NOT_RUN. React/jsdom und HTTP separat |
 | G0 | Historisches **PASS FOR FIRST IDENTITY SLICE (Design/Handoff)**; spätere Identity-Implementierung ersetzt die damalige Next-Step-Aussage, keine aktuelle Release-Abnahme |
 | Deployment/Production | Nicht freigegeben; #51, Browser-/Audit-Betriebskontrollen, Dependency-Triage und weitere Pre-Staging-Gates offen |

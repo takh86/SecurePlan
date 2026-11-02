@@ -51,7 +51,11 @@ export type KnownErrorCode =
   | 'INVALID_FIELD_COMBINATION'
   | 'IDEMPOTENCY_KEY_REQUIRED'
   | 'IDEMPOTENCY_KEY_INVALID'
-  | 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST';
+  | 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST'
+  // SP-11 (ratification C1): planning dependencies refused by existing project/employee
+  // writes. DUTY_TIME_RANGE_INVALID belongs to duty creation (no UI yet) and is NOT known here.
+  | 'PROJECT_HAS_FUTURE_DUTIES'
+  | 'EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_DUTIES';
 
 export type ApiErrorKind = 'http' | 'network' | 'invalid-response';
 
@@ -116,6 +120,8 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   IDEMPOTENCY_KEY_REQUIRED: 400,
   IDEMPOTENCY_KEY_INVALID: 400,
   IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST: 409,
+  PROJECT_HAS_FUTURE_DUTIES: 409,
+  EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_DUTIES: 409,
 };
 
 const POINTER_PATTERN = /^#(?:\/(?:[A-Za-z0-9_-]|~[01])+)+$/;
@@ -270,6 +276,11 @@ const EMPLOYEE_ERROR_TEXT: Partial<Record<string, { title: string; description: 
     title: 'Beschäftigungszeitraum steht im Konflikt mit Projektzuordnungen',
     description: 'Der geänderte Zeitraum würde bisher abgedeckte zukünftige Projektzuordnungen ausschließen. Prüfen Sie die betroffenen Zuordnungen und korrigieren oder entfernen Sie diese bei Bedarf einzeln. Speichern Sie Ihre Änderungen anschließend erneut.',
   },
+  // SP-11: deliberately without duty details (the server sends none).
+  EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_DUTIES: {
+    title: 'Beschäftigungszeitraum steht im Konflikt mit geplanten Diensten',
+    description: 'Der geänderte Zeitraum würde bereits geplante zukünftige Dienste dieser Person ausschließen. Klären Sie diese Dienste in der Planung zuerst. Es wurde nichts gespeichert.',
+  },
   EMPLOYEE_CODE_ALREADY_EXISTS: {
     title: 'Mitarbeiter-ID bereits vergeben',
     description: 'Diese Mitarbeiter-ID wird in Ihrem Unternehmen bereits verwendet. Bitte wählen Sie eine andere.',
@@ -303,6 +314,10 @@ const EMPLOYEE_ERROR_TEXT: Partial<Record<string, { title: string; description: 
   PROJECT_INACTIVE: {
     title: 'Projekt ist inaktiv',
     description: 'Für ein inaktives Projekt sind keine neuen Zuordnungen und keine Änderungen der Schichtzeiten möglich. Reaktivieren Sie das Projekt zuerst oder laden Sie die Ansicht neu.',
+  },
+  PROJECT_HAS_FUTURE_DUTIES: {
+    title: 'Projekt hat noch geplante Dienste',
+    description: 'Das Projekt kann nicht deaktiviert werden, solange noch zukünftige Dienste geplant sind. Klären Sie diese Dienste zuerst. Es wurde nichts gespeichert.',
   },
   // SP-09 month assignments.
   PROJECT_ASSIGNMENT_CONFLICT: {

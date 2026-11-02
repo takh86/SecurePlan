@@ -29,24 +29,34 @@ export type BusinessAuditAction =
   | 'PROJECT_CREATED'
   | 'PROJECT_UPDATED'
   | 'PROJECT_ASSIGNMENT_CREATED'
-  /** Provisional MVP name (owner 26.10.2026): correction of an existing assignment; old/new IDs and month only. */
+  /** PO D1 / ADR-0004: correction delta of an existing assignment; changed IDs/month and new scope only. */
   | 'PROJECT_ASSIGNMENT_CORRECTED'
   /**
-   * Provisional MVP name (PO decision D73-5, 29.10.2026): a FUTURE month assignment
+   * PO D1 / ADR-0004 (D73-5, 29.10.2026): a FUTURE month assignment
    * was physically removed; old values hold the complete removed tuple (IDs and month).
    */
   | 'PROJECT_ASSIGNMENT_REMOVED'
-  /** Provisional MVP name (owner 27.10.2026, ADR-0003): shift set of one effective month replaced; resource = project. */
+  /** PO D1 / ADR-0004: shift set of one effective month replaced; resource = project. */
   | 'SHIFT_CONFIGURATION_UPDATED'
   /** SP-10 owner technical approval, 30.10.2026: date-only per-day values. */
   | 'EMPLOYEE_AVAILABILITY_SET'
-  | 'EMPLOYEE_AVAILABILITY_CLEARED';
+  | 'EMPLOYEE_AVAILABILITY_CLEARED'
+  /**
+   * SP-11 owner ratification C2 (SP11A-R1 Rev3.1, 31.10.2026; ADR-0004 supplement):
+   * exactly these three bounded creation events. Edit, removal and publish
+   * actions are separate later decisions.
+   */
+  | 'MONTHLY_PLAN_CREATED'
+  | 'DUTY_CREATED'
+  | 'DUTY_MEMBERSHIP_ADDED';
 
 export type BusinessAuditEntry = {
   companyId: string;
   actorAccountId: string | null;
   action: BusinessAuditAction;
-  resourceType: 'EMPLOYEE' | 'ACCOUNT' | 'PROJECT' | 'PROJECT_ASSIGNMENT' | 'PROJECT_SHIFT_CONFIGURATION' | 'EMPLOYEE_AVAILABILITY';
+  resourceType:
+    | 'EMPLOYEE' | 'ACCOUNT' | 'PROJECT' | 'PROJECT_ASSIGNMENT' | 'PROJECT_SHIFT_CONFIGURATION' | 'EMPLOYEE_AVAILABILITY'
+    | 'MONTHLY_PLAN' | 'DUTY' | 'DUTY_ASSIGNMENT';
   resourceId: string;
   oldValues?: Readonly<Record<string, unknown>> | null;
   newValues?: Readonly<Record<string, unknown>> | null;

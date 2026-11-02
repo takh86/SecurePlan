@@ -37,7 +37,7 @@ import type {
   ListProjectAssignmentsQueryDto,
   UpdateProjectAssignmentDto,
 } from './dto/project-assignment.dto.js';
-import { assertPlanningDependencyCheckImplemented } from './planning-dependency-guard.js';
+import { assertNoPlanningDependency } from './planning-dependency-guard.js';
 import {
   PROJECT_ASSIGNMENT_COLUMNS,
   PROJECT_ASSIGNMENT_TOUCH,
@@ -274,7 +274,7 @@ export class ProjectAssignmentsService {
    * - error precedence after the no-op check: EMPLOYEE_INACTIVE ->
    *   PROJECT_INACTIVE -> missing employment evidence -> planning guard ->
    *   target month taken;
-   * - planning data: see assertPlanningDependencyCheckImplemented (fail closed);
+   * - planning data (D2): see assertNoPlanningDependency; old and resulting tuple;
    * - lock order (deterministic, independent of the change direction): actor ->
    *   employees by id -> projects by id -> assignment row; the row is re-read
    *   under its lock and a concurrent change is a 409, never a blind retry.
@@ -371,7 +371,11 @@ export class ProjectAssignmentsService {
       const employmentConflict = correctionEmploymentConflict(scope, employeeChanged, nextEmployee, next.monthStart, zone);
       if (employmentConflict !== null) throw new ConflictException({ code: employmentConflict });
 
-      await assertPlanningDependencyCheckImplemented(client);
+      // D2: neither the old nor the resulting tuple may orphan a live duty membership.
+      await assertNoPlanningDependency(client, tenant.companyId, [
+        { employeeId: current.employee_id, projectId: current.project_id, monthStart: current.month_start },
+        { employeeId: next.employeeId, projectId: next.projectId, monthStart: next.monthStart },
+      ]);
 
       const target = await client.query<{ same_project: boolean }>(
         `SELECT project_id = $4::uuid AS same_project FROM project_assignments
@@ -440,7 +444,8 @@ export class ProjectAssignmentsService {
    * / 409 PROJECT_ASSIGNMENT_CONFLICT tuple changed -> 409
    * PROJECT_ASSIGNMENT_CONFLICT stale version -> 409
    * PROJECT_ASSIGNMENT_CORRECTION_CONFLICT current or past month (D73-2) -> 409
-   * planning guard (E-10, unchanged) -> DELETE + audit.
+   * PROJECT_ASSIGNMENT_CORRECTION_CONFLICT live duty membership on the old tuple
+   * (D2) -> DELETE + audit.
    * Employee and project status and employment are deliberately NOT checked
    * (PO): an unwanted future link of a deactivated person must be removable.
    * Nothing cascades: no vacancy, no replacement, no employment-date change.
@@ -502,7 +507,10 @@ export class ProjectAssignmentsService {
         throw new ConflictException({ code: 'PROJECT_ASSIGNMENT_CORRECTION_CONFLICT' });
       }
 
-      await assertPlanningDependencyCheckImplemented(client);
+      // D2: a removal checks the old tuple only.
+      await assertNoPlanningDependency(client, tenant.companyId, [
+        { employeeId: locked.employee_id, projectId: locked.project_id, monthStart: locked.month_start },
+      ]);
 
       const deleted = await client.query(
         'DELETE FROM project_assignments WHERE company_id = $1 AND id = $2',

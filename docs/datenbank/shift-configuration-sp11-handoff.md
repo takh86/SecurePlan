@@ -2,6 +2,8 @@
 
 Stand: 29.10.2026. Betrifft `GET`/`PATCH /api/v1/projects/{projectId}/shift-configuration` (SP-08b, Backend und React-Oberfläche mit #62 implementiert) und die noch offene Monatsplanung SP-11. Entscheidungsgrundlage: [ADR-0003](../architektur/adr/0003-schichtkonfiguration-monatsversioniert.md) mit datiertem Nachtrag, [PO-D1–D6](https://github.com/takh86/SecurePlan/issues/64#issuecomment-6502123168) und der [verbindliche SP-11-Handoff in #25](sp11-integrity-handoff.md). Business-Regeln sind freigegeben; detaillierte Implementierungsverträge und unabhängige Abnahme bleiben offen. Browsernachweis bleibt NOT_RUN.
 
+**Nachtrag 02.11.2026:** Mit SP-11 PR-1 ist der unten beschriebene temporäre Planungsschutz durch die echte D3-Prüfung ersetzt ([Evidenz](../reviews/sp11-pr1-planning-foundation.md), [ADR-0003-Nachtrag](../architektur/adr/0003-schichtkonfiguration-monatsversioniert.md)). Die folgenden Abschnitte beschreiben den Stand vom 29.10.
+
 ## Was SP-08b liefert
 
 - **Tabelle `shift_configurations`** (Migration `0009`): Versionen je Projekt und Wirkmonat; eine Version ist die vollständige Menge von 1–2 Schichtarten (`TAG`/`NACHT`) mit lokalen Uhrzeiten (`time(0)`, minutengenau).

@@ -12,6 +12,17 @@ contracts still require independent Tech Lead/API review. No SP-11 implementatio
 or planning-table migration is delivered by this handoff. Each numbered item has
 its own acceptance checkbox in #25; none inherits a PASS from SP-09 CI.
 
+## PR-1 status — 2 November 2026
+
+The owner conditionally approved the SP-11A technical design (31.10.2026); after a
+passed local preflight, SP-11 PR-1 implements the atomic foundation as a Draft PR:
+migration `0011`, both real guards (D2, D3) replacing the temporary ones, D4, D5,
+the separate deactivation rule, the LOCK-01-L1 account prefix for new writers, the
+D6 resolver and the create/read API. See the
+[PR-1 evidence and open points](../reviews/sp11-pr1-planning-foundation.md).
+Publish, edit/removal, leases, idempotency, the planning UI and browser acceptance
+remain open; nothing below is marked complete by this note, and #25/#26 stay open.
+
 ## SP-10 handoff — 30 October 2026
 
 The owner approved the scoped SP-10 technical contract in
