@@ -11,7 +11,8 @@ React/TypeScript mit Vite. Start über `npm run dev:frontend` im Repository-Root
 | Pfad | Rolle (`/me`) | Stand |
 |---|---|---|
 | `/arbeitsuebersicht` | `COMPANY_ADMIN` | UI-Vorschau: offene Absage-/Ersatzvorgänge |
-| `/mitarbeitende`, `/projekte`, `/monatsplanung` | `COMPANY_ADMIN` | Platzhalter |
+| `/mitarbeitende`, `/projekte` | `COMPANY_ADMIN` | Echte API (SP-07 bis SP-10) |
+| `/monatsplanung`, `/monatsplanung/{planId}` | `COMPANY_ADMIN` | Echte API, SP-11 PR-2: Monatsübersicht, Plan erstellen (unveröffentlicht), Dienste lesen und anlegen; kein Veröffentlichen, Bearbeiten oder Entfernen |
 | `/mein-monatsplan`, `/mein-monatsplan/JJJJ-MM` | `EMPLOYEE` | UI-Vorschau: persönlicher Monatsplan |
 | `/absagen-und-ersatz`, `/meine-statistik` | `EMPLOYEE` | Platzhalter |
 
@@ -30,6 +31,7 @@ Die Rollenprüfung im Frontend dient nur der Bedienbarkeit. Autorisierung und Te
 - Admin Work Queue: kein implementierter `/admin/work-queue`-Vertrag; Fallbearbeitung, Entscheidungen und Ersatzauswahl fehlen daher bewusst.
 - Persönlicher Monatsplan: kein implementierter `/me/...`-Planvertrag; Zeitzone der Company und Schichtzeiten sind offen.
 - Firmenname: `/me` liefert nur die Company-ID, die nicht angezeigt wird.
+- Monatsplanung: Keine API liefert die Zeitzone des Unternehmens. Dienstzeiten (UTC-Zeitpunkte des Servers) werden deshalb in der Zeitzone des Geräts angezeigt, stets mit Zeitzonen-Abkürzung und Hinweis; Schichtzeiten der Projektkonfiguration sind Ortszeit des Unternehmens.
 - Sitzungsablauf in einem anderen Tab wird erst beim nächsten `GET /me` (Neuladen, Wiederherstellung aus dem Browser-Cache) oder Logout erkannt; mit echten Daten ist eine zentrale 401-Behandlung nötig.
 
 ## Bekannte Grenzen

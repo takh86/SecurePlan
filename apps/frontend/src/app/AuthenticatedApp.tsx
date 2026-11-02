@@ -3,6 +3,7 @@ import { WorkQueuePage } from '../features/cancellation-replacement/work-queue/W
 import type { AuthenticatedSession } from '../features/auth/LoginScreen';
 import type { SessionApi } from '../features/auth/session-api';
 import { EmployeesSection } from '../features/employees/EmployeesSection';
+import { MonthlyPlanningSection } from '../features/planning/monthly-plans/MonthlyPlanningSection';
 import { MyMonthPlanPage } from '../features/planning/my-month-plan/MyMonthPlanPage';
 import { ProjectsSection } from '../features/projects/ProjectsSection';
 import { AppShell } from './AppShell';
@@ -45,6 +46,8 @@ function RouteView({ route, role, api }: { route: AppRoute; role: TenantRole; ap
       return <EmployeesSection route={route} api={api} />;
     case 'projects':
       return <ProjectsSection route={route} api={api} />;
+    case 'monthly-planning':
+      return <MonthlyPlanningSection route={route} api={api} />;
     case 'work-queue':
       return (
         <PageFrame title={route.title} lead={route.lead}>

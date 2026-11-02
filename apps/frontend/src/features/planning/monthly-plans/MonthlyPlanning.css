@@ -1,0 +1,127 @@
+/* SP-11 PR-2 monthly planning. Builds on the shared admin styles (Employees.css, Projects.css). */
+
+.planning-overview .employees-table td[data-label='Aktion'] {
+  white-space: nowrap;
+}
+
+.planning-confirm {
+  margin-bottom: 16px;
+}
+
+.planning-members {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planning-members__role {
+  color: var(--sp-color-muted);
+}
+
+/* An inline status moves to the next line as a whole instead of breaking inside. */
+.planning-members .status-badge {
+  white-space: nowrap;
+}
+
+/* Badges keep their natural width inside the narrow-screen card cells. */
+.planning-overview .employees-table .status-badge,
+.planning-duties .status-badge {
+  justify-self: start;
+}
+
+.planning-conflicts {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--sp-tone-attention-fg);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-tone-attention-bg);
+}
+
+.planning-conflicts h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.planning-conflicts p,
+.planning-conflicts ul {
+  margin: 0 0 8px;
+}
+
+.planning-shift-times ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.planning-roster {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--sp-color-border);
+  border-radius: var(--sp-radius-small);
+}
+
+.planning-roster legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.planning-roster__list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planning-roster__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(10rem, 14rem);
+  gap: 12px;
+  align-items: center;
+}
+
+/* Touch-friendly target: the whole label toggles the checkbox. */
+.planning-roster__person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.planning-roster__person input {
+  width: 20px;
+  height: 20px;
+}
+
+.planning-roster__code {
+  color: var(--sp-color-muted);
+}
+
+.planning-roster__excluded summary {
+  min-height: 44px;
+  cursor: pointer;
+}
+
+@media (max-width: 719px) {
+  .planning-roster__item {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .planning-overview .employees-table td[data-label='Aktion'] {
+    white-space: normal;
+  }
+
+  /* Shorter labels than the shared 9rem column: values such as "Unveröffentlicht" fit at 390 px. */
+  .planning-overview .employees-table tbody td,
+  .employees-table.planning-duties tbody td {
+    grid-template-columns: minmax(0, 7rem) minmax(0, 1fr);
+  }
+}

@@ -57,8 +57,30 @@ describe('SP-07 — field errors and employee codes', () => {
       expect(text.canRetry, code).toBe(false);
       expect(text.correlationId).toBe('req-11');
     }
-    // Duty creation has no UI yet: its interval code is not trusted by the client.
-    expect((await parseApiError(problem(409, { code: 'DUTY_TIME_RANGE_INVALID' }))).code).toBeNull();
+  });
+
+  it('SP-11 PR-2: trusts the planning creation codes only with their catalogued status', async () => {
+    const byStatus = {
+      400: ['INVALID_DATE', 'DUTY_DATE_OUTSIDE_PLAN_MONTH'],
+      409: [
+        'MONTHLY_PLAN_ALREADY_EXISTS',
+        'DUTY_ALREADY_EXISTS',
+        'SHIFT_CONFIGURATION_MISSING',
+        'DUTY_TIME_RANGE_INVALID',
+        'EMPLOYEE_NOT_ASSIGNED_TO_PROJECT_MONTH',
+        'EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT',
+        'EMPLOYEE_UNAVAILABLE',
+        'DUTY_ASSIGNMENT_CONFLICT',
+      ],
+    } as const;
+    for (const [status, codes] of Object.entries(byStatus)) {
+      for (const code of codes) {
+        expect((await parseApiError(problem(Number(status), { code }))).code, code).toBe(code);
+        expect((await parseApiError(problem(Number(status) === 400 ? 409 : 400, { code }))).code, code).toBeNull();
+      }
+    }
+    // Codes of later slices stay untrusted until a UI handles them.
+    expect((await parseApiError(problem(409, { code: 'MONTHLY_PLAN_ALREADY_PUBLISHED' }))).code).toBeNull();
   });
 
   it('has German texts for every SP-07 code', () => {
