@@ -7,6 +7,15 @@
 - **Betroffene Anforderungen:** FR-SHIFT-01, FR-SHIFT-02, BR-SHIFT-01, BR-SHIFT-02 (BR-SHIFT-03 ausdrücklich nicht)
 - **Referenzen:** Interne Baselines Phase 2 (Anforderungen), Phase 7 / 7.2 / 7.3 (DB-Design), Phase 8.3/8.4/8.5/8.8/8.9/8.10/8.11 (API-Vertrag); SP-08b, Issue #22; ADR-0002.
 
+## Datierter Nachtrag 02.11.2026 — SP-11 PR-1
+
+Der Nachtrag vom 29.10. bleibt unten unverändert; sein Hinweis auf offene Implementierungsverträge ist für die folgenden Punkte durch die Owner-Freigabe des SP-11A-Designs (31.10.2026) erledigt:
+
+- **D3 umgesetzt:** Der temporäre Guard ist durch die echte Prüfung ersetzt. Eine wirksame Änderung des Wirkmonats M wird mit `409 SHIFT_CONFIGURATION_CONFLICT` abgelehnt, solange ein nicht entfernter gespeicherter Dienst des Projekts (leer oder besetzt, UNPUBLISHED oder PUBLISHED) in `[M, nächster späterer Wirkmonat)` liegt; ohne spätere Version gilt ein offenes Ende. No-op und gespeicherte Dienst-Snapshots bleiben unverändert.
+- **D6 umgesetzt:** Ein Adapter über den exakt gepinnten `@js-temporal/polyfill` 0.5.1 löst die lokalen Endpunkte mit der genehmigten Lücken-/Doppelzeit-Regel auf; ein Boot-Selbsttest und ein Differenztest gegen ein Intl-Orakel sichern die Regel. Die tzdata bleibt eine Laufzeit-Eigenschaft und wird beim Start protokolliert.
+- **O-10 erweitert (vom Owner ratifiziert):** Neben Schichtart und UTC-Snapshots speichert ein Dienst informativ die lokalen Zeiten, die Firmenzeitzone und den wirksamen Konfigurationsmonat, weiterhin ohne Fremdschlüssel auf `shift_configurations`. D3 liest diese Provenienz nicht.
+- Evidenz und offene Punkte: [SP-11 PR-1](../../reviews/sp11-pr1-planning-foundation.md). Browser-, Rollout- und spätere SP-12/SP-13-Abnahmen bleiben getrennt.
+
 ## Datierter Nachtrag 29.10.2026
 
 Der ursprüngliche Entscheidungsstand vom 27.10. bleibt unten erhalten. Die späteren [PO-Entscheidungen D1–D6](https://github.com/takh86/SecurePlan/issues/64#issuecomment-6502123168) übersteuern die damaligen offenen Business-Entscheidungen gezielt:

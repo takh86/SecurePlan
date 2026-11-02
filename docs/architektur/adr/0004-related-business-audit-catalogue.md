@@ -83,6 +83,26 @@ four definitions. Independent Tech Lead/API/audit-owner acceptance of that
 document remains required before #64/#73 administrative closure. Original
 baselines and earlier ADR history remain preserved.
 
+## Supplement 2026-11-02 — SP-11 PR-1 planning creation events
+
+The owner ratified exactly three further actions with the SP-11A technical design
+(31.10.2026). They are implemented in SP-11 PR-1 ([evidence](../../reviews/sp11-pr1-planning-foundation.md));
+edit, removal, publish and workflow actions are later, separate decisions.
+
+| Action | Resource | `oldValues` | `newValues` |
+|---|---|---|---|
+| `MONTHLY_PLAN_CREATED` | `MONTHLY_PLAN`, plan ID | SQL null | `{projectId, monthStart, status}` |
+| `DUTY_CREATED` | `DUTY`, duty ID | SQL null | `{planId, dutyDate, shiftKind, startsAt, endsAt, version}` |
+| `DUTY_MEMBERSHIP_ADDED` | `DUTY_ASSIGNMENT`, membership ID | SQL null | `{dutyId, employeeId, dutyRole, source}` |
+
+One plan event per plan creation; one duty event plus one membership event per
+initial member per duty creation, all on the caller's transaction. A failure on
+any event rolls back the plan, duty, every membership and all earlier events.
+Refusals write nothing. No names, e-mail, absence status or reason, tokens or
+full plan copies are recorded. Accepted D4/D5 edits keep the existing
+`PROJECT_UPDATED` / `EMPLOYEE_UPDATED` events without new fields. Independent
+documentary acceptance of this supplement remains pending like the four above.
+
 Retention period, database-role append-only enforcement, privileged access,
 privacy policy, backups and restore proof are separately tracked in
 [#51](https://github.com/takh86/SecurePlan/issues/51) and the
