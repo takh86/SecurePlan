@@ -1,4 +1,4 @@
-/** Renders the real SP-11 PR-2 /monatsplanung routes with an in-memory session API, a fixed clock and zone. */
+/** Renders the real /monatsplanung routes (SP-11 PR-2, SP-12 A10) with an in-memory session API, a fixed clock and zone. */
 import { StrictMode } from 'react';
 import { render } from '@testing-library/react';
 import { RouterProvider, createMemoryRouter } from 'react-router';
@@ -6,6 +6,7 @@ import { APP_ROUTES } from '../../../app/routes';
 import type { Clock } from '../../../shared/time/clock';
 import { fakeSessionApi, type Handler } from '../../employees/employees.test-support';
 import { DECEMBER_2026 } from '../../projects/projects.test-support';
+import type { PublishSlot } from './MonthlyPlanPage';
 import { MonthlyPlanningSection } from './MonthlyPlanningSection';
 
 const PLANNING_ROUTE = APP_ROUTES.find((route) => route.id === 'monthly-planning')!;
@@ -13,7 +14,7 @@ const PLANNING_ROUTE = APP_ROUTES.find((route) => route.id === 'monthly-planning
 export function renderPlanning(
   path: string,
   handler: Handler,
-  options: { clock?: Clock; timeZone?: string; strict?: boolean } = {},
+  options: { clock?: Clock; timeZone?: string; strict?: boolean; publishSlot?: PublishSlot } = {},
 ) {
   const fake = fakeSessionApi(handler);
   const router = createMemoryRouter(
@@ -26,6 +27,7 @@ export function renderPlanning(
             api={fake.api}
             clock={options.clock ?? DECEMBER_2026}
             timeZone={options.timeZone ?? 'Europe/Berlin'}
+            publishSlot={options.publishSlot}
           />
         </main>
       ),

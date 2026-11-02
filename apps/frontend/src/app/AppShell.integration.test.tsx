@@ -828,9 +828,11 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       const fetchMock = stubApi(queues);
       renderAt(planPath);
       await expectShell(planTitle);
+      const user = userEvent.setup();
+      // SP-12 A10: the create form opens in the focus panel.
+      await user.click(await screen.findByRole('button', { name: 'Dienst hinzufügen' }));
       const date = await screen.findByLabelText('Datum');
       fireEvent.change(date, { target: { value: '2026-12-03' } });
-      const user = userEvent.setup();
       await user.click(screen.getByRole('radio', { name: 'Tagdienst' }));
       await user.click(screen.getByRole('button', { name: 'Dienst anlegen' }));
       expect(await screen.findByText('Der Tagdienst am Do., 03.12.2026 wurde angelegt.')).toBeTruthy();
@@ -845,6 +847,72 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       expect(init?.credentials).toBe('same-origin');
       expect(JSON.parse(String(init?.body))).toEqual({ dutyDate: '2026-12-03', shiftKind: 'DAY', assignments: [] });
       expect(document.body.innerHTML).not.toContain(CSRF);
+      expect(setItemSpy).not.toHaveBeenCalled();
+    });
+
+    it('SP-12: an edit sends CSRF, Expected-Version and the lease token only as headers; the token never reaches DOM, URL or storage', async () => {
+      // Synthetic example records and token, not business rules or real credentials.
+      const employee = {
+        id: '6f1ad9a6-3a0c-4b7c-9c5e-0d4f2a1e8b11', employeeCode: 'A-001', firstName: 'Mira', lastName: 'Beispiel',
+        employmentStart: '2020-01-01', employmentEnd: null, shiftEligibility: 'BOTH', status: 'ACTIVE',
+        email: 'mira@secureplan.test', accountStatus: 'ACTIVE',
+      };
+      const stored = {
+        id: 'd1111111-1111-4111-8111-111111111111',
+        dutyDate: '2026-12-03',
+        shiftKind: 'DAY',
+        startsAt: '2026-12-03T05:00:00Z',
+        endsAt: '2026-12-03T17:00:00Z',
+        version: 4,
+        assignments: [{ id: 'a1111111-1111-4111-8111-111111111111', employeeId: employee.id, dutyRole: 'EMPLOYEE', source: 'NORMAL' }],
+        availabilityConflicts: [],
+      };
+      const updated = { ...stored, version: 5, assignments: [] };
+      const TOKEN = 'k'.repeat(40) + '_-9';
+      const DUTY_URL = `${ENTRIES_URL}/${stored.id}`;
+      const LEASE_URL = `${DUTY_URL}/edit-lease`;
+      const pageOf = (items: unknown[]) => json(200, { items, pagination: { page: 1, pageSize: 100, totalItems: items.length, totalPages: 1 } });
+      enqueue(queues, '/api/v1/me', authorized('COMPANY_ADMIN'));
+      enqueue(queues, PLAN_URL, json(200, plan), json(200, plan));
+      enqueue(queues, ENTRIES_URL, json(200, { items: [stored] }));
+      enqueue(queues, `${PROJECTS}/${project.id}`, json(200, project));
+      enqueue(queues, `${EMPLOYEES}?pageSize=100`, pageOf([employee]));
+      enqueue(queues, MONTH_ASSIGNMENTS, pageOf([{ id: 'b1111111-1111-4111-8111-111111111111', employeeId: employee.id, projectId: project.id, monthStart: '2026-12-01', version: 1 }]));
+      enqueue(queues, LEASE_URL, json(200, { leaseToken: TOKEN, expiresAt: new Date(Date.now() + 120_000).toISOString() }), noContent);
+      enqueue(queues, DUTY_URL, json(200, stored), json(200, updated));
+      const fetchMock = stubApi(queues);
+      renderAt(planPath);
+      await expectShell(planTitle);
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole('button', { name: 'Mira Beispiel, Do., 3. Dezember: Tagdienst' }));
+      await user.click(screen.getByRole('button', { name: 'Tagdienst bearbeiten' }));
+      await user.click(await screen.findByRole('checkbox', { name: 'Mira Beispiel (A-001)' }));
+      await user.click(screen.getByRole('button', { name: 'Änderungen speichern' }));
+      expect(await screen.findByText('Die Änderungen am Tagdienst am Do., 03.12.2026 wurden gespeichert.')).toBeTruthy();
+
+      const calls = fetchMock.mock.calls.map(([url, init]) => ({ url: String(url), method: init?.method ?? 'GET', init }));
+      const patch = calls.find((call) => call.method === 'PATCH')!;
+      expect(patch.url).toBe(DUTY_URL);
+      const headers = new Headers(patch.init?.headers);
+      expect(headers.get('X-CSRF-Token')).toBe(CSRF);
+      expect(headers.get('Expected-Version')).toBe('4');
+      expect(headers.get('Edit-Lease-Token')).toBe(TOKEN);
+      expect(JSON.parse(String(patch.init?.body))).toEqual({ assignments: [] });
+      // Acquire carries no token; the release after closing carries it (and the CSRF token).
+      const leaseCalls = calls.filter((call) => call.url === LEASE_URL);
+      await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url) === LEASE_URL)).toHaveLength(2));
+      const release = fetchMock.mock.calls.filter(([url]) => String(url) === LEASE_URL)[1][1];
+      expect(leaseCalls[0].method).toBe('POST');
+      expect(new Headers(leaseCalls[0].init?.headers).has('Edit-Lease-Token')).toBe(false);
+      expect(release?.method).toBe('DELETE');
+      expect(new Headers(release?.headers).get('Edit-Lease-Token')).toBe(TOKEN);
+      expect(new Headers(release?.headers).get('X-CSRF-Token')).toBe(CSRF);
+      for (const [url, init] of fetchMock.mock.calls) {
+        expect(String(url)).not.toContain(TOKEN);
+        expect(typeof init?.body === 'string' ? init.body : '').not.toContain(TOKEN);
+      }
+      expect(document.body.innerHTML).not.toContain(TOKEN);
+      expect(window.location.href).not.toContain(TOKEN);
       expect(setItemSpy).not.toHaveBeenCalled();
     });
   });

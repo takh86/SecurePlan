@@ -89,4 +89,51 @@ describe('SP-07 — session-bound API (CSRF token stays in the closure)', () => 
     }
     expect(fetchMock).not.toHaveBeenCalled();
   });
+  it('SP-12 PUT (lease renewal) carries CSRF and the Edit-Lease-Token header, but no body', async () => {
+    const fetchMock = stubFetch(ok);
+    const token = 'L'.repeat(42) + '-';
+    await createSessionApi(CSRF, vi.fn()).request('/api/v1/monthly-plans/p/entries/d/edit-lease', { method: 'PUT', editLeaseToken: token });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = new Headers(init.headers);
+    expect(init.method).toBe('PUT');
+    expect(headers.get('x-csrf-token')).toBe(CSRF);
+    expect(headers.get('edit-lease-token')).toBe(token);
+    expect(headers.get('content-type')).toBeNull();
+    expect(init.body).toBeUndefined();
+    expect(init.keepalive).toBeUndefined();
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain(token);
+  });
+
+  it('SP-12 PATCH sends Expected-Version and Edit-Lease-Token next to the JSON body', async () => {
+    const fetchMock = stubFetch(ok);
+    const token = 'a'.repeat(43);
+    await createSessionApi(CSRF, vi.fn()).request('/api/v1/monthly-plans/p/entries/d', {
+      method: 'PATCH', body: { shiftKind: 'NIGHT' }, expectedVersion: 3, editLeaseToken: token,
+    });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = new Headers(init.headers);
+    expect(headers.get('expected-version')).toBe('3');
+    expect(headers.get('edit-lease-token')).toBe(token);
+    expect(init.body).toBe('{"shiftKind":"NIGHT"}');
+  });
+
+  it('SP-12 a lease release may be sent with keepalive (pagehide)', async () => {
+    const fetchMock = stubFetch(() => new Response(null, { status: 204 }));
+    await createSessionApi(CSRF, vi.fn()).request('/api/v1/monthly-plans/p/entries/d/edit-lease', {
+      method: 'DELETE', editLeaseToken: 'b'.repeat(43), keepalive: true,
+    });
+    expect((fetchMock.mock.calls[0][1] as RequestInit).keepalive).toBe(true);
+  });
+
+  it.each(['', 'short', `${'x'.repeat(42)}=`, `${'x'.repeat(42)}
+`, 'x'.repeat(44)])(
+    'SP-12 refuses a malformed lease token before sending anything (%#)',
+    async (token) => {
+      const fetchMock = stubFetch(ok);
+      const request = createSessionApi(CSRF, vi.fn()).request('/api/v1/monthly-plans/p/entries/d/edit-lease', { method: 'PUT', editLeaseToken: token });
+      await expect(request).rejects.toThrow('Edit-Lease-Token has an invalid format');
+      await expect(request).rejects.not.toThrow(token || 'never');
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
 });

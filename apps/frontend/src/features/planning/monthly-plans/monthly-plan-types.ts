@@ -2,8 +2,9 @@ import type { ShiftKind } from '../../projects/shift-configuration-api';
 import type { StatusTone } from '../../../shared/ui/StatusBadge';
 
 /**
- * SP-11 PR-1 planning resources exactly as returned by `/api/v1/monthly-plans`
- * (create/read slice). No publish, edit or removal exists in this slice.
+ * Planning resources exactly as returned by `/api/v1/monthly-plans`: SP-11
+ * create/read plus the SP-12 single-duty read, edit (PATCH), removal (DELETE)
+ * and edit leases (ADR-0006). The first publication (SP-13) is not part of it.
  */
 export type MonthlyPlanStatus = 'UNPUBLISHED' | 'PUBLISHED';
 
@@ -53,7 +54,7 @@ export type Duty = {
   /** Canonical UTC instants (second precision), resolved by the server at creation. */
   startsAt: string;
   endsAt: string;
-  /** Optimistic-concurrency token for the later edit slice (SP-12); not used in this UI. */
+  /** Optimistic-concurrency token: every edit and removal sends it as `Expected-Version`. */
   version: number;
   assignments: DutyAssignment[];
   availabilityConflicts: AvailabilityConflict[];
@@ -66,6 +67,22 @@ export type CreateDutyInput = {
   shiftKind: ShiftKind;
   assignments: DutyAssignmentInput[];
 };
+
+/**
+ * SP-12 PATCH body: only the changed dimensions. `assignments` is the complete
+ * resulting roster (members not listed are removed), never a delta.
+ */
+export type UpdateDutyInput = {
+  dutyDate?: string;
+  shiftKind?: ShiftKind;
+  assignments?: DutyAssignmentInput[];
+};
+
+/**
+ * ADR-0006 edit lease as granted to the holder. `expiresAt` is the server's
+ * instant (microseconds preserved); the token stays in memory only.
+ */
+export type EditLeaseGrant = { leaseToken: string; expiresAt: string };
 
 export const PLAN_STATUS: Record<MonthlyPlanStatus, { label: string; tone: StatusTone }> = {
   UNPUBLISHED: { label: 'Unveröffentlicht', tone: 'info' },

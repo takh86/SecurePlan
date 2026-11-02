@@ -1,9 +1,11 @@
 /**
- * Test support for the SP-11 PR-2 planning screens: synthetic example records
- * and an in-memory company that answers the documented endpoints and keeps
- * state across reloads. Records, times and outcomes are examples, not business
- * rules; the duty interval below is a test simplification, not the server's
- * D6 resolver. Not part of the application bundle (only imported by tests).
+ * Test support for the planning screens (SP-11 PR-2, SP-12 A10): synthetic
+ * example records and an in-memory company that answers the documented
+ * endpoints and keeps state across reloads. Records, times and outcomes are
+ * examples, not business rules; the duty interval below is a test
+ * simplification, not the server's D6 resolver, and the edit-lease model only
+ * follows ADR-0006 closely enough for screen tests (no real clock, no hashing).
+ * Not part of the application bundle (only imported by tests).
  */
 import { employee, httpError, type Handler, type RecordedRequest } from '../../employees/employees.test-support';
 import type { Employee } from '../../employees/employee-types';
@@ -94,6 +96,9 @@ export function zonedInstant(date: string, time: string, timeZone = 'Europe/Berl
   return new Date(guess - (shown - guess)).toISOString().replace('.000Z', 'Z');
 }
 
+/** One duty's lease slot: held by this test session (`self`) or another admin (`other`). */
+export type LeaseSlot = { token: string; holder: 'self' | 'other'; live: boolean };
+
 type PlanningState = {
   projects: Project[];
   employees: Employee[];
@@ -103,7 +108,21 @@ type PlanningState = {
   duties: Record<string, Duty[]>;
   /** `employeeId|YYYY-MM-DD`: synthetic absence facts, only ever reported neutrally. */
   unavailable: Set<string>;
+  /** Edit leases by duty id (ADR-0006 model). */
+  leases: Record<string, LeaseSlot>;
 };
+
+let tokenSeq = 0;
+/** A synthetic lease token in the canonical 43-character base64url shape. */
+export function leaseToken(): string {
+  tokenSeq += 1;
+  return `lease${String(tokenSeq).padStart(6, '0')}`.padEnd(43, 'x');
+}
+
+/** Expiry `ttlMs` from now, rendered with microseconds as the server does. */
+export function leaseExpiry(ttlMs = 120_000): string {
+  return new Date(Date.now() + ttlMs).toISOString().replace('Z', '456Z');
+}
 
 function paged<T>(items: T[], params: URLSearchParams) {
   const pageSize = Number(params.get('pageSize') ?? 25);
@@ -129,6 +148,7 @@ export function planningCompany(initial: Partial<PlanningState> = {}) {
     plans: initial.plans ?? [],
     duties: initial.duties ?? {},
     unavailable: initial.unavailable ?? new Set(),
+    leases: initial.leases ?? {},
   };
   let failNext: ((request: RecordedRequest) => unknown) | null = null;
   let planSeq = 0;
@@ -145,6 +165,8 @@ export function planningCompany(initial: Partial<PlanningState> = {}) {
     const params = new URLSearchParams(search);
     const planMatch = /^\/api\/v1\/monthly-plans\/([^/]+)$/.exec(pathname);
     const entriesMatch = /^\/api\/v1\/monthly-plans\/([^/]+)\/entries$/.exec(pathname);
+    const entryMatch = /^\/api\/v1\/monthly-plans\/([^/]+)\/entries\/([^/]+)$/.exec(pathname);
+    const leaseMatch = /^\/api\/v1\/monthly-plans\/([^/]+)\/entries\/([^/]+)\/edit-lease$/.exec(pathname);
     const projectMatch = /^\/api\/v1\/projects\/([^/]+)$/.exec(pathname);
     const shiftMatch = /^\/api\/v1\/projects\/([^/]+)\/shift-configuration$/.exec(pathname);
 
@@ -203,8 +225,132 @@ export function planningCompany(initial: Partial<PlanningState> = {}) {
       if (request.method === 'GET') return { items: duties };
       if (request.method === 'POST') return createDuty(target, duties, request.body as CreateBody);
     }
+    if (entryMatch || leaseMatch) {
+      const [, planId, dutyId] = (leaseMatch ?? entryMatch)!;
+      const target = state.plans.find((item) => item.id === decodeURIComponent(planId));
+      const duties = target ? (state.duties[target.id] ??= []) : [];
+      const found = duties.find((item) => item.id === decodeURIComponent(dutyId));
+      if (!target || !found) throw httpError(404, 'RESOURCE_NOT_FOUND');
+      if (leaseMatch) return leaseCommand(found, request);
+      if (request.method === 'GET') return structuredClone(found);
+      if (request.method === 'PATCH') return updateDuty(target, duties, found, request);
+      if (request.method === 'DELETE') return removeDuty(duties, found, request);
+    }
     throw new Error(`Unexpected request ${request.method} ${request.path}`);
   };
+
+  function leaseCommand(target: Duty, request: RecordedRequest) {
+    const slot = state.leases[target.id];
+    if (request.method === 'POST') {
+      if (slot && slot.live && slot.holder === 'other') throw httpError(409, 'RESOURCE_EDIT_LOCKED');
+      const token = leaseToken();
+      state.leases[target.id] = { token, holder: 'self', live: true };
+      return { leaseToken: token, expiresAt: leaseExpiry() };
+    }
+    if (request.editLeaseToken === undefined) throw httpError(400, null);
+    const owns = slot !== undefined && slot.holder === 'self' && slot.token === request.editLeaseToken;
+    if (request.method === 'PUT') {
+      if (!owns || !slot.live) throw httpError(409, 'EDIT_LEASE_NOT_HELD');
+      return { leaseToken: slot.token, expiresAt: leaseExpiry() };
+    }
+    if (request.method === 'DELETE') {
+      // The retained owner and token authenticate a release even after expiry.
+      if (!owns) throw httpError(409, 'EDIT_LEASE_NOT_HELD');
+      slot.live = false;
+      return undefined;
+    }
+    throw new Error(`Unexpected lease request ${request.method}`);
+  }
+
+  /** ADR-0006 precedence: headers (400) -> lease (409) -> version/drift (409) -> no-op -> business rules. */
+  function assertMutation(target: Duty, request: RecordedRequest) {
+    if (request.expectedVersion === undefined || request.editLeaseToken === undefined) throw httpError(400, null);
+    const slot = state.leases[target.id];
+    if (!slot || slot.holder !== 'self' || !slot.live || slot.token !== request.editLeaseToken) {
+      throw httpError(409, 'EDIT_LEASE_NOT_HELD');
+    }
+    if (target.version !== request.expectedVersion) throw httpError(409, 'PLAN_CONCURRENT_MODIFICATION');
+  }
+
+  type PatchBody = { dutyDate?: string; shiftKind?: ShiftKind; assignments?: { employeeId: string; dutyRole: DutyRole }[] };
+
+  function updateDuty(plan: MonthlyPlan, duties: Duty[], target: Duty, request: RecordedRequest): Duty {
+    const body = request.body as PatchBody;
+    if (body.dutyDate === undefined && body.shiftKind === undefined && body.assignments === undefined) {
+      throw httpError(400, 'EMPTY_PATCH');
+    }
+    if (body.dutyDate !== undefined && body.dutyDate.slice(0, 8) !== plan.monthStart.slice(0, 8)) {
+      throw httpError(400, 'DUTY_DATE_OUTSIDE_PLAN_MONTH');
+    }
+    const roster = body.assignments ?? target.assignments.map(({ employeeId, dutyRole }) => ({ employeeId, dutyRole }));
+    const members = roster.map((item) => {
+      const person = state.employees.find((candidate) => candidate.id === item.employeeId);
+      if (!person) throw httpError(404, 'RESOURCE_NOT_FOUND');
+      return { person, role: item.dutyRole };
+    });
+    assertMutation(target, request);
+    const day = body.dutyDate ?? target.dutyDate;
+    const kind = body.shiftKind ?? target.shiftKind;
+    const timeChanged = day !== target.dutyDate || kind !== target.shiftKind;
+    const rosterChanged = roster.length !== target.assignments.length
+      || roster.some((item) => target.assignments.find((old) => old.employeeId === item.employeeId)?.dutyRole !== item.dutyRole);
+    if (!timeChanged && !rosterChanged) return structuredClone(target);
+    const owner = state.projects.find((item) => item.id === plan.projectId)!;
+    if (owner.status !== 'ACTIVE') throw httpError(409, 'PROJECT_INACTIVE');
+    if (duties.some((item) => item.id !== target.id && item.dutyDate === day && item.shiftKind === kind)) {
+      throw httpError(409, 'DUTY_ALREADY_EXISTS');
+    }
+    const rule = shiftRule(plan, kind);
+    assertStaffing(plan, day, kind, members);
+    if (timeChanged) {
+      const endDate = rule.endLocal < rule.startLocal
+        ? new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+        : day;
+      target.startsAt = zonedInstant(day, rule.startLocal);
+      target.endsAt = zonedInstant(endDate, rule.endLocal);
+    }
+    target.dutyDate = day;
+    target.shiftKind = kind;
+    target.assignments = members.map(({ person, role }) => {
+      const kept = target.assignments.find((old) => old.employeeId === person.id);
+      return kept ? { ...kept, dutyRole: role } : member(person.id, role);
+    });
+    target.availabilityConflicts = [];
+    target.version += 1;
+    return structuredClone(target);
+  }
+
+  function removeDuty(duties: Duty[], target: Duty, request: RecordedRequest) {
+    assertMutation(target, request);
+    duties.splice(duties.indexOf(target), 1);
+    state.leases[target.id].live = false;
+    return undefined;
+  }
+
+  function shiftRule(target: MonthlyPlan, kind: ShiftKind) {
+    const version = state.shiftVersions
+      .filter((item) => item.projectId === target.projectId && item.month <= target.monthStart)
+      .sort((a, b) => b.month.localeCompare(a.month))[0];
+    const rule = version?.shifts.find((item) => item.shiftKind === kind);
+    if (!rule) throw httpError(409, 'SHIFT_CONFIGURATION_MISSING');
+    return rule;
+  }
+
+  function assertStaffing(target: MonthlyPlan, dutyDate: string, kind: ShiftKind, members: { person: Employee }[]) {
+    for (const { person } of [...members].sort((a, b) => a.person.id.localeCompare(b.person.id))) {
+      if (person.status !== 'ACTIVE') throw httpError(409, 'EMPLOYEE_INACTIVE');
+      const employed = person.employmentStart !== null && person.employmentStart <= dutyDate
+        && (person.employmentEnd === null || person.employmentEnd >= dutyDate);
+      if (!employed) throw httpError(409, 'EMPLOYEE_NOT_EMPLOYED_FOR_DAY');
+      const assigned = state.assignments.some((item) =>
+        item.employeeId === person.id && item.projectId === target.projectId && item.monthStart === target.monthStart);
+      if (!assigned) throw httpError(409, 'EMPLOYEE_NOT_ASSIGNED_TO_PROJECT_MONTH');
+      if (person.shiftEligibility !== 'BOTH' && person.shiftEligibility !== kind) {
+        throw httpError(409, 'EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT');
+      }
+      if (state.unavailable.has(`${person.id}|${dutyDate}`)) throw httpError(409, 'EMPLOYEE_UNAVAILABLE');
+    }
+  }
 
   type CreateBody = { dutyDate: string; shiftKind: ShiftKind; assignments: { employeeId: string; dutyRole: DutyRole }[] };
 
@@ -220,24 +366,8 @@ export function planningCompany(initial: Partial<PlanningState> = {}) {
     if (duties.some((item) => item.dutyDate === body.dutyDate && item.shiftKind === body.shiftKind)) {
       throw httpError(409, 'DUTY_ALREADY_EXISTS');
     }
-    const version = state.shiftVersions
-      .filter((item) => item.projectId === target.projectId && item.month <= target.monthStart)
-      .sort((a, b) => b.month.localeCompare(a.month))[0];
-    const rule = version?.shifts.find((item) => item.shiftKind === body.shiftKind);
-    if (!rule) throw httpError(409, 'SHIFT_CONFIGURATION_MISSING');
-    for (const { person } of [...members].sort((a, b) => a.person.id.localeCompare(b.person.id))) {
-      if (person.status !== 'ACTIVE') throw httpError(409, 'EMPLOYEE_INACTIVE');
-      const employed = person.employmentStart !== null && person.employmentStart <= body.dutyDate
-        && (person.employmentEnd === null || person.employmentEnd >= body.dutyDate);
-      if (!employed) throw httpError(409, 'EMPLOYEE_NOT_EMPLOYED_FOR_DAY');
-      const assigned = state.assignments.some((item) =>
-        item.employeeId === person.id && item.projectId === target.projectId && item.monthStart === target.monthStart);
-      if (!assigned) throw httpError(409, 'EMPLOYEE_NOT_ASSIGNED_TO_PROJECT_MONTH');
-      if (person.shiftEligibility !== 'BOTH' && person.shiftEligibility !== body.shiftKind) {
-        throw httpError(409, 'EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT');
-      }
-      if (state.unavailable.has(`${person.id}|${body.dutyDate}`)) throw httpError(409, 'EMPLOYEE_UNAVAILABLE');
-    }
+    const rule = shiftRule(target, body.shiftKind);
+    assertStaffing(target, body.dutyDate, body.shiftKind, members);
     const endDate = rule.endLocal < rule.startLocal
       ? new Date(Date.parse(`${body.dutyDate}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
       : body.dutyDate;

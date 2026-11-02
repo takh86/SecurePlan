@@ -11,7 +11,7 @@ import { ErrorState, LoadingState } from '../../../shared/ui/ViewStates';
 import { civilDate } from '../../employees/availability-api';
 import { fullName, type Employee } from '../../employees/employee-types';
 import type { EditState } from '../../projects/edit-state';
-import type { ProjectAssignment, ProjectAssignmentsApi } from '../../projects/project-assignments-api';
+import type { ProjectAssignment } from '../../projects/project-assignments-api';
 import type { Project } from '../../projects/project-types';
 import { SHIFT_KINDS, type ShiftConfiguration, type ShiftConfigurationApi, type ShiftKind } from '../../projects/shift-configuration-api';
 import { endsNextDay } from '../../projects/shift-configuration-form';
@@ -22,18 +22,24 @@ import { outcomeUnknown, planningErrorText } from './planning-errors';
 
 const PROJECTS_PATH = APP_ROUTES.find((route) => route.id === 'projects')!.path;
 
-type FormApis = { plans: MonthlyPlansApi; assignments: ProjectAssignmentsApi; shiftConfigurations: ShiftConfigurationApi };
+type FormApis = { plans: MonthlyPlansApi; shiftConfigurations: ShiftConfigurationApi };
 
-/** What the form needs besides the page data: this month's project assignments and shift times. */
-type FormContext = { assignments: ProjectAssignment[]; configuration: ShiftConfiguration };
+/** What the form loads itself: the shift times effective for the plan month. */
+type FormContext = { configuration: ShiftConfiguration };
+
+/** Prefill from the A10 matrix (a free cell or a day without this kind of duty). */
+export type DutyCreatePrefill = { date: string | null; kind: ShiftKind | null; employeeId: string | null };
 
 type FormProps = {
   plan: MonthlyPlan;
   project: Project;
   employees: Employee[];
+  /** The company's month assignments of the plan month (loaded by the page). */
+  assignments: ProjectAssignment[];
   /** Duties known on the page (null while they load); used to catch an occupied slot before sending. */
   existingDuties: Duty[] | null;
   apis: FormApis;
+  prefill?: DutyCreatePrefill;
   onCreated: (duty: Duty) => void;
   onReloadDuties: () => void;
   onEditStateChange: (state: EditState) => void;
@@ -57,30 +63,27 @@ export function DutyCreateForm(props: FormProps) {
   const source = useMemo<ReadSource<string, FormContext>>(
     () => ({
       kind: 'api',
-      load: async (_planId, signal) => {
-        const [assignments, configuration] = await Promise.all([
-          apis.assignments.listMonth(month, signal),
-          apis.shiftConfigurations.get(project.id, month, signal),
-        ]);
-        return { assignments, configuration };
-      },
+      load: async (_planId, signal) => ({ configuration: await apis.shiftConfigurations.get(project.id, month, signal) }),
     }),
     [apis, month, project.id],
   );
   const { state, retry } = useReadSource(source, plan.id);
-  if (state.status === 'loading') return <LoadingState label="Zuordnungen und Schichtzeiten werden geladen …" />;
+  if (state.status === 'loading') return <LoadingState label="Schichtzeiten werden geladen …" />;
   if (state.status === 'error') return <ErrorState error={state.error} onRetry={retry} />;
   return <DutyForm {...props} month={month} context={state.data} />;
 }
 
 function DutyForm({
-  plan, project, employees, existingDuties, apis, onCreated, onReloadDuties, onEditStateChange, month, context,
+  plan, project, employees, assignments, existingDuties, apis, prefill, onCreated, onReloadDuties, onEditStateChange, month, context,
 }: FormProps & { month: MonthKey; context: FormContext }) {
   const id = useId();
-  const [date, setDate] = useState('');
-  const [kind, setKind] = useState<ShiftKind | null>(null);
-  // Selected employees (lower-case id) with their duty role.
-  const [selected, setSelected] = useState<Record<string, DutyRole>>({});
+  const [date, setDate] = useState(prefill?.date ?? '');
+  const [kind, setKind] = useState<ShiftKind | null>(prefill?.kind ?? null);
+  // Selected employees (lower-case id) with their duty role. A prefilled person is only a
+  // suggestion: it counts only while the static rules offer them (see `chosen`).
+  const [selected, setSelected] = useState<Record<string, DutyRole>>(
+    () => (prefill?.employeeId ? { [prefill.employeeId.toLowerCase()]: 'EMPLOYEE' } : {}),
+  );
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<Error | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -94,16 +97,20 @@ function DutyForm({
   const monthLabel = formatMonthLabel(month);
   const validDate = civilDate(date) && date >= first && date <= last;
   const candidates = useMemo(
-    () => (validDate && kind ? dutyCandidates(employees, context.assignments, project.id, plan.monthStart, date, kind) : null),
-    [validDate, kind, employees, context.assignments, project.id, plan.monthStart, date],
+    () => (validDate && kind ? dutyCandidates(employees, assignments, project.id, plan.monthStart, date, kind) : null),
+    [validDate, kind, employees, assignments, project.id, plan.monthStart, date],
   );
   const chosen = candidates ? candidates.eligible.filter((employee) => selected[employee.id.toLowerCase()] !== undefined) : [];
   const assignedCount = useMemo(
-    () => context.assignments.filter((item) => item.projectId.toLowerCase() === project.id.toLowerCase()).length,
-    [context.assignments, project.id],
+    () => assignments.filter((item) => item.monthStart === plan.monthStart && item.projectId.toLowerCase() === project.id.toLowerCase()).length,
+    [assignments, plan.monthStart, project.id],
   );
 
-  const editState: EditState = submitting ? 'saving' : date !== '' || kind !== null || Object.keys(selected).length > 0 ? 'dirty' : 'clean';
+  // Dirty means: changed by the admin. An untouched prefill from the matrix holds nothing back.
+  const [initial] = useState(() => ({ date, kind, selected: JSON.stringify(selected) }));
+  const editState: EditState = submitting
+    ? 'saving'
+    : date !== initial.date || kind !== initial.kind || JSON.stringify(selected) !== initial.selected ? 'dirty' : 'clean';
   useEffect(() => {
     onEditStateChange(editState);
   }, [editState, onEditStateChange]);
