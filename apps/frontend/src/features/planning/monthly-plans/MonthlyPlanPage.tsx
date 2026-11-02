@@ -841,7 +841,7 @@ function UnsavedPrompt({ mode, editState, onLeave, onStay }: PromptProps) {
     setDeciding(true);
     const target = returnFocus.current;
     if (stay && target?.isConnected) target.focus();
-    else if (stay) document.querySelector<HTMLElement>('.planning-panel input, .planning-panel select, .month-grid button[tabindex="0"]')?.focus();
+    else if (stay) document.querySelector<HTMLElement>('.planning-panel input, .planning-panel select, .month-calendar button[tabindex="0"]')?.focus();
     action();
   }
 

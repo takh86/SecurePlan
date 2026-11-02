@@ -1,19 +1,23 @@
 /**
- * Issue #88 (Product Owner decision 2026-11-02; design gate OPEN): pure draft
- * state of the employee-month workflow. One employee, every day of the plan
- * month, one DAY and one NIGHT slot per day. The draft records what the admin
- * wants on top of the server state it was built on. It never writes anything,
- * and it defines no HTTP contract: `EmployeeMonthCommand` is only a frontend
- * seam that an adapter for the approved #88 contract will translate.
+ * Issue #88 (Product Owner decision 2026-11-02, design gate OPEN) with the PO
+ * clarification in #90 and the Tech Lead review of PR #91: pure draft state of
+ * the employee-month workflow. One employee, every day of the plan month. The
+ * admin paints dates with a mode (TAG, NACHT or FREI); the draft records what
+ * the admin wants on top of the server state it was built on. It never writes
+ * anything and defines no HTTP contract: `EmployeeMonthCommand` is only a
+ * frontend seam that an adapter for the approved #88 contract will translate.
  *
- * Deliberately neutral:
- * - "nicht eingeplant" is only the absence of a membership, never an absence
- *   record (sickness, leave) of the employee;
- * - DAY and NIGHT of one date are independent slots; time overlap and every
- *   other staffing rule stay with the server;
- * - other members of a duty are context only and never part of a change;
- * - the duty role (Mitarbeitende/Schichtleitung) belongs to one membership;
- *   no limit on shift leads is assumed.
+ * Rules held by construction:
+ * - ONE shift per employee, project and local duty date: a wanted day is TAG
+ *   or NACHT (with a role) or Frei, never both. A night belongs to the date it
+ *   starts on. Stored data with both shifts on a date (from before this rule)
+ *   is shown as "Korrektur nötig" and blocks saving until the admin decides.
+ * - Frei means "not planned in this project on this date"; it is a scheduling
+ *   state only, never an absence record (sickness, leave).
+ * - Other members of a duty are context only and never part of a change.
+ * - An existing role (Schichtleitung) is kept unless the admin changes it.
+ * - Project operating days (#90) come only from an authoritative calendar;
+ *   without one no date is treated as closed and the server decides.
  */
 import { SHIFT_TYPE_LABELS } from '../../../shared/shift/shift-view';
 import type { DateOnly, MonthKey } from '../../../shared/time/month';
@@ -26,14 +30,14 @@ import { matrixDays } from './planning-matrix';
 /** Fixed slot order within a day. */
 export const SLOT_KINDS: readonly ShiftKind[] = ['DAY', 'NIGHT'];
 
-/** `YYYY-MM-DD|DAY` – one slot of the month. */
+/** `YYYY-MM-DD|DAY` – one duty slot of the month. */
 export type SlotKey = string;
 
 export function slotKey(date: DateOnly, kind: ShiftKind): SlotKey {
   return `${date}|${kind}`;
 }
 
-/** The employee's role in a slot; null = not planned (no membership). */
+/** The employee's role in one slot; null = no membership. */
 export type Choice = DutyRole | null;
 
 export type OtherMember = { employeeId: string; dutyRole: DutyRole };
@@ -100,146 +104,300 @@ export function monthBase(duties: readonly Duty[], employeeId: string, month: Mo
   return { employeeId, month, days, slots };
 }
 
-/** Why a slot with a choice needs a new decision after the server state changed under it. */
-export type ConflictKind = 'own' | 'created' | 'removed' | 'replaced' | 'others';
-
-export type SlotConflict = { kind: ConflictKind; before: SlotBase };
-
-export type EmployeeMonthDraft = {
-  base: MonthBase;
-  /** Only slots whose wanted role differs from the base. */
-  choices: ReadonlyMap<SlotKey, Choice>;
-  /** Choices whose slot changed on the server since they were made; saving waits for a decision. */
-  conflicts: ReadonlyMap<SlotKey, SlotConflict>;
-};
-
-export function emptyDraft(base: MonthBase): EmployeeMonthDraft {
-  return { base, choices: new Map(), conflicts: new Map() };
-}
-
 export function slotOf(draft: Pick<EmployeeMonthDraft, 'base'>, key: SlotKey): SlotBase {
   const slot = draft.base.slots.get(key);
   if (!slot) throw new Error(`Unknown slot ${key}`);
   return slot;
 }
 
-/** The role the admin wants in a slot (the server's role when unchanged). */
-export function desired(draft: EmployeeMonthDraft, key: SlotKey): Choice {
-  return draft.choices.has(key) ? draft.choices.get(key)! : slotOf(draft, key).role;
+/** Both slots of one date. */
+export function daySlots(base: MonthBase, date: DateOnly): Record<ShiftKind, SlotBase> {
+  const day = base.slots.get(slotKey(date, 'DAY'));
+  const night = base.slots.get(slotKey(date, 'NIGHT'));
+  if (!day || !night) throw new Error(`Unknown date ${date}`);
+  return { DAY: day, NIGHT: night };
 }
 
-/** Sets the wanted role; a choice equal to the server state is no change. An explicit choice settles a conflict. */
-export function setChoice(draft: EmployeeMonthDraft, key: SlotKey, choice: Choice): EmployeeMonthDraft {
-  const slot = slotOf(draft, key);
+/** The toolbar's paint modes, in display order. */
+export type PaintMode = 'DAY' | 'NIGHT' | 'FREE';
+export const PAINT_MODES: readonly PaintMode[] = ['DAY', 'NIGHT', 'FREE'];
+export const PAINT_MODE_LABELS: Record<PaintMode, string> = { DAY: 'Tag', NIGHT: 'Nacht', FREE: 'Frei' };
+
+/** What the employee does on one date: one shift with a role, or null = Frei (not planned). */
+export type DayPlan = { kind: ShiftKind; role: DutyRole } | null;
+
+/** A date's state: a valid plan, or BOTH for stored data with a DAY and a NIGHT membership. */
+export type DayState = DayPlan | 'BOTH';
+
+/** The stored state of a date for the employee. */
+export function storedDay(base: MonthBase, date: DateOnly): DayState {
+  const { DAY, NIGHT } = daySlots(base, date);
+  if (DAY.role !== null && NIGHT.role !== null) return 'BOTH';
+  if (DAY.role !== null) return { kind: 'DAY', role: DAY.role };
+  if (NIGHT.role !== null) return { kind: 'NIGHT', role: NIGHT.role };
+  return null;
+}
+
+export function sameDay(a: DayState, b: DayState): boolean {
+  if (a === null || b === null || a === 'BOTH' || b === 'BOTH') return a === b;
+  return a.kind === b.kind && a.role === b.role;
+}
+
+/** The employee's wanted role in one slot of a plan (null when the plan is another shift or Frei). */
+export function roleIn(plan: DayPlan, kind: ShiftKind): Choice {
+  return plan !== null && plan.kind === kind ? plan.role : null;
+}
+
+/** Why a date with a choice needs a new decision after the server state changed under it. */
+export type ConflictKind = 'own' | 'created' | 'removed' | 'replaced' | 'others';
+
+export type DayConflict = {
+  kind: ConflictKind;
+  /** The shift whose change caused the conflict. */
+  shift: ShiftKind;
+  /** That slot as first known while the conflict is open. */
+  before: SlotBase;
+};
+
+export type EmployeeMonthDraft = {
+  base: MonthBase;
+  /** Only dates whose wanted plan differs from the stored state. Never BOTH. */
+  choices: ReadonlyMap<DateOnly, DayPlan>;
+  /** Choices whose date changed on the server since they were made; saving waits for a decision. */
+  conflicts: ReadonlyMap<DateOnly, DayConflict>;
+};
+
+export function emptyDraft(base: MonthBase): EmployeeMonthDraft {
+  return { base, choices: new Map(), conflicts: new Map() };
+}
+
+/** The state the admin wants for a date (the stored state when unchanged). */
+export function wanted(draft: EmployeeMonthDraft, date: DateOnly): DayState {
+  return draft.choices.has(date) ? draft.choices.get(date)! : storedDay(draft.base, date);
+}
+
+/**
+ * Sets the wanted plan of a date. A plan equal to the stored state is no
+ * change; an explicit decision settles an open conflict of that date.
+ */
+export function setDay(draft: EmployeeMonthDraft, date: DateOnly, plan: DayPlan): EmployeeMonthDraft {
   const choices = new Map(draft.choices);
-  if (choice === slot.role) choices.delete(key);
-  else choices.set(key, choice);
+  if (sameDay(plan, storedDay(draft.base, date))) choices.delete(date);
+  else choices.set(date, plan);
   const conflicts = new Map(draft.conflicts);
-  conflicts.delete(key);
+  conflicts.delete(date);
   return { ...draft, choices, conflicts };
 }
 
-/** The choice a toggle leads to: planned → not planned; not planned → the server's role, else Mitarbeitende. */
-export function toggledChoice(draft: EmployeeMonthDraft, key: SlotKey): Choice {
-  return desired(draft, key) !== null ? null : slotOf(draft, key).role ?? 'EMPLOYEE';
+/**
+ * The plan a paint mode leads to. TAG and NACHT replace each other; FREI
+ * takes the employee off both. A shift the date already has keeps its role
+ * (repeating a mode is no change); otherwise the stored role of that shift is
+ * restored, and a new membership starts as Mitarbeitende.
+ */
+export function paintedPlan(draft: EmployeeMonthDraft, date: DateOnly, mode: PaintMode): DayPlan {
+  if (mode === 'FREE') return null;
+  const current = wanted(draft, date);
+  if (current !== null && current !== 'BOTH' && current.kind === mode) return current;
+  return { kind: mode, role: daySlots(draft.base, date)[mode].role ?? 'EMPLOYEE' };
 }
 
-/** Back to the server state of one slot ("Serverstand übernehmen" for a conflict). */
-export function revertSlot(draft: EmployeeMonthDraft, key: SlotKey): EmployeeMonthDraft {
-  return setChoice(draft, key, slotOf(draft, key).role);
+/** Paints one date. Painting the state a date already has returns the same draft (idempotent). */
+export function paint(draft: EmployeeMonthDraft, date: DateOnly, mode: PaintMode): EmployeeMonthDraft {
+  const plan = paintedPlan(draft, date, mode);
+  return sameDay(plan, wanted(draft, date)) ? draft : setDay(draft, date, plan);
+}
+
+/** Changes the role of the date's single wanted shift; no-op for Frei or a date with both shifts. */
+export function setRole(draft: EmployeeMonthDraft, date: DateOnly, role: DutyRole): EmployeeMonthDraft {
+  const current = wanted(draft, date);
+  if (current === null || current === 'BOTH' || current.role === role) return draft;
+  return setDay(draft, date, { kind: current.kind, role });
+}
+
+/** Back to the stored state of a date ("Aktuellen Stand übernehmen" for a conflict). */
+export function revertDay(draft: EmployeeMonthDraft, date: DateOnly): EmployeeMonthDraft {
+  if (!draft.choices.has(date) && !draft.conflicts.has(date)) return draft;
+  const choices = new Map(draft.choices);
+  choices.delete(date);
+  const conflicts = new Map(draft.conflicts);
+  conflicts.delete(date);
+  return { ...draft, choices, conflicts };
 }
 
 /** Keeps the admin's choice on top of the newer server state. */
-export function keepChoice(draft: EmployeeMonthDraft, key: SlotKey): EmployeeMonthDraft {
-  if (!draft.conflicts.has(key)) return draft;
+export function keepChoice(draft: EmployeeMonthDraft, date: DateOnly): EmployeeMonthDraft {
+  if (!draft.conflicts.has(date)) return draft;
   const conflicts = new Map(draft.conflicts);
-  conflicts.delete(key);
+  conflicts.delete(date);
   return { ...draft, conflicts };
 }
 
-export type SlotStatus = 'unchanged' | 'added' | 'removed' | 'role-changed';
+export type DayStatus = 'unchanged' | 'added' | 'removed' | 'switched' | 'role-changed' | 'corrected';
 
-export function statusOf(before: Choice, after: Choice): SlotStatus {
-  if (before === after) return 'unchanged';
+export function dayStatus(before: DayState, after: DayState): DayStatus {
+  if (sameDay(before, after)) return 'unchanged';
   if (before === null) return 'added';
   if (after === null) return 'removed';
-  return 'role-changed';
+  if (before === 'BOTH') return 'corrected';
+  if (after === 'BOTH') throw new Error('A wanted day never has both shifts');
+  return before.kind !== after.kind ? 'switched' : 'role-changed';
 }
 
-export type SlotChange = {
-  key: SlotKey;
-  slot: SlotBase;
-  after: Choice;
-  status: Exclude<SlotStatus, 'unchanged'>;
-  conflict: SlotConflict | null;
+export type DayChange = {
+  date: DateOnly;
+  before: DayState;
+  after: DayPlan;
+  status: Exclude<DayStatus, 'unchanged'>;
+  slots: Record<ShiftKind, SlotBase>;
+  conflict: DayConflict | null;
 };
 
-/** Every pending change in calendar order, DAY before NIGHT. */
-export function pendingChanges(draft: EmployeeMonthDraft): SlotChange[] {
-  const changes: SlotChange[] = [];
+/** Every pending change in calendar order. */
+export function pendingChanges(draft: EmployeeMonthDraft): DayChange[] {
+  const changes: DayChange[] = [];
   for (const date of draft.base.days) {
-    for (const kind of SLOT_KINDS) {
-      const key = slotKey(date, kind);
-      if (!draft.choices.has(key)) continue;
-      const slot = slotOf(draft, key);
-      const after = draft.choices.get(key)!;
-      changes.push({ key, slot, after, status: statusOf(slot.role, after) as SlotChange['status'], conflict: draft.conflicts.get(key) ?? null });
-    }
+    if (!draft.choices.has(date)) continue;
+    const before = storedDay(draft.base, date);
+    const after = draft.choices.get(date)!;
+    changes.push({
+      date,
+      before,
+      after,
+      status: dayStatus(before, after) as DayChange['status'],
+      slots: daySlots(draft.base, date),
+      conflict: draft.conflicts.get(date) ?? null,
+    });
   }
   return changes;
 }
 
-export type RebaseReport = {
-  /** Choices the newer server state already shows; they are no longer pending. */
-  reached: SlotKey[];
-  /** Choices whose slot changed under them; they stay, marked for a decision. */
-  conflicts: SlotKey[];
-  /** Slots without a choice whose role for this employee changed on the server. */
-  changedElsewhere: SlotKey[];
+/**
+ * Issue #90 (contract pending): the project's operating days in the plan
+ * month, resolved by the server to company-local dates (a night counts on its
+ * start date). Until that contract exists the calendar is `unknown`: the
+ * client then treats no date as closed, assumes no weekend rule, and the
+ * server decides.
+ */
+export type ProjectCalendar =
+  | { status: 'unknown' }
+  | { status: 'known'; closed: ReadonlySet<DateOnly> };
+
+export const UNKNOWN_CALENDAR: ProjectCalendar = { status: 'unknown' };
+
+export function isClosed(calendar: ProjectCalendar, date: DateOnly): boolean {
+  return calendar.status === 'known' && calendar.closed.has(date);
+}
+
+/** Why a date needs a decision before the month can be saved. */
+export type CorrectionReason = 'BOTH_SHIFTS' | 'CLOSED_DAY';
+
+export const CORRECTION_TEXT: Record<CorrectionReason, string> = {
+  BOTH_SHIFTS: 'Tagdienst und Nachtdienst gespeichert – pro Tag ist nur ein Dienst erlaubt. Wählen Sie Tag, Nacht oder Frei.',
+  CLOSED_DAY: 'Das Projekt ist an diesem Tag nicht in Betrieb. Setzen Sie den Tag auf Frei.',
 };
 
+export function correctionOf(draft: EmployeeMonthDraft, date: DateOnly, calendar: ProjectCalendar): CorrectionReason | null {
+  const state = wanted(draft, date);
+  if (state === 'BOTH') return 'BOTH_SHIFTS';
+  if (state !== null && isClosed(calendar, date)) return 'CLOSED_DAY';
+  return null;
+}
+
+export function corrections(draft: EmployeeMonthDraft, calendar: ProjectCalendar): { date: DateOnly; reason: CorrectionReason }[] {
+  return draft.base.days.flatMap((date) => {
+    const reason = correctionOf(draft, date, calendar);
+    return reason === null ? [] : [{ date, reason }];
+  });
+}
+
+/** Wanted shifts of the month, for the summary line. */
+export function monthSummary(draft: EmployeeMonthDraft): { day: number; night: number; free: number; both: number } {
+  const summary = { day: 0, night: 0, free: 0, both: 0 };
+  for (const date of draft.base.days) {
+    const state = wanted(draft, date);
+    if (state === 'BOTH') summary.both += 1;
+    else if (state === null) summary.free += 1;
+    else if (state.kind === 'DAY') summary.day += 1;
+    else summary.night += 1;
+  }
+  return summary;
+}
+
+export type RebaseReport = {
+  /** Dates whose wanted plan the newer server state already shows; they are no longer pending. */
+  reached: DateOnly[];
+  /** Dates whose choice touches a slot that changed; the choice stays, marked for a decision. */
+  conflicts: DateOnly[];
+  /** Dates without a choice whose state for this employee changed on the server. */
+  changedElsewhere: DateOnly[];
+};
+
+/** How one slot changed; a change of the employee's own membership is named first. */
 function conflictKind(before: SlotBase, now: SlotBase): ConflictKind | null {
+  if (before.role !== now.role) return 'own';
   if (before.dutyId === null && now.dutyId !== null) return 'created';
   if (before.dutyId !== null && now.dutyId === null) return 'removed';
   if (before.dutyId !== null && now.dutyId !== null && before.dutyId.toLowerCase() !== now.dutyId.toLowerCase()) return 'replaced';
-  if (before.role !== now.role) return 'own';
   if (before.version !== now.version) return 'others';
   return null;
+}
+
+const CONFLICT_PRIORITY: readonly ConflictKind[] = ['own', 'replaced', 'removed', 'created', 'others'];
+
+/**
+ * The conflict of a choice: a change of any slot the choice writes to (the
+ * employee's membership there differs from the wanted one, before or now).
+ * A slot the choice leaves alone does not matter.
+ */
+function dayConflict(before: Record<ShiftKind, SlotBase>, now: Record<ShiftKind, SlotBase>, choice: DayPlan): { kind: ConflictKind; shift: ShiftKind } | null {
+  let found: { kind: ConflictKind; shift: ShiftKind } | null = null;
+  for (const shift of SLOT_KINDS) {
+    const target = roleIn(choice, shift);
+    if (target === before[shift].role && target === now[shift].role) continue;
+    const kind = conflictKind(before[shift], now[shift]);
+    if (kind !== null && (found === null || CONFLICT_PRIORITY.indexOf(kind) < CONFLICT_PRIORITY.indexOf(found.kind))) {
+      found = { kind, shift };
+    }
+  }
+  return found;
 }
 
 /**
  * Moves the draft onto a newer server state ("Aktuellen Stand laden", or the
  * re-read after a save). No choice is lost silently: a choice the server
- * already shows is reported as reached; a choice whose slot changed in any way
- * stays and needs an explicit "keep" or "take server state".
+ * already shows is reported as reached; a choice whose slots changed stays and
+ * needs an explicit "keep" or "take server state". A choice is a single shift
+ * or Frei, so a rebase can never produce both shifts on a date.
  */
 export function rebase(draft: EmployeeMonthDraft, fresh: MonthBase): { draft: EmployeeMonthDraft; report: RebaseReport } {
   if (fresh.employeeId.toLowerCase() !== draft.base.employeeId.toLowerCase() || fresh.month !== draft.base.month) {
     throw new Error('A draft can only move to a newer state of the same employee and month');
   }
-  const choices = new Map<SlotKey, Choice>();
-  const conflicts = new Map<SlotKey, SlotConflict>();
+  const choices = new Map<DateOnly, DayPlan>();
+  const conflicts = new Map<DateOnly, DayConflict>();
   const report: RebaseReport = { reached: [], conflicts: [], changedElsewhere: [] };
-  for (const [key, before] of draft.base.slots) {
-    const now = fresh.slots.get(key)!;
-    if (!draft.choices.has(key)) {
-      if (before.role !== now.role) report.changedElsewhere.push(key);
+  for (const date of draft.base.days) {
+    const now = storedDay(fresh, date);
+    if (!draft.choices.has(date)) {
+      if (!sameDay(storedDay(draft.base, date), now)) report.changedElsewhere.push(date);
       continue;
     }
-    const choice = draft.choices.get(key)!;
-    if (choice === now.role) {
-      report.reached.push(key);
+    const choice = draft.choices.get(date)!;
+    if (sameDay(choice, now)) {
+      report.reached.push(date);
       continue;
     }
-    choices.set(key, choice);
-    const kind = conflictKind(before, now);
-    const open = draft.conflicts.get(key);
-    if (kind !== null) {
+    choices.set(date, choice);
+    const before = daySlots(draft.base, date);
+    const found = dayConflict(before, daySlots(fresh, date), choice);
+    const open = draft.conflicts.get(date);
+    if (found !== null) {
       // The first known state stays the reference while the conflict is open.
-      conflicts.set(key, { kind, before: open?.before ?? before });
-      report.conflicts.push(key);
+      conflicts.set(date, { ...found, before: open?.before ?? before[found.shift] });
+      report.conflicts.push(date);
     } else if (open) {
-      conflicts.set(key, open);
+      conflicts.set(date, open);
     }
   }
   return { draft: { base: fresh, choices, conflicts }, report };
@@ -248,6 +406,7 @@ export function rebase(draft: EmployeeMonthDraft, fresh: MonthBase): { draft: Em
 /** Why the UI does not offer a change; a UX aid mirroring static rules, the server decides. */
 export type ChangeRestriction =
   | 'PROJECT_INACTIVE'
+  | 'CLOSED_DAY'
   | 'UNKNOWN_PERSON'
   | 'NOT_ASSIGNED'
   | 'INACTIVE'
@@ -256,10 +415,11 @@ export type ChangeRestriction =
   | 'NO_DUTY';
 
 export const RESTRICTION_TEXT: Record<ChangeRestriction, string> = {
-  PROJECT_INACTIVE: 'Projekt inaktiv: nur Austragen möglich',
-  UNKNOWN_PERSON: 'Person nicht mehr vorhanden: nur Austragen möglich',
-  NOT_ASSIGNED: 'im Monat nicht dem Projekt zugeordnet: nur Austragen möglich',
-  INACTIVE: 'Person deaktiviert: nur Austragen möglich',
+  PROJECT_INACTIVE: 'Projekt inaktiv: nur Frei möglich',
+  CLOSED_DAY: 'Projekt an diesem Tag nicht in Betrieb',
+  UNKNOWN_PERSON: 'Person nicht mehr vorhanden: nur Frei möglich',
+  NOT_ASSIGNED: 'im Monat nicht dem Projekt zugeordnet: nur Frei möglich',
+  INACTIVE: 'Person deaktiviert: nur Frei möglich',
   NOT_EMPLOYED: 'an diesem Tag nicht beschäftigt',
   NOT_ELIGIBLE_FOR_SHIFT: 'nicht für diese Dienstart freigegeben',
   NO_DUTY: 'kein Dienst angelegt',
@@ -273,15 +433,18 @@ export type PlannerContext = {
   projectActive: boolean;
   /** Whether a choice may target a date/kind without a duty (open #88 decision). */
   newDuties: boolean;
+  /** Operating days (#90); `unknown` until the contract exists. */
+  calendar: ProjectCalendar;
 };
 
 /**
- * Restriction of a choice that differs from the server state. Taking someone
- * off a duty and returning to the server state are always offered.
+ * Restriction of a role in one slot that differs from the stored state.
+ * Taking someone off a duty and returning to the stored role are always offered.
  */
 export function changeRestriction(context: PlannerContext, slot: SlotBase, choice: Choice): ChangeRestriction | null {
   if (choice === null || choice === slot.role) return null;
   if (!context.projectActive) return 'PROJECT_INACTIVE';
+  if (isClosed(context.calendar, slot.date)) return 'CLOSED_DAY';
   if (context.employee === null) return 'UNKNOWN_PERSON';
   if (!context.assigned) return 'NOT_ASSIGNED';
   if (context.employee.status !== 'ACTIVE') return 'INACTIVE';
@@ -291,16 +454,25 @@ export function changeRestriction(context: PlannerContext, slot: SlotBase, choic
   return null;
 }
 
+/** Restriction of painting a date; FREI and a repeated mode are always offered. */
+export function paintRestriction(context: PlannerContext, draft: EmployeeMonthDraft, date: DateOnly, mode: PaintMode): ChangeRestriction | null {
+  const plan = paintedPlan(draft, date, mode);
+  if (plan === null || sameDay(plan, wanted(draft, date))) return null;
+  return changeRestriction(context, daySlots(draft.base, date)[plan.kind], plan.role);
+}
+
 /**
  * A rejected save's finding for one date (and kind, if known). Frontend
- * categories named after the existing staffing codes; the #88 contract decides
- * how the server reports them. Texts stay neutral (no absence reason).
+ * categories named after the existing staffing codes; the #88/#90 contract
+ * decides how the server reports them. Texts stay neutral (no absence reason).
  */
 export type DayIssueReason =
   | 'EMPLOYEE_UNAVAILABLE'
   | 'DUTY_ASSIGNMENT_CONFLICT'
   | 'EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT'
   | 'EMPLOYEE_NOT_EMPLOYED_FOR_DAY'
+  | 'ONE_SHIFT_PER_DAY'
+  | 'PROJECT_CLOSED_DAY'
   | 'CHANGED_ON_SERVER'
   | 'REJECTED';
 
@@ -311,104 +483,135 @@ export const DAY_ISSUE_TEXT: Record<DayIssueReason, string> = {
   DUTY_ASSIGNMENT_CONFLICT: 'Überschneidet sich zeitlich mit einem anderen Dienst dieser Person.',
   EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT: 'Nicht für diese Dienstart freigegeben.',
   EMPLOYEE_NOT_EMPLOYED_FOR_DAY: 'An diesem Tag nicht beschäftigt.',
+  ONE_SHIFT_PER_DAY: 'Pro Tag ist nur ein Dienst möglich (Tag oder Nacht).',
+  PROJECT_CLOSED_DAY: 'Das Projekt ist an diesem Tag nicht in Betrieb.',
   CHANGED_ON_SERVER: 'Inzwischen geändert. Laden Sie den aktuellen Stand.',
   REJECTED: 'Diese Auswahl wurde nicht angenommen.',
 };
 
-/** Issues that still apply after the admin changed one slot (an edited slot's finding is outdated). */
-export function issuesAfterEdit(issues: readonly DayIssue[], date: DateOnly, kind: ShiftKind): DayIssue[] {
-  return issues.filter((issue) => issue.date !== date || (issue.kind !== null && issue.kind !== kind));
+/** Issues that still apply after the admin changed one date (that date's findings are outdated). */
+export function issuesAfterEdit(issues: readonly DayIssue[], date: DateOnly): DayIssue[] {
+  return issues.filter((issue) => issue.date !== date);
 }
 
 const ROLE = DUTY_ROLE_LABELS;
+const KIND = SHIFT_TYPE_LABELS;
+const KIND_GENITIVE: Record<ShiftKind, string> = { DAY: 'Tagdienstes', NIGHT: 'Nachtdienstes' };
 
-/** Summary line of one change, e.g. `Tagdienst: neu eingeplant als Schichtleitung`. */
-export function changeText(change: Pick<SlotChange, 'slot' | 'after' | 'status'>): string {
-  const kind = SHIFT_TYPE_LABELS[change.slot.kind];
+/** A date's state in words, e.g. `Tagdienst (Schichtleitung)` or `Frei (nicht eingeplant)`. */
+export function dayText(state: DayState): string {
+  if (state === 'BOTH') return 'Tagdienst und Nachtdienst';
+  if (state === null) return 'Frei (nicht eingeplant)';
+  return `${KIND[state.kind]} (${ROLE[state.role]})`;
+}
+
+/** Whether the wanted shift of a date has no duty yet. */
+export function withoutDuty(slots: Record<ShiftKind, SlotBase>, plan: DayState): boolean {
+  return plan !== null && plan !== 'BOTH' && slots[plan.kind].dutyId === null;
+}
+
+/** Summary line of one change, e.g. `Nachtdienst (Mitarbeitende) statt Tagdienst (Mitarbeitende)`. */
+export function changeText(change: Pick<DayChange, 'before' | 'after' | 'status' | 'slots'>): string {
+  const { before, after } = change;
+  const suffix = withoutDuty(change.slots, after) ? ' – Dienst noch nicht angelegt' : '';
   switch (change.status) {
     case 'added':
-      return `${kind}: neu eingeplant als ${ROLE[change.after!]}${change.slot.dutyId === null ? ' (Dienst noch nicht angelegt)' : ''}`;
+      return `neu: ${dayText(after)}${suffix}`;
     case 'removed':
-      return `${kind}: ausgetragen (bisher ${ROLE[change.slot.role!]})`;
+      return `Frei, bisher ${dayText(before)}`;
+    case 'switched':
+      return `${dayText(after)} statt ${dayText(before)}${suffix}`;
     case 'role-changed':
-      return `${kind}: Funktion geändert von ${ROLE[change.slot.role!]} zu ${ROLE[change.after!]}`;
+      return `${KIND[after!.kind]}: Funktion von ${ROLE[(before as Exclude<DayPlan, null>).role]} zu ${ROLE[after!.role]}`;
+    case 'corrected':
+      return `nur noch ${dayText(after)}; ${KIND[after!.kind === 'DAY' ? 'NIGHT' : 'DAY']} wird ausgetragen${suffix}`;
   }
 }
 
-/** State of one slot in words (accessible description and day details). */
-export function slotStateText(slot: SlotBase, after: Choice): string {
+/** State of one date in words (accessible description and day details). */
+export function dayStateText(slots: Record<ShiftKind, SlotBase>, before: DayState, after: DayState): string {
   const parts: string[] = [];
-  switch (statusOf(slot.role, after)) {
-    case 'unchanged':
-      parts.push(after === null ? 'nicht eingeplant' : `eingeplant als ${ROLE[after]}`);
-      break;
-    case 'added':
-      parts.push(`neu eingeplant als ${ROLE[after!]}, noch nicht gespeichert`);
-      break;
-    case 'removed':
-      parts.push(`wird ausgetragen, bisher ${ROLE[slot.role!]}, noch nicht gespeichert`);
-      break;
-    case 'role-changed':
-      parts.push(`Funktion geändert zu ${ROLE[after!]}, bisher ${ROLE[slot.role!]}, noch nicht gespeichert`);
-      break;
-  }
-  if (slot.dutyId === null) parts.push('Dienst noch nicht angelegt');
-  if (slot.unavailable) parts.push('Hinweis: nicht verfügbar');
+  const status = dayStatus(before, after);
+  if (status === 'unchanged') parts.push(after === 'BOTH' ? 'Tagdienst und Nachtdienst gespeichert, Korrektur nötig' : dayText(after));
+  else parts.push(`${dayText(after)}, bisher ${dayText(before)}, noch nicht gespeichert`);
+  if (withoutDuty(slots, after)) parts.push('Dienst noch nicht angelegt');
+  if (SLOT_KINDS.some((kind) => slots[kind].unavailable)) parts.push('Hinweis: nicht verfügbar');
   return parts.join('; ');
 }
 
 /** What changed on the server under a choice, in words. */
-export function conflictText(conflict: SlotConflict, now: SlotBase): string {
+export function conflictText(conflict: DayConflict, now: DayState): string {
   switch (conflict.kind) {
     case 'created':
-      return 'Der Dienst wurde inzwischen angelegt.';
+      return `Der ${KIND[conflict.shift]} wurde inzwischen angelegt.`;
     case 'removed':
-      return 'Der Dienst wurde inzwischen gelöscht.';
+      return `Der ${KIND[conflict.shift]} wurde inzwischen gelöscht.`;
     case 'replaced':
-      return 'Der Dienst wurde inzwischen gelöscht und neu angelegt.';
+      return `Der ${KIND[conflict.shift]} wurde inzwischen gelöscht und neu angelegt.`;
     case 'own':
-      return `Inzwischen geändert: jetzt ${now.role === null ? 'nicht eingeplant' : `eingeplant als ${ROLE[now.role]}`}.`;
+      return `Inzwischen geändert: jetzt ${dayText(now)}.`;
     case 'others':
-      return 'Die Besetzung dieses Dienstes wurde inzwischen geändert.';
+      return `Die Besetzung des ${KIND_GENITIVE[conflict.shift]} wurde inzwischen geändert.`;
   }
 }
 
+/** Monday-first weeks of the month; null pads the first and last week. */
+export function calendarWeeks(days: readonly DateOnly[]): (DateOnly | null)[][] {
+  const weeks: (DateOnly | null)[][] = [];
+  let week: (DateOnly | null)[] = [];
+  for (const date of days) {
+    const weekday = (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7;
+    if (week.length === 0) week = Array.from({ length: weekday }, () => null);
+    week.push(date);
+    if (week.length === 7) {
+      weeks.push(week);
+      week = [];
+    }
+  }
+  if (week.length > 0) weeks.push([...week, ...Array.from({ length: 7 - week.length }, () => null)]);
+  return weeks;
+}
+
+/** Stored duty, version and the employee's role of one slot, as a choice was based on it. */
+export type SlotBasis = { dutyId: string | null; version: number | null; role: Choice };
+
 /**
- * Frontend seam for the future atomic save (#88). It lists every changed slot
- * with the server state it was based on, so an adapter can build either a
- * desired-state or a delta request. It is NOT an approved API shape.
+ * Frontend seam for the future atomic save (#88). Per changed date it carries
+ * the wanted plan (one shift with a role, or Frei) and the stored state of
+ * both slots it was based on, so an adapter can build a desired-state or a
+ * delta request. It is NOT an approved API shape and never lists other members.
  */
-export type EmployeeMonthChange = {
+export type EmployeeMonthDayChange = {
   date: DateOnly;
-  kind: ShiftKind;
-  dutyId: string | null;
-  /** The duty version the choice was based on (null while no duty exists). */
-  basedOnVersion: number | null;
-  from: Choice;
-  to: Choice;
+  to: DayPlan;
+  basedOn: Record<ShiftKind, SlotBasis>;
 };
 
 export type EmployeeMonthCommand = {
   planId: string;
   employeeId: string;
   month: MonthKey;
-  changes: readonly EmployeeMonthChange[];
+  days: readonly EmployeeMonthDayChange[];
 };
 
-/** The command for one save, or null when nothing is pending or a conflict is undecided. */
-export function monthCommand(draft: EmployeeMonthDraft, planId: string): EmployeeMonthCommand | null {
-  if (draft.choices.size === 0 || draft.conflicts.size > 0) return null;
+function basis(slot: SlotBase): SlotBasis {
+  return { dutyId: slot.dutyId, version: slot.version, role: slot.role };
+}
+
+/**
+ * The command for one save, or null when nothing is pending, a conflict is
+ * undecided or a date still needs a correction (both shifts, closed day).
+ */
+export function monthCommand(draft: EmployeeMonthDraft, planId: string, calendar: ProjectCalendar): EmployeeMonthCommand | null {
+  if (draft.choices.size === 0 || draft.conflicts.size > 0 || corrections(draft, calendar).length > 0) return null;
   return {
     planId,
     employeeId: draft.base.employeeId,
     month: draft.base.month,
-    changes: pendingChanges(draft).map(({ slot, after }) => ({
-      date: slot.date,
-      kind: slot.kind,
-      dutyId: slot.dutyId,
-      basedOnVersion: slot.version,
-      from: slot.role,
+    days: pendingChanges(draft).map(({ date, after, slots }) => ({
+      date,
       to: after,
+      basedOn: { DAY: basis(slots.DAY), NIGHT: basis(slots.NIGHT) },
     })),
   };
 }

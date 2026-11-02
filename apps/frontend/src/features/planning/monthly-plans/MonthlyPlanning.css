@@ -521,7 +521,7 @@
 /* xl: day details and changes beside the month; below, they follow it. */
 @media (min-width: 1280px) {
   .month-planner__layout {
-    grid-template-columns: minmax(0, 34rem) minmax(20rem, 1fr);
+    grid-template-columns: minmax(0, 44rem) minmax(20rem, 1fr);
   }
 
   .month-planner__side {
@@ -624,124 +624,232 @@
   cursor: not-allowed;
 }
 
-/* Below xl the month scrolls with the page (sticky header, sticky save bar); no nested scroll frame. */
-.month-grid__wrap {
-  border: 1px solid var(--sp-color-border);
+.month-planner__main {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Paint-mode toolbar: the native radios keep keyboard and screen-reader behaviour; the labels are the targets. */
+.month-planner__modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px 12px;
+  border: 1px solid var(--sp-color-border-strong);
   border-radius: var(--sp-radius);
   background: var(--sp-color-surface);
 }
 
-@media (min-width: 1280px) {
-  .month-grid__wrap {
-    max-height: 70vh;
-    overflow: auto;
-  }
-}
-
-.month-grid {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: 14px;
-}
-
-.month-grid th,
-.month-grid td {
-  padding: 0;
-  border-bottom: 1px solid var(--sp-color-border);
-  background: var(--sp-color-surface);
-  text-align: center;
-}
-
-.month-grid thead th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  padding: 6px 4px;
-  color: var(--sp-color-muted);
+.month-planner__modes legend {
+  padding: 0 4px;
   font-weight: 600;
 }
 
-.month-grid tbody th {
-  width: 4.5rem;
-  padding: 4px 8px;
-  font-weight: 600;
-  text-align: start;
-  white-space: nowrap;
-}
-
-.month-grid__weekend th,
-.month-grid__weekend td {
-  background: var(--sp-color-canvas);
-}
-
-.month-grid td.month-grid__notes {
-  padding: 4px 8px;
-  color: var(--sp-color-muted);
-  font-size: 13px;
-  text-align: start;
-}
-
-/* 44 px targets; text and marks, not color alone, carry state and change. */
-.month-grid__cell {
+.month-planner__mode {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  width: 5.5rem;
+  gap: 6px;
+  min-width: 6rem;
   min-height: 44px;
-  margin: 2px;
-  padding: 2px 4px;
+  padding: 6px 14px;
+  border: 2px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-color-surface);
+  color: var(--sp-color-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.month-planner__mode input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Selected mode: filled and ticked, so the state does not rely on colour alone. */
+.month-planner__mode:has(input:checked) {
+  border-color: var(--sp-color-brand);
+  background: var(--sp-color-brand);
+  color: #ffffff;
+}
+
+.month-planner__mode:has(input:checked)::before {
+  content: '✓';
+}
+
+.month-planner__mode:has(input:focus-visible) {
+  outline: 3px solid var(--sp-color-focus);
+  outline-offset: 2px;
+}
+
+.month-planner__mode-hint {
+  flex-basis: 100%;
+  color: var(--sp-color-muted);
+  font-size: 14px;
+}
+
+.month-planner__summary {
+  font-weight: 600;
+}
+
+.month-planner__fixes {
+  display: grid;
+  gap: 6px;
+  padding: 12px 16px;
+  border: 2px solid var(--sp-tone-attention-fg);
+  border-radius: var(--sp-radius);
+  background: var(--sp-tone-attention-bg);
+  color: var(--sp-tone-attention-fg);
+}
+
+.month-planner__fixes ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+/* Month calendar, Monday first; each date is one paint target. Text and marks, not colour alone, carry state and change. */
+.month-calendar {
+  width: 100%;
+  max-width: 48rem;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 4px;
+  font-size: 14px;
+}
+
+.month-calendar th {
+  padding: 4px 0;
+  color: var(--sp-color-muted);
+  font-weight: 600;
+  text-align: center;
+}
+
+.month-calendar td {
+  padding: 0;
+  vertical-align: top;
+}
+
+.month-calendar__day {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 2px;
+  width: 100%;
+  min-height: 64px;
+  padding: 4px 6px;
   border: 2px solid var(--sp-color-border);
   border-radius: var(--sp-radius-small);
   background: var(--sp-color-surface);
   color: var(--sp-color-muted);
   font: inherit;
+  text-align: start;
   cursor: pointer;
 }
 
-.month-grid__cell--planned {
-  border-color: var(--sp-tone-info-fg);
-  background: var(--sp-tone-info-bg);
-  color: var(--sp-tone-info-fg);
+.month-calendar__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 2px;
+}
+
+.month-calendar__num {
+  color: var(--sp-color-text);
   font-weight: 600;
 }
 
-.month-grid__cell--added,
-.month-grid__cell--role-changed {
-  border-style: dashed;
-  border-color: var(--sp-color-brand);
+.month-calendar__mark {
+  font-weight: 700;
 }
 
-.month-grid__cell--removed {
+.month-calendar__state {
+  align-self: center;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.month-calendar__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  min-height: 1.1em;
+  font-size: 12px;
+}
+
+.month-calendar__day--day {
+  border-color: var(--sp-tone-info-fg);
+  background: var(--sp-tone-info-bg);
+  color: var(--sp-tone-info-fg);
+}
+
+.month-calendar__day--night {
+  border-color: var(--sp-color-ink);
+  background: var(--sp-tone-neutral-bg);
+  color: var(--sp-color-ink);
+}
+
+.month-calendar__day--changed {
   border-style: dashed;
-  border-color: var(--sp-color-border-strong);
+  border-color: var(--sp-color-brand);
+  box-shadow: inset 0 0 0 1px var(--sp-color-brand);
+}
+
+.month-calendar__day--closed {
   background: var(--sp-color-canvas);
 }
 
-.month-grid__cell--restricted {
+.month-calendar__day--restricted {
   border-style: dotted;
   cursor: not-allowed;
 }
 
-.month-grid__cell--problem {
+.month-calendar__day--both,
+.month-calendar__day--problem {
   border-color: var(--sp-tone-attention-fg);
   background: var(--sp-tone-attention-bg);
   color: var(--sp-tone-attention-fg);
 }
 
-.month-grid__cell:focus-visible {
+.month-calendar__day:focus-visible {
   outline: 3px solid var(--sp-color-focus);
   outline-offset: 1px;
 }
 
-.month-grid__mark {
+.month-calendar__warn {
   font-weight: 700;
 }
 
 @media (max-width: 719px) {
-  .month-grid__cell {
-    width: 4.25rem;
+  .month-calendar {
+    border-spacing: 2px;
+    font-size: 13px;
+  }
+
+  .month-calendar__day {
+    min-height: 56px;
+    padding: 2px 1px;
+  }
+
+  /* Whole words only: "Nacht" fits a phone-width cell at this size. */
+  .month-calendar__state {
+    font-size: 12px;
+    overflow-wrap: normal;
+  }
+
+  .month-calendar__flags {
+    font-size: 11px;
+  }
+
+  .month-planner__mode {
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .month-planner__savebar {
@@ -751,10 +859,5 @@
 
   .month-planner__save-note {
     font-size: 13px;
-  }
-
-  .month-grid tbody th {
-    width: 3.5rem;
-    padding: 4px;
   }
 }

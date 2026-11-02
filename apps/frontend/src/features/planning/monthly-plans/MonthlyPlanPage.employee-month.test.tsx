@@ -10,8 +10,7 @@ afterEach(() => cleanup());
 
 const PLAN_PATH = `/monatsplanung/${PLAN_ID}`;
 const DEC_3 = { dutyDate: '2026-12-03', startsAt: '2026-12-03T05:00:00Z', endsAt: '2026-12-03T17:00:00Z' };
-const D3 = 'Tagdienst am Do., 3. Dezember';
-const N3 = 'Nachtdienst am Do., 3. Dezember';
+const FREE = 'Frei (nicht eingeplant)';
 
 function setup() {
   const stored = duty({ ...DEC_3, assignments: [member(MIRA_ID, 'SHIFT_LEAD'), member(JONAS_ID)] });
@@ -24,8 +23,16 @@ async function openPersonView(user: ReturnType<typeof userEvent.setup>) {
   return screen.findByRole('grid', { name: /^Dienste von .+ im Dezember 2026$/ });
 }
 
-function slot(name: string) {
-  return within(screen.getByRole('grid')).getByRole('button', { name });
+function dateButton(day: number) {
+  return within(screen.getByRole('grid')).getByRole('button', { name: new RegExp(`^[A-Z][a-z]\\., ${day}\\. Dezember:`) });
+}
+
+function stateOf(day: number) {
+  return dateButton(day).getAttribute('aria-label')!.split(': ')[1];
+}
+
+async function chooseMode(user: ReturnType<typeof userEvent.setup>, label: 'Tag' | 'Nacht' | 'Frei') {
+  await user.click(within(screen.getByRole('group', { name: 'Eintragen als' })).getByRole('radio', { name: label }));
 }
 
 function prompt(title: string) {
@@ -33,7 +40,7 @@ function prompt(title: string) {
 }
 
 describe('#88 plan page — employee-month view (preview, no persistence)', () => {
-  it('plans one person in the preview without sending any write request', async () => {
+  it('plans one person with paint modes in the preview without sending any write request', async () => {
     const user = userEvent.setup();
     const { requests } = setup();
     const grid = await openPersonView(user);
@@ -44,26 +51,30 @@ describe('#88 plan page — employee-month view (preview, no persistence)', () =
     expect(screen.queryByRole('grid', { name: 'Dienste im Dezember 2026 nach Person und Tag' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Dienst hinzufügen' })).toBeNull();
 
-    await user.click(slot(N3));
-    await user.click(slot(D3));
+    expect(stateOf(3)).toBe('Tagdienst (Schichtleitung)');
+    await chooseMode(user, 'Nacht');
+    await user.click(dateButton(3));
+    await user.click(dateButton(4));
+    expect(stateOf(3)).toBe('Nachtdienst (Mitarbeitende)');
     const save = screen.getByRole('button', { name: 'Monat speichern' });
     expect(save.getAttribute('aria-disabled')).toBe('true');
     await user.click(save);
     expect(requests.filter((request) => request.method !== 'GET')).toEqual([]);
-    expect(slot(N3).getAttribute('aria-pressed')).toBe('true');
+    expect(stateOf(4)).toBe('Nachtdienst (Mitarbeitende)');
   });
 
   it('guards unsaved selections on person switches, view switches and navigation away', async () => {
     const user = userEvent.setup();
     const { location } = setup();
     await openPersonView(user);
-    await user.click(slot(N3));
+    await chooseMode(user, 'Nacht');
+    await user.click(dateButton(4));
 
     // Next person: held back; staying keeps the draft.
     await user.click(screen.getByRole('button', { name: 'Nächste Person: Jonas Muster' }));
     expect(prompt('Ungespeicherte Monatsplanung').textContent).toContain('Wenn Sie wechseln, wird sie verworfen.');
     await user.click(screen.getByRole('button', { name: 'Weiter planen' }));
-    expect(slot(N3).getAttribute('aria-pressed')).toBe('true');
+    expect(stateOf(4)).toBe('Nachtdienst (Mitarbeitende)');
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Nächste Person: Jonas Muster');
 
     // Leaving the page: held back by the page blocker with the same wording.
@@ -71,7 +82,7 @@ describe('#88 plan page — employee-month view (preview, no persistence)', () =
     expect(prompt('Ungespeicherte Monatsplanung')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Weiter planen' }));
     expect(location()).toBe(PLAN_PATH);
-    expect(slot(N3).getAttribute('aria-pressed')).toBe('true');
+    expect(stateOf(4)).toBe('Nachtdienst (Mitarbeitende)');
 
     // Choosing another person in the list: discarding switches to that person's month.
     await user.selectOptions(screen.getByLabelText('Person'), LEA_ID);
@@ -81,7 +92,8 @@ describe('#88 plan page — employee-month view (preview, no persistence)', () =
     expect(screen.getByRole('region', { name: /Ungespeicherte Änderungen/ }).textContent).toContain('Keine ungespeicherten Änderungen.');
 
     // Back to all persons with a new unsaved selection: held back again.
-    await user.click(slot(D3));
+    await chooseMode(user, 'Tag');
+    await user.click(dateButton(3));
     await user.click(screen.getByRole('radio', { name: 'Alle Personen' }));
     expect((screen.getByRole('radio', { name: /Monat einer Person planen/ }) as HTMLInputElement).checked).toBe(true);
     await user.click(within(prompt('Ungespeicherte Monatsplanung')).getByRole('button', { name: 'Auswahl verwerfen und wechseln' }));
@@ -99,9 +111,10 @@ describe('#88 plan page — employee-month view (preview, no persistence)', () =
     await user.click(within(matrix).getByRole('button', { name: /^Jonas Muster, Do\., 3\. Dezember/ }));
     await user.click(screen.getByRole('button', { name: 'Monat von Jonas Muster planen (Vorschau)' }));
     expect(await screen.findByRole('grid', { name: 'Dienste von Jonas Muster im Dezember 2026' })).toBeTruthy();
-    expect(slot(D3).getAttribute('aria-pressed')).toBe('true');
-    // Jonas is only released for day duties: night cells are not offered.
-    expect(slot(N3).getAttribute('aria-disabled')).toBe('true');
+    expect(stateOf(3)).toBe('Tagdienst (Mitarbeitende)');
+    // Jonas is only released for day duties: in NACHT mode his dates are not offered.
+    await chooseMode(user, 'Nacht');
+    expect(dateButton(4).getAttribute('aria-disabled')).toBe('true');
   });
 
   it('keeps the planner of a person whom a newer read no longer lists (membership removed elsewhere)', async () => {
@@ -112,16 +125,18 @@ describe('#88 plan page — employee-month view (preview, no persistence)', () =
     await openPersonView(user);
     await user.selectOptions(screen.getByLabelText('Person'), PAUL_ID);
     await screen.findByRole('grid', { name: 'Dienste von Paul Anders im Dezember 2026' });
-    // Paul is not assigned this month: only taking him off is offered.
-    expect(slot(N3).getAttribute('aria-disabled')).toBe('true');
-    await user.click(slot(D3));
+    // Paul is not assigned this month: only Frei is offered.
+    await chooseMode(user, 'Nacht');
+    expect(dateButton(4).getAttribute('aria-disabled')).toBe('true');
+    await chooseMode(user, 'Frei');
+    await user.click(dateButton(3));
     server.state.duties[PLAN_ID] = [{ ...stored, version: stored.version + 1, assignments: [stored.assignments[0]] }];
 
     await user.click(screen.getByRole('button', { name: 'Aktuellen Stand laden' }));
     await waitFor(() => expect(screen.getByText(/Eine Ihrer Änderungen ist darin bereits enthalten\./)).toBeTruthy());
     expect(screen.getByRole('grid', { name: 'Dienste von Paul Anders im Dezember 2026' })).toBeTruthy();
     expect((screen.getByLabelText('Person') as HTMLSelectElement).value).toBe(PAUL_ID);
-    expect(slot(D3).getAttribute('aria-pressed')).toBe('false');
+    expect(stateOf(3)).toBe(FREE);
   });
 
   it('keeps the draft on "Aktuellen Stand laden" and marks a duty another admin changed meanwhile', async () => {
@@ -130,17 +145,18 @@ describe('#88 plan page — employee-month view (preview, no persistence)', () =
     await openPersonView(user);
     await user.click(screen.getByRole('button', { name: 'Nächste Person: Jonas Muster' }));
     await screen.findByRole('grid', { name: 'Dienste von Jonas Muster im Dezember 2026' });
-    await user.click(slot(D3)); // take Jonas off the 3 Dec day duty (unsaved)
+    await chooseMode(user, 'Frei');
+    await user.click(dateButton(3)); // take Jonas off the 3 Dec day duty (unsaved)
     // Another admin adds Lea to the same duty.
     server.state.duties[PLAN_ID] = [{ ...stored, version: stored.version + 1, assignments: [...stored.assignments, member(LEA_ID)] }];
 
     await user.click(screen.getByRole('button', { name: 'Aktuellen Stand laden' }));
     await waitFor(() => expect(screen.getByText(/Der aktuelle Stand wurde geladen\./)).toBeTruthy());
     const changes = screen.getByRole('region', { name: /Ungespeicherte Änderungen/ });
-    expect(changes.textContent).toContain('Tagdienst: ausgetragen (bisher Mitarbeitende)');
-    expect(changes.textContent).toContain('Die Besetzung dieses Dienstes wurde inzwischen geändert.');
-    expect(slot(D3).getAttribute('aria-pressed')).toBe('false');
+    expect(changes.textContent).toContain('Frei, bisher Tagdienst (Mitarbeitende)');
+    expect(changes.textContent).toContain('Die Besetzung des Tagdienstes wurde inzwischen geändert.');
+    expect(stateOf(3)).toBe(FREE);
     expect(screen.getByRole('region', { name: 'Ausgewählter Tag: Do., 3. Dezember' }).textContent)
-      .toContain('Weitere Personen (bleiben unverändert): Lea Probe, Mira Beispiel (Schichtleitung)');
+      .toContain('Tagdienst, weitere Personen (bleiben unverändert): Lea Probe, Mira Beispiel (Schichtleitung)');
   });
 });

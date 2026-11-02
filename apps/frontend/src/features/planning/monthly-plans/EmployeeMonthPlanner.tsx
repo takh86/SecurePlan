@@ -6,40 +6,54 @@ import '../../../shared/ui/PreviewNotice.css';
 import { EMPLOYEE_STATUS, SHIFT_ELIGIBILITY_LABELS } from '../../employees/employee-types';
 import type { EditState } from '../../projects/edit-state';
 import type { Project } from '../../projects/project-types';
-import type { ShiftKind } from '../../projects/shift-configuration-api';
 import {
+  CORRECTION_TEXT,
   DAY_ISSUE_TEXT,
+  PAINT_MODES,
+  PAINT_MODE_LABELS,
   RESTRICTION_TEXT,
   SLOT_KINDS,
+  UNKNOWN_CALENDAR,
+  calendarWeeks,
   changeRestriction,
   changeText,
   conflictText,
-  desired,
+  correctionOf,
+  corrections,
+  dayStateText,
+  dayStatus,
+  daySlots,
+  dayText,
   emptyDraft,
+  isClosed,
   issuesAfterEdit,
   keepChoice,
   monthBase,
   monthCommand,
+  monthSummary,
+  paint,
+  paintRestriction,
   pendingChanges,
   rebase,
-  revertSlot,
-  setChoice,
-  slotKey,
-  slotOf,
-  slotStateText,
-  statusOf,
-  toggledChoice,
-  type Choice,
+  revertDay,
+  setDay,
+  setRole,
+  storedDay,
+  wanted,
+  withoutDuty,
   type DayIssue,
+  type DayPlan,
+  type DayStatus,
   type EmployeeMonthDraft,
   type EmployeeMonthSave,
   type EmployeeMonthSaveOutcome,
+  type PaintMode,
   type PlannerContext,
+  type ProjectCalendar,
   type RebaseReport,
-  type SlotKey,
 } from './employee-month-draft';
 import { DUTY_ROLE_LABELS, DUTY_ROLES, type Duty, type DutyRole, type MonthlyPlan } from './monthly-plan-types';
-import { dayHeader, spokenDate, type MatrixRow } from './planning-matrix';
+import { spokenDate, type MatrixRow } from './planning-matrix';
 
 /** Where a save attempt stands; the draft itself is never dropped by any of them. */
 type Phase =
@@ -55,11 +69,11 @@ type PlannerState = {
   duties: readonly Duty[];
   draft: EmployeeMonthDraft;
   phase: Phase;
-  /** Findings of the last rejected save, by day (until the slot is edited). */
+  /** Findings of the last rejected save, by day (until the day is edited). */
   issues: readonly DayIssue[];
   /** True while the last save was rejected and nothing was saved. */
   rejected: boolean;
-  /** Polite status line after a re-read or save. */
+  /** Polite status line: the last date change, a re-read or a save. */
   message: string | null;
 };
 
@@ -77,14 +91,31 @@ type PlannerProps = {
   save?: EmployeeMonthSave;
   /** Open #88 decision: may a choice target a date/kind that has no duty yet? */
   newDuties?: boolean;
+  /** Project operating days (#90). Absent until that contract exists: no date is treated as closed. */
+  calendar?: ProjectCalendar;
   /** Re-reads the plan's duties (the draft is moved onto the new state). */
   onReload: () => void;
   reloading: boolean;
   onEditStateChange: (state: EditState) => void;
 };
 
-const SHORT: Record<ShiftKind, string> = { DAY: 'Tag', NIGHT: 'Nacht' };
-const MARK: Record<'added' | 'removed' | 'role-changed', string> = { added: '+', removed: '−', 'role-changed': '~' };
+const WEEKDAYS: readonly { short: string; long: string }[] = [
+  { short: 'Mo', long: 'Montag' },
+  { short: 'Di', long: 'Dienstag' },
+  { short: 'Mi', long: 'Mittwoch' },
+  { short: 'Do', long: 'Donnerstag' },
+  { short: 'Fr', long: 'Freitag' },
+  { short: 'Sa', long: 'Samstag' },
+  { short: 'So', long: 'Sonntag' },
+];
+const MARK: Record<Exclude<DayStatus, 'unchanged'>, string> = { added: '+', removed: '−', switched: '↔', 'role-changed': '~', corrected: '↔' };
+const MODE_HINT: Record<PaintMode | 'NONE', string> = {
+  NONE: 'Wählen Sie Tag, Nacht oder Frei und klicken Sie dann nacheinander auf die Tage.',
+  DAY: 'Ein Klick auf einen Tag trägt den Tagdienst ein; ein Nachtdienst an diesem Tag wird dabei ersetzt.',
+  NIGHT: 'Ein Klick auf einen Tag trägt den Nachtdienst ein; ein Tagdienst an diesem Tag wird dabei ersetzt.',
+  FREE: 'Ein Klick auf einen Tag setzt ihn auf Frei: nicht eingeplant, keine Abwesenheit.',
+};
+const SHORTCUTS: Record<string, PaintMode> = { t: 'DAY', n: 'NIGHT', f: 'FREE' };
 
 /** Anything but a well-formed outcome claims nothing: it is handled as unknown. */
 function knownOutcome(value: unknown): EmployeeMonthSaveOutcome {
@@ -121,22 +152,24 @@ function reloadMessage(report: RebaseReport, phase: Phase, draft: EmployeeMonthD
   const elsewhere = report.changedElsewhere.length;
   if (elsewhere > 0) {
     parts.push(elsewhere === 1
-      ? 'Ein weiterer Dienst dieser Person wurde inzwischen geändert.'
-      : `${elsewhere} weitere Dienste dieser Person wurden inzwischen geändert.`);
+      ? 'Ein weiterer Tag dieser Person wurde inzwischen geändert.'
+      : `${elsewhere} weitere Tage dieser Person wurden inzwischen geändert.`);
   }
   parts.push(remaining === 0 ? 'Es gibt keine ungespeicherten Änderungen.' : `${plural(remaining, 'Änderung ist', 'Änderungen sind')} noch nicht gespeichert.`);
   return parts.join(' ');
 }
 
 /**
- * Issue #88 employee-month planning: every day of the plan month for ONE
- * person, DAY and NIGHT per day, with Mitarbeitende/Schichtleitung. The admin
- * collects all changes in a local draft, reviews them and saves once. Other
- * members of a duty are shown and never changed. Without `save` this is a
- * preview: "Monat speichern" stays unavailable and nothing is written.
+ * Issue #88 employee-month planning for ONE person: the admin chooses a mode
+ * (Tag, Nacht or Frei) and marks dates in a month calendar. Per date the
+ * person has one shift or none; Tag and Nacht replace each other, and
+ * repeating a mode changes nothing. Changes stay in a local draft until one
+ * "Monat speichern". Other members of a duty are shown and never changed.
+ * Without `save` this is a preview: "Monat speichern" stays unavailable and
+ * nothing is written.
  */
 export function EmployeeMonthPlanner({
-  plan, project, month, person, duties, nameOf, save, newDuties = true, onReload, reloading, onEditStateChange,
+  plan, project, month, person, duties, nameOf, save, newDuties = true, calendar = UNKNOWN_CALENDAR, onReload, reloading, onEditStateChange,
 }: PlannerProps) {
   const [state, setState] = useState<PlannerState>(() => ({
     duties,
@@ -164,9 +197,13 @@ export function EmployeeMonthPlanner({
     assigned: person.assigned,
     projectActive: project.status === 'ACTIVE',
     newDuties,
+    calendar,
   };
   const changes = useMemo(() => pendingChanges(draft), [draft]);
-  const [active, setActive] = useState({ row: 0, col: 0 });
+  const fixes = useMemo(() => corrections(draft, calendar), [draft, calendar]);
+  const summary = useMemo(() => monthSummary(draft), [draft]);
+  const [mode, setMode] = useState<PaintMode | null>(null);
+  const [active, setActive] = useState(0);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const grid = useRef<HTMLTableElement>(null);
   const alertRef = useRef<HTMLHeadingElement>(null);
@@ -183,24 +220,58 @@ export function EmployeeMonthPlanner({
   }, [focusAlert]);
 
   const days = draft.base.days;
-  const activeDate = days[Math.min(active.row, days.length - 1)];
+  const activeDate = days[Math.min(active, days.length - 1)];
   const locked = phase.kind === 'saving';
 
-  function edit(key: SlotKey, choice: Choice) {
-    if (locked) return;
-    const slot = slotOf(draft, key);
-    if (changeRestriction(context, slot, choice) !== null) return;
-    setState((current) => ({
-      ...current,
-      draft: setChoice(current.draft, key, choice),
-      issues: issuesAfterEdit(current.issues, slot.date, slot.kind),
-      message: null,
-    }));
+  function announce(message: string) {
+    setState((current) => ({ ...current, message }));
   }
 
-  function resolve(key: SlotKey, keep: boolean) {
+  function chooseMode(next: PaintMode) {
+    setMode(next);
+    announce(`Eintragen als: ${PAINT_MODE_LABELS[next]}.`);
+  }
+
+  /** One click or key activation on a date: paint it with the current mode. */
+  function onDate(date: DateOnly) {
+    setActive(days.indexOf(date));
     if (locked) return;
-    setState((current) => ({ ...current, draft: keep ? keepChoice(current.draft, key) : revertSlot(current.draft, key), message: null }));
+    if (mode === null) {
+      announce('Wählen Sie zuerst Tag, Nacht oder Frei.');
+      return;
+    }
+    setState((current) => {
+      const restriction = paintRestriction(context, current.draft, date, mode);
+      if (restriction !== null) {
+        return { ...current, message: `${spokenDate(date)}: ${PAINT_MODE_LABELS[mode]} nicht möglich – ${RESTRICTION_TEXT[restriction]}.` };
+      }
+      const next = paint(current.draft, date, mode);
+      if (next === current.draft) {
+        return { ...current, message: `${spokenDate(date)}: bereits ${dayText(wanted(next, date))}, keine Änderung.` };
+      }
+      return { ...current, draft: next, issues: issuesAfterEdit(current.issues, date), message: `${spokenDate(date)}: ${dayText(wanted(next, date))}.` };
+    });
+  }
+
+  function editDay(date: DateOnly, change: (draft: EmployeeMonthDraft) => EmployeeMonthDraft) {
+    if (locked) return;
+    setState((current) => {
+      const next = change(current.draft);
+      if (next === current.draft) return current;
+      return { ...current, draft: next, issues: issuesAfterEdit(current.issues, date), message: `${spokenDate(date)}: ${dayText(wanted(next, date))}.` };
+    });
+  }
+
+  function onRole(date: DateOnly, role: DutyRole) {
+    const current = wanted(draft, date);
+    if (current === null || current === 'BOTH') return;
+    if (changeRestriction(context, daySlots(draft.base, date)[current.kind], role) !== null) return;
+    editDay(date, (value) => setRole(value, date, role));
+  }
+
+  function resolve(date: DateOnly, keep: boolean) {
+    if (locked) return;
+    setState((current) => ({ ...current, draft: keep ? keepChoice(current.draft, date) : revertDay(current.draft, date), message: null }));
   }
 
   function discardAll() {
@@ -217,19 +288,19 @@ export function EmployeeMonthPlanner({
     onReload();
   }
 
-  function focusCell(row: number, col: number) {
-    setActive({ row, col });
-    grid.current?.querySelector<HTMLButtonElement>(`button[data-row="${row}"][data-col="${col}"]`)?.focus();
+  function focusIndex(index: number) {
+    setActive(index);
+    grid.current?.querySelector<HTMLButtonElement>(`button[data-index="${index}"]`)?.focus();
   }
 
-  function focusSlot(date: DateOnly, kind: ShiftKind) {
-    const row = days.indexOf(date);
-    if (row >= 0) focusCell(row, SLOT_KINDS.indexOf(kind));
+  function focusDate(date: DateOnly) {
+    const index = days.indexOf(date);
+    if (index >= 0) focusIndex(index);
   }
 
   async function onSave() {
     if (!save || phase.kind !== 'editing') return;
-    const command = monthCommand(draft, plan.id);
+    const command = monthCommand(draft, plan.id, calendar);
     if (command === null) return;
     setState((current) => ({ ...current, phase: { kind: 'saving' }, rejected: false, message: null }));
     let outcome: EmployeeMonthSaveOutcome;
@@ -264,7 +335,9 @@ export function EmployeeMonthPlanner({
             ? 'Es gibt keine ungespeicherten Änderungen.'
             : draft.conflicts.size > 0
               ? 'Entscheiden Sie zuerst über die inzwischen geänderten Dienste.'
-              : null;
+              : fixes.length > 0
+                ? `Korrigieren Sie zuerst ${plural(fixes.length, 'Tag', 'Tage')} unter „Korrektur nötig“.`
+                : null;
 
   return (
     <div className="month-planner">
@@ -278,6 +351,12 @@ export function EmployeeMonthPlanner({
         </aside>
       )}
       <PersonFacts person={person} month={month} context={context} />
+      {calendar.status === 'unknown' && (
+        <p className="employees-card__hint">
+          Betriebstage des Projekts sind hier noch nicht hinterlegt: Die Ansicht sperrt keine Wochentage. Ob das
+          Projekt an einem Tag in Betrieb ist, prüft der Server beim Speichern.
+        </p>
+      )}
 
       {/* Always mounted, so screen readers announce new messages. */}
       <div role="status" aria-live="polite">
@@ -296,7 +375,7 @@ export function EmployeeMonthPlanner({
             <ul>
               {issues.map((issue) => (
                 <li key={`${issue.date}|${issue.kind ?? ''}|${issue.reason}`}>
-                  <button type="button" className="month-planner__link" onClick={() => focusSlot(issue.date, issue.kind ?? 'DAY')}>
+                  <button type="button" className="month-planner__link" onClick={() => focusDate(issue.date)}>
                     {formatDate(issue.date)}{issue.kind ? `, ${SHIFT_TYPE_LABELS[issue.kind]}` : ''}
                   </button>
                   : {DAY_ISSUE_TEXT[issue.reason]}
@@ -320,24 +399,62 @@ export function EmployeeMonthPlanner({
       )}
 
       <div className="month-planner__layout">
-        <div className="month-planner__grid">
-          <MonthGrid
+        <div className="month-planner__main">
+          <fieldset className="month-planner__modes">
+            <legend>Eintragen als</legend>
+            {PAINT_MODES.map((value) => (
+              <label key={value} className={`month-planner__mode month-planner__mode--${value.toLowerCase()}`}>
+                <input type="radio" name={`${ids}-mode`} checked={mode === value} onChange={() => chooseMode(value)} />
+                {PAINT_MODE_LABELS[value]}
+              </label>
+            ))}
+            <p className="month-planner__mode-hint">{MODE_HINT[mode ?? 'NONE']}</p>
+          </fieldset>
+          <p className="month-planner__summary">
+            Im Monat: {summary.day} × Tag, {summary.night} × Nacht, {summary.free} × Frei
+            {summary.both > 0 && `, ${summary.both} × Tag und Nacht (Korrektur nötig)`}
+          </p>
+
+          {fixes.length > 0 && (
+            <section className="month-planner__fixes" aria-labelledby={`${ids}-fixes`}>
+              <h4 id={`${ids}-fixes`}>Korrektur nötig ({fixes.length})</h4>
+              <p>
+                Diese Tage verstoßen gegen „ein Dienst pro Tag“{calendar.status === 'known' ? ' oder die Betriebstage des Projekts' : ''}.
+                Es wird nichts automatisch geändert; der Monat kann erst nach Ihrer Korrektur gespeichert werden.
+              </p>
+              <ul>
+                {fixes.map((fix) => (
+                  <li key={fix.date}>
+                    <button type="button" className="month-planner__link" onClick={() => focusDate(fix.date)}>
+                      {formatDate(fix.date)}
+                    </button>
+                    : {CORRECTION_TEXT[fix.reason]}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <MonthCalendar
             caption={`Dienste von ${person.name} im ${formatMonthLabel(month)}`}
             draft={draft}
             context={context}
+            mode={mode}
             issues={issues}
             active={active}
             locked={locked}
             gridRef={grid}
             onActive={setActive}
-            onFocusCell={focusCell}
-            onToggle={(key) => edit(key, toggledChoice(draft, key))}
+            onFocusIndex={focusIndex}
+            onMode={chooseMode}
+            onDate={onDate}
           />
           <p className="employees-card__hint">
-            Tag = Tagdienst, Nacht = Nachtdienst, SL = Schichtleitung, – = nicht eingeplant. Markierungen ungespeicherter
-            Änderungen: + neu, − ausgetragen, ~ Funktion geändert; ! = Hinweis. Leertaste oder Eingabe schaltet einen
-            Dienst um; Pfeiltasten, Bild auf/ab (Woche) und Strg+Pos1/Ende bewegen im Raster. „Nicht eingeplant“ ist
-            keine Abwesenheit.
+            Tag = Tagdienst, Nacht = Nachtdienst, – = Frei (nicht eingeplant; keine Abwesenheit), SL = Schichtleitung.
+            Ungespeicherte Änderungen: + neu, − auf Frei gesetzt, ↔ Dienst gewechselt, ~ Funktion geändert; ! = Hinweis,
+            ⚠ = bitte prüfen oder korrigieren. Tastatur: T, N oder F wählt den Modus; Leertaste oder Eingabe markiert den Tag;
+            Pfeiltasten bewegen um einen Tag oder eine Woche, Pos1/Ende zum Wochenanfang/-ende, Strg+Pos1/Ende zum
+            Monatsanfang/-ende.
           </p>
         </div>
 
@@ -350,8 +467,9 @@ export function EmployeeMonthPlanner({
             locked={locked}
             plannerId={ids}
             nameOf={nameOf}
-            onRole={(key, role) => edit(key, role)}
-            onRevert={(key) => edit(key, slotOf(draft, key).role)}
+            onRole={onRole}
+            onSet={(date, value) => editDay(date, (current) => setDay(current, date, value))}
+            onRevert={(date) => editDay(date, (current) => revertDay(current, date))}
             onResolve={resolve}
           />
 
@@ -363,21 +481,21 @@ export function EmployeeMonthPlanner({
               <>
                 <ul className="month-planner__change-list">
                   {changes.map((change) => (
-                    <li key={change.key} className={change.conflict ? 'month-planner__change--conflict' : undefined}>
-                      <button type="button" className="month-planner__link" onClick={() => focusSlot(change.slot.date, change.slot.kind)}>
-                        {formatDate(change.slot.date)}
+                    <li key={change.date} className={change.conflict ? 'month-planner__change--conflict' : undefined}>
+                      <button type="button" className="month-planner__link" onClick={() => focusDate(change.date)}>
+                        {formatDate(change.date)}
                       </button>
                       {' · '}{changeText(change)}
                       {change.conflict && (
-                        <> <StatusBadge tone="attention">Prüfen</StatusBadge> {conflictText(change.conflict, change.slot)}</>
+                        <> <StatusBadge tone="attention">Prüfen</StatusBadge> {conflictText(change.conflict, change.before)}</>
                       )}
                       {' '}
                       <button
                         type="button"
                         className="employees-button month-planner__small"
                         disabled={locked}
-                        aria-label={`Zurücksetzen: ${formatDate(change.slot.date)}, ${SHIFT_TYPE_LABELS[change.slot.kind]}`}
-                        onClick={() => edit(change.key, change.slot.role)}
+                        aria-label={`Zurücksetzen: ${formatDate(change.date)}`}
+                        onClick={() => editDay(change.date, (current) => revertDay(current, change.date))}
                       >
                         Zurücksetzen
                       </button>
@@ -406,7 +524,8 @@ export function EmployeeMonthPlanner({
       <div className="month-planner__savebar">
         <p className="month-planner__count">
           {changes.length === 0 ? 'Keine ungespeicherten Änderungen' : plural(changes.length, 'ungespeicherte Änderung', 'ungespeicherte Änderungen')}
-          {draft.conflicts.size > 0 && ` · ${plural(draft.conflicts.size, 'Dienst', 'Dienste')} prüfen`}
+          {draft.conflicts.size > 0 && ` · ${plural(draft.conflicts.size, 'Tag', 'Tage')} prüfen`}
+          {fixes.length > 0 && ` · ${plural(fixes.length, 'Tag', 'Tage')} korrigieren`}
         </p>
         <button
           type="button"
@@ -439,10 +558,10 @@ export function EmployeeMonthPlanner({
 function PersonFacts({ person, month, context }: { person: MatrixRow; month: MonthKey; context: PlannerContext }) {
   const employee = person.employee;
   const notes: string[] = [];
-  if (!context.projectActive) notes.push('Das Projekt ist inaktiv: Sie können die Person nur austragen.');
-  if (employee === null) notes.push('Diese Person ist nicht mehr unter den Mitarbeitenden: Sie können sie nur austragen.');
-  else if (!person.assigned) notes.push(`Im ${formatMonthLabel(month)} nicht diesem Projekt zugeordnet: Sie können die Person nur austragen.`);
-  else if (employee.status !== 'ACTIVE') notes.push('Die Person ist deaktiviert: Sie können sie nur austragen.');
+  if (!context.projectActive) notes.push('Das Projekt ist inaktiv: Sie können Tage nur auf Frei setzen.');
+  if (employee === null) notes.push('Diese Person ist nicht mehr unter den Mitarbeitenden: Sie können Tage nur auf Frei setzen.');
+  else if (!person.assigned) notes.push(`Im ${formatMonthLabel(month)} nicht diesem Projekt zugeordnet: Sie können Tage nur auf Frei setzen.`);
+  else if (employee.status !== 'ACTIVE') notes.push('Die Person ist deaktiviert: Sie können Tage nur auf Frei setzen.');
   return (
     <>
       <dl className="employees-card__facts">
@@ -472,148 +591,161 @@ function PersonFacts({ person, month, context }: { person: MatrixRow; month: Mon
   );
 }
 
-type GridProps = {
+type CalendarProps = {
   caption: string;
   draft: EmployeeMonthDraft;
   context: PlannerContext;
+  mode: PaintMode | null;
   issues: readonly DayIssue[];
-  active: { row: number; col: number };
+  active: number;
   locked: boolean;
   gridRef: RefObject<HTMLTableElement | null>;
-  onActive: (position: { row: number; col: number }) => void;
-  onFocusCell: (row: number, col: number) => void;
-  onToggle: (key: SlotKey) => void;
+  onActive: (index: number) => void;
+  onFocusIndex: (index: number) => void;
+  onMode: (mode: PaintMode) => void;
+  onDate: (date: DateOnly) => void;
 };
 
-function slotIssues(issues: readonly DayIssue[], date: DateOnly, kind: ShiftKind): DayIssue[] {
-  return issues.filter((issue) => issue.date === date && (issue.kind === null || issue.kind === kind));
+/** Short visible label of a date's wanted state. */
+function shortState(after: ReturnType<typeof wanted>, status: DayStatus): string {
+  if (after === 'BOTH') return 'Tag + Nacht';
+  if (after === null) return status === 'unchanged' ? '–' : 'Frei';
+  return PAINT_MODE_LABELS[after.kind];
 }
 
 /**
- * The month as an ARIA grid: one row per day, one toggle per DAY/NIGHT slot.
- * Roving tabindex (one tab stop); arrows, Page Up/Down (one week), Home/End and
- * Ctrl+Home/End move; Space/Enter toggle. A cell's name is slot and date; its
- * description carries the state, unsaved change, restriction and findings.
+ * The month as a calendar (Monday first) in an ARIA grid. Each date is one
+ * button: activating it paints the date with the current mode. Roving
+ * tabindex (one tab stop); arrows move by a day or a week, Home/End to the
+ * start/end of the week, Ctrl+Home/End to the first/last day; T, N and F
+ * choose the mode. A date's name carries its state, the description carries
+ * the unsaved change, restriction, correction and findings.
  */
-function MonthGrid({ caption, draft, context, issues, active, locked, gridRef, onActive, onFocusCell, onToggle }: GridProps) {
+function MonthCalendar({ caption, draft, context, mode, issues, active, locked, gridRef, onActive, onFocusIndex, onMode, onDate }: CalendarProps) {
   const captionId = useId();
   const describe = useId();
   const days = draft.base.days;
-  const position = { row: Math.min(active.row, days.length - 1), col: Math.min(active.col, SLOT_KINDS.length - 1) };
+  const weeks = calendarWeeks(days);
+  const position = Math.min(active, days.length - 1);
 
   function onKeyDown(event: KeyboardEvent<HTMLTableElement>) {
     const target = event.target as HTMLElement;
-    if (target.dataset.row === undefined) return;
-    const row = Number(target.dataset.row);
-    const col = Number(target.dataset.col);
+    if (target.dataset.index === undefined) return;
+    if (!event.ctrlKey && !event.altKey && !event.metaKey) {
+      const shortcut = SHORTCUTS[event.key.toLowerCase()];
+      if (shortcut) {
+        event.preventDefault();
+        onMode(shortcut);
+        return;
+      }
+    }
+    const index = Number(target.dataset.index);
+    const weekday = Number(target.dataset.weekday);
     const last = days.length - 1;
-    let next: { row: number; col: number } | null = null;
+    let next: number;
     switch (event.key) {
-      case 'ArrowDown': next = { row: Math.min(last, row + 1), col }; break;
-      case 'ArrowUp': next = { row: Math.max(0, row - 1), col }; break;
-      case 'ArrowRight': next = { row, col: Math.min(SLOT_KINDS.length - 1, col + 1) }; break;
-      case 'ArrowLeft': next = { row, col: Math.max(0, col - 1) }; break;
-      case 'PageDown': next = { row: Math.min(last, row + 7), col }; break;
-      case 'PageUp': next = { row: Math.max(0, row - 7), col }; break;
-      case 'Home': next = event.ctrlKey ? { row: 0, col: 0 } : { row, col: 0 }; break;
-      case 'End': next = event.ctrlKey ? { row: last, col: SLOT_KINDS.length - 1 } : { row, col: SLOT_KINDS.length - 1 }; break;
+      case 'ArrowRight': next = Math.min(last, index + 1); break;
+      case 'ArrowLeft': next = Math.max(0, index - 1); break;
+      case 'ArrowDown': next = index + 7 <= last ? index + 7 : index; break;
+      case 'ArrowUp': next = index - 7 >= 0 ? index - 7 : index; break;
+      case 'Home': next = event.ctrlKey ? 0 : Math.max(0, index - weekday); break;
+      case 'End': next = event.ctrlKey ? last : Math.min(last, index + 6 - weekday); break;
       default: return;
     }
     event.preventDefault();
-    onFocusCell(next.row, next.col);
+    onFocusIndex(next);
   }
 
   return (
     <>
       <p className="planning-matrix__title" aria-hidden="true">{caption}</p>
-      <div className="month-grid__wrap">
-        <table
-          ref={gridRef}
-          className="month-grid"
-          role="grid"
-          aria-labelledby={captionId}
-          aria-rowcount={days.length + 1}
-          aria-colcount={4}
-          onKeyDown={onKeyDown}
-        >
-          <caption id={captionId} className="planning-matrix__sr">{caption}</caption>
-          <thead>
-            <tr aria-rowindex={1}>
-              <th scope="col">Datum</th>
-              <th scope="col">Tagdienst</th>
-              <th scope="col">Nachtdienst</th>
-              <th scope="col">Hinweise</th>
+      <table
+        ref={gridRef}
+        className="month-calendar"
+        role="grid"
+        aria-labelledby={captionId}
+        onKeyDown={onKeyDown}
+      >
+        <caption id={captionId} className="planning-matrix__sr">{caption}</caption>
+        <thead>
+          <tr>
+            {WEEKDAYS.map((weekday) => (
+              <th key={weekday.short} scope="col" abbr={weekday.long}>{weekday.short}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {weeks.map((week) => (
+            <tr key={week.find((date) => date !== null)}>
+              {week.map((date, weekday) => {
+                if (date === null) return <td key={`pad-${weekday}`} className="month-calendar__pad" />;
+                const index = days.indexOf(date);
+                const slots = daySlots(draft.base, date);
+                const before = storedDay(draft.base, date);
+                const after = wanted(draft, date);
+                const status = dayStatus(before, after);
+                const conflict = draft.conflicts.get(date) ?? null;
+                const found = issues.filter((issue) => issue.date === date);
+                const fix = correctionOf(draft, date, context.calendar);
+                const closed = isClosed(context.calendar, date);
+                const restriction = mode === null ? null : paintRestriction(context, draft, date, mode);
+                const unavailable = SLOT_KINDS.some((kind) => slots[kind].unavailable);
+                const lead = after !== null && after !== 'BOTH'
+                  ? after.role === 'SHIFT_LEAD'
+                  : after === 'BOTH' && SLOT_KINDS.some((kind) => slots[kind].role === 'SHIFT_LEAD');
+                const name = `${spokenDate(date)}: ${after === 'BOTH' ? 'Tagdienst und Nachtdienst, Korrektur nötig' : dayText(after)}`;
+                const description = [
+                  status !== 'unchanged' ? `Geändert, bisher ${dayText(before)}, noch nicht gespeichert` : null,
+                  withoutDuty(slots, after) ? 'Dienst noch nicht angelegt' : null,
+                  unavailable ? 'Hinweis: nicht verfügbar' : null,
+                  closed ? 'Projekt an diesem Tag nicht in Betrieb' : null,
+                  fix ? `Korrektur nötig: ${CORRECTION_TEXT[fix]}` : null,
+                  restriction && mode ? `${PAINT_MODE_LABELS[mode]} nicht möglich: ${RESTRICTION_TEXT[restriction]}` : null,
+                  conflict ? conflictText(conflict, before) : null,
+                  ...found.map((issue) => `Nicht gespeichert: ${issue.kind ? `${SHIFT_TYPE_LABELS[issue.kind]}: ` : ''}${DAY_ISSUE_TEXT[issue.reason]}`),
+                ].filter(Boolean).join('. ');
+                const classes = [
+                  'month-calendar__day',
+                  after === 'BOTH' ? 'month-calendar__day--both' : after === null ? 'month-calendar__day--free' : `month-calendar__day--${after.kind.toLowerCase()}`,
+                  status !== 'unchanged' ? 'month-calendar__day--changed' : '',
+                  closed ? 'month-calendar__day--closed' : '',
+                  restriction ? 'month-calendar__day--restricted' : '',
+                  fix || conflict || found.length > 0 ? 'month-calendar__day--problem' : '',
+                ].filter(Boolean).join(' ');
+                return (
+                  <td key={date}>
+                    <button
+                      type="button"
+                      className={classes}
+                      data-index={index}
+                      data-weekday={weekday}
+                      tabIndex={index === position ? 0 : -1}
+                      aria-label={name}
+                      aria-describedby={description ? `${describe}-${index}` : undefined}
+                      aria-disabled={restriction !== null || locked ? true : undefined}
+                      onFocus={() => onActive(index)}
+                      onClick={() => onDate(date)}
+                    >
+                      <span className="month-calendar__top" aria-hidden="true">
+                        <span className="month-calendar__num">{Number(date.slice(8, 10))}</span>
+                        {status !== 'unchanged' && <span className="month-calendar__mark">{MARK[status]}</span>}
+                      </span>
+                      <span className="month-calendar__state" aria-hidden="true">{shortState(after, status)}</span>
+                      <span className="month-calendar__flags" aria-hidden="true">
+                        {lead && <span className="planning-matrix__mark">SL</span>}
+                        {unavailable && <span className="planning-matrix__mark planning-matrix__mark--hint">!</span>}
+                        {(fix || conflict || found.length > 0) && <span className="month-calendar__warn">⚠</span>}
+                        {closed && <span className="month-calendar__closed">geschl.</span>}
+                      </span>
+                    </button>
+                    {description && <span id={`${describe}-${index}`} className="planning-matrix__sr">{description}</span>}
+                  </td>
+                );
+              })}
             </tr>
-          </thead>
-          <tbody>
-            {days.map((date, row) => {
-              const header = dayHeader(date);
-              const notes: string[] = [];
-              return (
-                <tr key={date} aria-rowindex={row + 2} className={header.weekend ? 'month-grid__weekend' : undefined}>
-                  <th scope="row">
-                    <span aria-hidden="true">{header.weekday} {header.day}.</span>
-                    <span className="planning-matrix__sr">{spokenDate(date)}</span>
-                  </th>
-                  {SLOT_KINDS.map((kind, col) => {
-                    const key = slotKey(date, kind);
-                    const slot = slotOf(draft, key);
-                    const after = desired(draft, key);
-                    const status = statusOf(slot.role, after);
-                    const conflict = draft.conflicts.get(key) ?? null;
-                    const found = slotIssues(issues, date, kind);
-                    const restriction = changeRestriction(context, slot, toggledChoice(draft, key));
-                    const description = [
-                      slotStateText(slot, after),
-                      restriction ? `${after === null ? 'Einplanen' : 'Ändern'} nicht möglich: ${RESTRICTION_TEXT[restriction]}` : null,
-                      conflict ? conflictText(conflict, slot) : null,
-                      ...found.map((issue) => `Nicht gespeichert: ${DAY_ISSUE_TEXT[issue.reason]}`),
-                    ].filter(Boolean).join('. ');
-                    if (conflict) notes.push(`${SHORT[kind]}: inzwischen geändert`);
-                    for (const issue of found) notes.push(`${SHORT[kind]}: ${DAY_ISSUE_TEXT[issue.reason]}`);
-                    if (slot.unavailable) notes.push(`${SHORT[kind]}: ! nicht verfügbar`);
-                    if (after !== null && slot.dutyId === null) notes.push(`${SHORT[kind]}: Dienst noch nicht angelegt`);
-                    const isActive = position.row === row && position.col === col;
-                    const classes = [
-                      'month-grid__cell',
-                      after !== null ? 'month-grid__cell--planned' : '',
-                      status !== 'unchanged' ? `month-grid__cell--${status}` : '',
-                      restriction && after === null ? 'month-grid__cell--restricted' : '',
-                      conflict || found.length > 0 ? 'month-grid__cell--problem' : '',
-                    ].filter(Boolean).join(' ');
-                    return (
-                      <td key={kind}>
-                        <button
-                          type="button"
-                          className={classes}
-                          data-row={row}
-                          data-col={col}
-                          tabIndex={isActive ? 0 : -1}
-                          aria-pressed={after !== null}
-                          aria-disabled={restriction !== null || locked ? true : undefined}
-                          aria-label={`${SHIFT_TYPE_LABELS[kind]} am ${spokenDate(date)}`}
-                          aria-describedby={`${describe}-${row}-${col}`}
-                          onFocus={() => onActive({ row, col })}
-                          onClick={() => onToggle(key)}
-                        >
-                          {after === null
-                            ? status === 'removed' ? <s>{SHORT[kind]}</s> : '–'
-                            : SHORT[kind]}
-                          {after === 'SHIFT_LEAD' && <span className="planning-matrix__mark">SL</span>}
-                          {status !== 'unchanged' && <span className="month-grid__mark" aria-hidden="true">{MARK[status]}</span>}
-                          {slot.unavailable && <span className="planning-matrix__mark planning-matrix__mark--hint" aria-hidden="true">!</span>}
-                        </button>
-                        <span id={`${describe}-${row}-${col}`} className="planning-matrix__sr">{description}</span>
-                      </td>
-                    );
-                  })}
-                  <td className="month-grid__notes">{notes.join(' · ')}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
     </>
   );
 }
@@ -626,79 +758,105 @@ type DayDetailsProps = {
   locked: boolean;
   plannerId: string;
   nameOf: (employeeId: string) => string;
-  onRole: (key: SlotKey, role: DutyRole) => void;
-  onRevert: (key: SlotKey) => void;
-  onResolve: (key: SlotKey, keep: boolean) => void;
+  onRole: (date: DateOnly, role: DutyRole) => void;
+  onSet: (date: DateOnly, plan: DayPlan) => void;
+  onRevert: (date: DateOnly) => void;
+  onResolve: (date: DateOnly, keep: boolean) => void;
 };
 
 const byName = new Intl.Collator('de-DE', { sensitivity: 'base' });
 
-/** The active day: both slots with role choice, other members (unchanged), conflicts and findings. */
-function DayDetails({ date, draft, context, issues, locked, plannerId, nameOf, onRole, onRevert, onResolve }: DayDetailsProps) {
+/**
+ * The active date: wanted state, role, correction of stored data with both
+ * shifts, other members of both duties (unchanged), conflicts and findings.
+ */
+function DayDetails({ date, draft, context, issues, locked, plannerId, nameOf, onRole, onSet, onRevert, onResolve }: DayDetailsProps) {
+  const slots = daySlots(draft.base, date);
+  const before = storedDay(draft.base, date);
+  const after = wanted(draft, date);
+  const status = dayStatus(before, after);
+  const conflict = draft.conflicts.get(date) ?? null;
+  const fix = correctionOf(draft, date, context.calendar);
   return (
     <section className="month-planner__day" aria-labelledby={`${plannerId}-day`}>
       <h4 id={`${plannerId}-day`}>Ausgewählter Tag: {spokenDate(date)}</h4>
-      {SLOT_KINDS.map((kind) => {
-        const key = slotKey(date, kind);
-        const slot = slotOf(draft, key);
-        const after = desired(draft, key);
-        const status = statusOf(slot.role, after);
-        const conflict = draft.conflicts.get(key) ?? null;
-        const others = [...slot.others].sort((a, b) => byName.compare(nameOf(a.employeeId), nameOf(b.employeeId)));
-        return (
-          <div key={kind} className="planning-day__slot">
-            <p><strong>{SHIFT_TYPE_LABELS[kind]}</strong>: {slotStateText(slot, after)}</p>
-            <p className="month-planner__others">
-              {slot.dutyId === null
-                ? `Noch kein ${SHIFT_TYPE_LABELS[kind]} angelegt.`
-                : others.length === 0
-                  ? 'Keine weiteren Personen eingeplant.'
-                  : `Weitere Personen (bleiben unverändert): ${others
-                    .map((other) => `${nameOf(other.employeeId)}${other.dutyRole === 'SHIFT_LEAD' ? ` (${DUTY_ROLE_LABELS.SHIFT_LEAD})` : ''}`)
-                    .join(', ')}`}
-            </p>
-            {after !== null && (
-              <fieldset className="month-planner__roles">
-                <legend>Funktion im {SHIFT_TYPE_LABELS[kind]}</legend>
-                {DUTY_ROLES.map((role) => {
-                  const restricted = changeRestriction(context, slot, role);
-                  return (
-                    <label key={role}>
-                      <input
-                        type="radio"
-                        name={`${plannerId}-${key}-role`}
-                        checked={after === role}
-                        disabled={locked || (restricted !== null && after !== role)}
-                        onChange={() => onRole(key, role)}
-                      />
-                      {DUTY_ROLE_LABELS[role]}
-                    </label>
-                  );
-                })}
-              </fieldset>
-            )}
-            {conflict && (
-              <div className="planning-editor__problem">
-                <p>{conflictText(conflict, slot)}</p>
-                <div className="employee-form__actions">
-                  <button type="button" className="employees-button" disabled={locked} onClick={() => onResolve(key, true)}>Meine Auswahl behalten</button>
-                  <button type="button" className="employees-button" disabled={locked} onClick={() => onResolve(key, false)}>Aktuellen Stand übernehmen</button>
-                </div>
-              </div>
-            )}
-            {slotIssues(issues, date, kind).map((issue) => (
-              <p key={issue.reason} className="planning-day__hint">
-                <StatusBadge tone="attention">Nicht gespeichert</StatusBadge> {DAY_ISSUE_TEXT[issue.reason]}
-              </p>
-            ))}
-            {status !== 'unchanged' && !conflict && (
-              <button type="button" className="employees-button month-planner__small" disabled={locked} onClick={() => onRevert(key)}>
-                {SHIFT_TYPE_LABELS[kind]} zurücksetzen
+      <p><strong>Geplant:</strong> {dayStateText(slots, before, after)}</p>
+      {isClosed(context.calendar, date) && <p className="planning-day__hint">Das Projekt ist an diesem Tag nicht in Betrieb.</p>}
+      {fix && (
+        <div className="planning-editor__problem">
+          <p><StatusBadge tone="attention">Korrektur nötig</StatusBadge> {CORRECTION_TEXT[fix]}</p>
+          <div className="employee-form__actions">
+            {fix === 'BOTH_SHIFTS' && SLOT_KINDS.map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                className="employees-button"
+                disabled={locked}
+                onClick={() => onSet(date, { kind, role: slots[kind].role! })}
+              >
+                Nur {SHIFT_TYPE_LABELS[kind]} behalten
               </button>
-            )}
+            ))}
+            <button type="button" className="employees-button" disabled={locked} onClick={() => onSet(date, null)}>
+              {fix === 'BOTH_SHIFTS' ? 'Frei (beide austragen)' : 'Auf Frei setzen'}
+            </button>
           </div>
+        </div>
+      )}
+      {after !== null && after !== 'BOTH' && (
+        <fieldset className="month-planner__roles">
+          <legend>Funktion im {SHIFT_TYPE_LABELS[after.kind]}</legend>
+          {DUTY_ROLES.map((role) => {
+            const restricted = changeRestriction(context, slots[after.kind], role);
+            return (
+              <label key={role}>
+                <input
+                  type="radio"
+                  name={`${plannerId}-${date}-role`}
+                  checked={after.role === role}
+                  disabled={locked || (restricted !== null && after.role !== role)}
+                  onChange={() => onRole(date, role)}
+                />
+                {DUTY_ROLE_LABELS[role]}
+              </label>
+            );
+          })}
+        </fieldset>
+      )}
+      {SLOT_KINDS.map((kind) => {
+        const others = [...slots[kind].others].sort((a, b) => byName.compare(nameOf(a.employeeId), nameOf(b.employeeId)));
+        return (
+          <p key={kind} className="month-planner__others">
+            {slots[kind].dutyId === null
+              ? `Noch kein ${SHIFT_TYPE_LABELS[kind]} angelegt.`
+              : others.length === 0
+                ? `${SHIFT_TYPE_LABELS[kind]}: keine weiteren Personen eingeplant.`
+                : `${SHIFT_TYPE_LABELS[kind]}, weitere Personen (bleiben unverändert): ${others
+                  .map((other) => `${nameOf(other.employeeId)}${other.dutyRole === 'SHIFT_LEAD' ? ` (${DUTY_ROLE_LABELS.SHIFT_LEAD})` : ''}`)
+                  .join(', ')}`}
+          </p>
         );
       })}
+      {conflict && (
+        <div className="planning-editor__problem">
+          <p>{conflictText(conflict, before)}</p>
+          <div className="employee-form__actions">
+            <button type="button" className="employees-button" disabled={locked} onClick={() => onResolve(date, true)}>Meine Auswahl behalten</button>
+            <button type="button" className="employees-button" disabled={locked} onClick={() => onResolve(date, false)}>Aktuellen Stand übernehmen</button>
+          </div>
+        </div>
+      )}
+      {issues.filter((issue) => issue.date === date).map((issue) => (
+        <p key={`${issue.kind ?? ''}|${issue.reason}`} className="planning-day__hint">
+          <StatusBadge tone="attention">Nicht gespeichert</StatusBadge>{' '}
+          {issue.kind ? `${SHIFT_TYPE_LABELS[issue.kind]}: ` : ''}{DAY_ISSUE_TEXT[issue.reason]}
+        </p>
+      ))}
+      {status !== 'unchanged' && !conflict && (
+        <button type="button" className="employees-button month-planner__small" disabled={locked} onClick={() => onRevert(date)}>
+          Diesen Tag zurücksetzen
+        </button>
+      )}
     </section>
   );
 }
