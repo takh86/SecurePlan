@@ -308,14 +308,12 @@ describe('SP-11 — monthly plans (API-01, AUD-01)', () => {
 });
 
 describe('SP-11 — duty creation (API-02..06, AUD-01..03)', () => {
-  it('DAY precedes NIGHT on the same date regardless of insertion order; entry Location is reserved for SP-12', async () => {
+  it('DAY precedes NIGHT on the same date regardless of insertion order; entry Location is readable', async () => {
     const planId = await createPlan();
     for (const shiftKind of ['NIGHT', 'DAY']) {
       const created = await write(`${BASE}/${planId}/entries`, adminA, { dutyDate: '2027-03-10', shiftKind }).expect(201);
-      // The approved create contract reserves this resource URI. No single-entry
-      // GET ships in this slice; clients use the entries collection until SP-12.
-      const deferred = await read(created.headers.location, adminA);
-      expect([deferred.status, deferred.body.code]).toEqual([404, 'RESOURCE_NOT_FOUND']);
+      const detail = await read(created.headers.location, adminA).expect(200);
+      expect(detail.body).toEqual(created.body);
     }
     const entries = await read(`${BASE}/${planId}/entries`, adminA).expect(200);
     expect(entries.body.items.map((entry: { shiftKind: string }) => entry.shiftKind)).toEqual(['DAY', 'NIGHT']);

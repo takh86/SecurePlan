@@ -41,10 +41,12 @@ describe('SP-07 — employee detail', () => {
     expect(status.textContent).toContain('Aktiv');
     expect(status.textContent).toContain('Aktivierung ausstehend');
     expect(status.textContent).toContain('erneuter Versand der Einladung ist in dieser Ausbaustufe nicht');
-    expect(requests).toEqual([
+    // The detail is visible before its independent future-assignment request
+    // necessarily starts. Keep asserting both requests, but wait for the effect.
+    await waitFor(() => expect(requests).toEqual([
       { path: `/api/v1/employees/${EMPLOYEE_ID}`, method: 'GET', body: undefined },
       { path: `/api/v1/employees/${EMPLOYEE_ID}/future-project-assignments?page=1&pageSize=25`, method: 'GET', body: undefined },
-    ]);
+    ]));
   });
 
   it('edits with a PATCH of only the changed fields and confirms the save', async () => {

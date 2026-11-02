@@ -207,13 +207,14 @@ describe('SP-06 — runtime route access inventory', () => {
         expect({ route: route.key, roles: route.roles }).toEqual({ route: route.key, roles: ['COMPANY_ADMIN'] });
       }
 
-      // SP-11 PR-1: exactly five COMPANY_ADMIN-only planning routes; no publish, edit,
-      // removal, lease or employee-facing planning route exists yet.
+      // SP-11 foundation plus SP-12 single-entry GET: six COMPANY_ADMIN-only
+      // planning routes; publish, edit, removal, leases and employee reads are deferred.
       const planningRoutes = handlers.filter((h) => h.key.includes(' /api/v1/monthly-plans'));
       expect(planningRoutes.map((h) => h.key)).toEqual([
         'GET /api/v1/monthly-plans',
         'GET /api/v1/monthly-plans/:planId',
         'GET /api/v1/monthly-plans/:planId/entries',
+        'GET /api/v1/monthly-plans/:planId/entries/:entryId',
         'POST /api/v1/monthly-plans',
         'POST /api/v1/monthly-plans/:planId/entries',
       ]);
