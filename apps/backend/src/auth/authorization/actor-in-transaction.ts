@@ -10,7 +10,10 @@
  * FOR SHARE on the account and company rows blocks concurrent status/role
  * UPDATEs until the write commits; an UPDATE committed first is observed here
  * (READ COMMITTED re-evaluates the WHERE clause after the lock wait).
- * Lock order matches SessionService: account before company.
+ * This legacy joined statement does not specify a sequential account/company
+ * lock order. It remains supported only while companies are a SHARE-only leaf
+ * (company-lock-tripwire.spec.ts). New writers use lockAccountsPrefix; the
+ * real-PG LOCK-01 matrix checks coexistence and the company-writer boundary.
  *
  * Fail-closed rules:
  * - account/company no longer ACTIVE (or pairing invalid) -> 401 SESSION_REVOKED

@@ -10,6 +10,7 @@ import type { App } from 'supertest/types.js';
 import { WALL_CLOCK, type WallClock } from '../../src/common/time/wall-clock.js';
 import { AppModule } from '../../src/app.module.js';
 import { configureApp } from '../../src/configure-app.js';
+import { DatabaseService } from '../../src/database/database.service.js';
 import { PASSWORD_DENYLIST } from '../../src/auth/local-password-denylist.js';
 import { PasswordPolicyService } from '../../src/auth/password-policy.service.js';
 import {
@@ -55,7 +56,7 @@ export class FailingAudit extends BusinessAuditService {
   }
 }
 
-export type EmployeesAppOptions = { audit?: BusinessAuditService; clock?: WallClock };
+export type EmployeesAppOptions = { audit?: BusinessAuditService; clock?: WallClock; database?: DatabaseService };
 
 export async function bootEmployeesApp(
   delivery: RecordingDelivery,
@@ -74,6 +75,9 @@ export async function bootEmployeesApp(
   }
   if (options.clock) {
     builder = builder.overrideProvider(WALL_CLOCK).useValue(options.clock);
+  }
+  if (options.database) {
+    builder = builder.overrideProvider(DatabaseService).useValue(options.database);
   }
   const moduleFixture = await builder.compile();
   const app = moduleFixture.createNestApplication<INestApplication<App>>();

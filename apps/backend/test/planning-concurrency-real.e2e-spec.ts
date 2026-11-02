@@ -169,8 +169,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await Promise.allSettled(inFlight);
   for (const transaction of held.splice(0)) await finish(transaction, 'ROLLBACK');
+  await Promise.allSettled(inFlight);
   if (app) await app.close();
   app = undefined;
 });
@@ -261,6 +261,18 @@ const PAIRS: Pair[] = [
     name: 'PG-05 D4: empty duty create vs project ACTIVE -> INACTIVE',
     gate: 'projects',
     duty: () => createDuty(planJan, '2027-01-10', false),
+    dutyAudit: 'DUTY_CREATED',
+    other: () => () => write('patch', `/api/v1/projects/${north.projectId}`, { status: 'INACTIVE' }),
+    otherAudit: 'PROJECT_UPDATED',
+    otherSuccess: 200,
+    afterDuty: [409, 'PROJECT_HAS_FUTURE_DUTIES'],
+    afterOther: [409, 'PROJECT_INACTIVE'],
+  },
+  {
+    name: 'PG-05 D4: staffed duty create vs project ACTIVE -> INACTIVE',
+    gate: 'projects',
+    setup: async () => { await insertProjectAssignment(db(), tenantA.companyId, mira.employeeId, north.projectId, '2027-01-01'); },
+    duty: () => createDuty(planJan, '2027-01-10'),
     dutyAudit: 'DUTY_CREATED',
     other: () => () => write('patch', `/api/v1/projects/${north.projectId}`, { status: 'INACTIVE' }),
     otherAudit: 'PROJECT_UPDATED',
