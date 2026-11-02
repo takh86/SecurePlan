@@ -26,7 +26,7 @@ import { PLAN_CREATED_STATE, PLAN_STATUS, type Duty, type MonthlyPlan } from './
 import { sortDuties, type MonthlyPlansApi } from './monthly-plans-api';
 import { PlanningDayDetails } from './PlanningDayDetails';
 import { PlanningMatrix, type MatrixSelection } from './PlanningMatrix';
-import { UNKNOWN_PERSON, buildMatrixRows, dutiesOn, filterRows, matrixDays, type MatrixRow } from './planning-matrix';
+import { UNKNOWN_PERSON, buildMatrixRows, dutiesOn, filterRows, matrixDays, standaloneRow, type MatrixRow } from './planning-matrix';
 
 export type PlanPageApis = {
   plans: MonthlyPlansApi;
@@ -379,6 +379,7 @@ export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot 
                   {planView.kind === 'person' ? (
                     <PersonMonthView
                       rows={rows}
+                      employees={ready.employees}
                       employeeId={planView.employeeId}
                       onPerson={(employeeId) => requestView({ kind: 'person', employeeId })}
                       planner={(person) => (
@@ -622,6 +623,7 @@ function PlanningWorkspace({ month, rows, totalRows, duties, selection, editingD
 
 type PersonViewProps = {
   rows: readonly MatrixRow[];
+  employees: readonly Employee[];
   employeeId: string | null;
   onPerson: (employeeId: string) => void;
   planner: (person: MatrixRow) => ReactNode;
@@ -637,13 +639,17 @@ function personOption(row: MatrixRow): string {
  * one) and plan that person's month. Every switch goes through the page's
  * unsaved-input guard.
  */
-function PersonMonthView({ rows, employeeId, onPerson, planner }: PersonViewProps) {
+function PersonMonthView({ rows, employees, employeeId, onPerson, planner }: PersonViewProps) {
   const selectId = useId();
-  const index = employeeId === null ? -1 : rows.findIndex((row) => row.key === employeeId.toLowerCase());
-  const person = index >= 0 ? rows[index] : null;
-  const previous = index > 0 ? rows[index - 1] : null;
-  const next = index < 0 ? rows[0] ?? null : rows[index + 1] ?? null;
-  if (rows.length === 0) {
+  const listed = employeeId !== null && rows.some((row) => row.key === employeeId.toLowerCase());
+  // The chosen person stays (with an unsaved draft) even when a newer read no longer lists them,
+  // e.g. a person shown only for memberships that another admin removed meanwhile.
+  const list = employeeId !== null && !listed ? [...rows, standaloneRow(employeeId, employees)] : rows;
+  const index = employeeId === null ? -1 : list.findIndex((row) => row.key === employeeId.toLowerCase());
+  const person = index >= 0 ? list[index] : null;
+  const previous = index > 0 ? list[index - 1] : null;
+  const next = index < 0 ? list[0] ?? null : list[index + 1] ?? null;
+  if (list.length === 0) {
     return <p>In diesem Plan gibt es noch keine Person, deren Monat Sie planen können.</p>;
   }
   return (
@@ -653,7 +659,7 @@ function PersonMonthView({ rows, employeeId, onPerson, planner }: PersonViewProp
           <label htmlFor={selectId}>Person</label>
           <select id={selectId} value={person?.employeeId ?? ''} onChange={(event) => onPerson(event.target.value)}>
             {person === null && <option value="" disabled>Bitte wählen</option>}
-            {rows.map((row) => <option key={row.key} value={row.employeeId}>{personOption(row)}</option>)}
+            {list.map((row) => <option key={row.key} value={row.employeeId}>{personOption(row)}</option>)}
           </select>
         </div>
         <button

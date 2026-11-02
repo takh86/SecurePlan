@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { JONAS_ID, LEA_ID, MIRA_ID, PLAN_ID, duty, member, plan, planningCompany } from './monthly-planning.test-support';
+import { JONAS_ID, LEA_ID, MIRA_ID, PAUL_ID, PLAN_ID, duty, member, plan, planningCompany } from './monthly-planning.test-support';
 import { renderPlanning } from './monthly-planning-render.test-support';
 
 afterEach(() => cleanup());
@@ -102,6 +102,26 @@ describe('#88 plan page — employee-month view (preview, no persistence)', () =
     expect(slot(D3).getAttribute('aria-pressed')).toBe('true');
     // Jonas is only released for day duties: night cells are not offered.
     expect(slot(N3).getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('keeps the planner of a person whom a newer read no longer lists (membership removed elsewhere)', async () => {
+    const user = userEvent.setup();
+    const stored = duty({ ...DEC_3, assignments: [member(MIRA_ID), member(PAUL_ID)] });
+    const server = planningCompany({ plans: [plan()], duties: { [PLAN_ID]: [stored] } });
+    renderPlanning(PLAN_PATH, server.handler);
+    await openPersonView(user);
+    await user.selectOptions(screen.getByLabelText('Person'), PAUL_ID);
+    await screen.findByRole('grid', { name: 'Dienste von Paul Anders im Dezember 2026' });
+    // Paul is not assigned this month: only taking him off is offered.
+    expect(slot(N3).getAttribute('aria-disabled')).toBe('true');
+    await user.click(slot(D3));
+    server.state.duties[PLAN_ID] = [{ ...stored, version: stored.version + 1, assignments: [stored.assignments[0]] }];
+
+    await user.click(screen.getByRole('button', { name: 'Aktuellen Stand laden' }));
+    await waitFor(() => expect(screen.getByText(/Eine Ihrer Änderungen ist darin bereits enthalten\./)).toBeTruthy());
+    expect(screen.getByRole('grid', { name: 'Dienste von Paul Anders im Dezember 2026' })).toBeTruthy();
+    expect((screen.getByLabelText('Person') as HTMLSelectElement).value).toBe(PAUL_ID);
+    expect(slot(D3).getAttribute('aria-pressed')).toBe('false');
   });
 
   it('keeps the draft on "Aktuellen Stand laden" and marks a duty another admin changed meanwhile', async () => {

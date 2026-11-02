@@ -126,6 +126,26 @@ export function buildMatrixRows(
   });
 }
 
+/**
+ * A row for a person outside the current rows (neither assigned this month nor
+ * a member of any duty), e.g. to keep an open employee-month planner.
+ */
+export function standaloneRow(employeeId: string, employees: readonly Employee[]): MatrixRow {
+  const key = employeeId.toLowerCase();
+  const employee = employees.find((item) => item.id.toLowerCase() === key) ?? null;
+  return {
+    key,
+    employeeId,
+    employee,
+    name: employee ? fullName(employee) : UNKNOWN_PERSON,
+    code: employee?.employeeCode ?? null,
+    assigned: false,
+    inactive: employee?.status === 'INACTIVE',
+    cells: new Map(),
+    hasConflict: false,
+  };
+}
+
 /** Search (name or employee code) and the "only hints" filter. */
 export function filterRows(rows: readonly MatrixRow[], query: string, onlyConflicts: boolean): MatrixRow[] {
   const needle = query.trim().toLocaleLowerCase('de-DE');

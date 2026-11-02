@@ -86,7 +86,7 @@ leaving the page (inline prompt "Ungespeicherte Monatsplanung", no browser dialo
 |---|---|---|
 | `MonthlyPlanPage` | Host of both views | View switch (radio group), `PersonMonthView` (person list, previous/next), guarded `requestView`; the matrix branch is only re-indented |
 | `UnsavedPrompt` + `useBlocker` | Reused for person/view switch and navigation | New copy for mode `month` (dirty and saving) |
-| `PlanningMatrix`, `planning-matrix.ts` | Matrix view unchanged; `matrixDays`, `dayHeader`, `spokenDate`, `MatrixRow` reused | None |
+| `PlanningMatrix`, `planning-matrix.ts` | Matrix view unchanged; `matrixDays`, `dayHeader`, `spokenDate`, `MatrixRow` reused | New `standaloneRow` keeps a chosen person selectable after a read no longer lists them |
 | `PlanningDayDetails` | Entry point | Optional "Monat von {Name} planen (Vorschau)" button |
 | `duty-eligibility.ts` | Static UX restrictions (status, employment, shift eligibility) | None |
 | `DutyEditor`, `DutyEditLease`, `use-duty-edit-lease`, PATCH/DELETE client | **Not used** by the planner; remain the supporting single-duty path | None |
@@ -163,11 +163,11 @@ Local, Windows, Node 24.21.0, working tree of the code commit.
 |---|---|
 | `npm run lint` | passed, 0 warnings |
 | `npm run typecheck`; frontend `tsc -b` via `npm run build` | passed |
-| `npm run build` | passed; main chunk 594.4 kB (PR #87: 562.9 kB, warning above 500 kB already present) |
-| `npm run test --workspace=frontend` | **53 files / 735 tests passed** (PR #87 head: 50 / 698) |
+| `npm run build` | passed; main chunk 594.9 kB (PR #87: 562.9 kB, warning above 500 kB already present) |
+| `npm run test --workspace=frontend` | **53 files / 736 tests passed** (PR #87 head: 50 / 698) |
 | `npm run check:public`, `git diff --check` | passed |
 
-New tests (37):
+New tests (38):
 
 - `employee-month-draft.test.ts` (18): month base for 31/30/29/28-day months and the night of the
   last day, duties of other months ignored, role/hint/other members (case-insensitive); choose,
@@ -181,10 +181,10 @@ New tests (37):
   after a rejection with neutral day findings; unknown outcome blocks retry until re-read;
   malformed outcome treated as unknown; conflict keep/take; locked while saving and re-read after
   a confirmed save; discard with confirmation; CR-03 note.
-- `MonthlyPlanPage.employee-month.test.tsx` (4, real plan page and in-memory API): preview sends
+- `MonthlyPlanPage.employee-month.test.tsx` (5, real plan page and in-memory API): preview sends
   no write request; unsaved draft guarded on next person, leaving the page, person list and view
-  switch; entry from a matrix cell; "Aktuellen Stand laden" keeps the draft and marks a duty
-  another admin changed.
+  switch; entry from a matrix cell; a person no longer listed after a reload keeps the planner;
+  "Aktuellen Stand laden" keeps the draft and marks a duty another admin changed.
 
 Visual check (not an acceptance test): the planner rendered with synthetic data in headless
 Chrome 156 from a throw-away harness outside the repository (no backend, database or Docker);
