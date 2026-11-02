@@ -1,7 +1,7 @@
 # Requirements, scope and source review
 
-All SP-88-specific contracts in this package are proposals until the decision
-sheet is signed. Source precedence is approved amendments, effective MVP,
+Approved business corrections BR-1-BR-5 govern this revision. Detailed SP-88/SP-90
+API/database/security/compatibility contracts remain proposals until ratified. Source precedence is approved amendments, effective MVP,
 controlled final contracts with approved supplements, then implementation and
 review evidence. Historical drafts and a passing test run do not create authority.
 
@@ -44,7 +44,7 @@ available. Preserve the original baselines and record approval/version/date.
 | NFR-REL-01/02; #88 owner decision | Related changes atomically commit/roll back | Approved atomic requirement now spans all selected dates and all mandatory audit | F01/02/11/12 |
 | NFR-CONC-01; Phase 8.7 D-8.7-01/02; ADR-0006 | Duty versions; independent single-duty edits | A-SP88-02 adds a full-month read set and short L UPDATE barrier for this command only, with conservative stale conflicts; no global plan revision | F08; C01–C24 |
 | Phase 5 WF-DEC-01/A10 and UF-02 | Matrix, focused cell/day editor, save/publish | A-SP88-03 makes employee-month editing primary and a single final Save; PR #87 editor becomes a secondary tool | U01–U07 |
-| Phase 5.6 A10 radio; UF-02 multiple-booking exception | Frei/Tag/Nacht single-choice sketch; prevent simultaneous assignments | A-SP88-03 must explicitly resolve DAY+NIGHT on the same local date. Recommend allowing both only when saved/resolved UTC intervals do not overlap | F04; U02 |
+| Phase 5.6 A10 radio; UF-02 multiple-booking exception | Frei/Tag/Nacht single-choice sketch; prevent simultaneous assignments | Owner correction APPROVES exclusive DAY/NIGHT/FREI; dual is forbidden even when UTC nonoverlapping. Record controlled cross-writer amendment; do not reopen this decision | F04; U02 |
 | BR-DATA-02; Phase 8.3 aggregate mapping | One plan per project/month; Duty contains memberships | Read projection is not a new persisted employee-month plan. No alternate roster source or cross-month command | F05/15 |
 | BR-PROJ-01/02/03; FR-PROJ-01; SP-11 D2 | Single project per employee/month; traceable assignment corrections | Save never creates/corrects project assignment; revalidate current link, preserve D2 protections | F09; C07–C09 |
 | FR-SHIFT-01/02; BR-SHIFT-01; SP-11 D6 | Configured shift kinds/times, overnight resolution | New duty uses effective whole configuration and company zone; existing duty retains saved UTC/provenance. No hard-coded 12h shift | F04/05/16; C10/11 |
@@ -59,9 +59,29 @@ available. Preserve the original baselines and record approval/version/date.
 | M8/API 8.9/8.10/8.11 | OpenAPI, traceability, quality evidence | Update canonical controlled artifacts and acceptance matrix with approved amendment in implementation PR A | All |
 | Phase 10 / Dec 3 forecast | Measured remaining effort and scope discipline | A-SP88-07 reforecasts meaningful new work; no silent MUST cuts or assumed weekend capacity | Delivery gates |
 
-The single-choice UI wording is a genuine design conflict, not an authorization
-to impose one duty per calendar day on the backend. Conversely, the backend's
-non-overlap behavior alone does not approve a dual-selection primary UI.
+The owner correction supersedes the original dual-selection recommendation at
+5467e21. Exclusivity is a product rule, not labor-law certification. UTC overlap
+is independently mandatory. Operating weekdays have no persisted representation
+in migrations0007/0009; this is an additional M3/M4 feature, not already delivered.
+
+| New authority / traceability | Controlled impact | Proof |
+|---|---|---|
+| BR-1, #88 correction and #89 owner comment | Amend Phase2 scheduling rule, Phase4 UC03/04/05, Phase8 validation and every canonical writer: one employee/project/local date, at most one kind | F04/F25; C25/C26 |
+| BR-2 paint mode, #89 comment6588075408 | Amend Phase5 A10/handoff: persistent TAG/NACHT/FREI before dates, repeat is no-op, one final Save | U02/U08 |
+| BR-3 FREI | Preserve minimal availability boundary, no new absence semantics | F24/S04 |
+| BR-4 atomicity | Already approved; new calendar/exclusivity failures included in full rollback | F02/F23; G01-G12 |
+| BR-5 preserve staff | Duty canonical, target-only delta; retained role/source/history | F03/F06 |
+| #90 project weekdays | Proposed A-SP90-01: M3 project calendar, M4 validation/Publish, Phase7 schema, Phase8 GET/PATCH/errors/audit/security, Phase5 admin/closed-date UX | G01-G12; C27-C30 |
+| Migration compatibility and historical correction | P4/P5 needed; no guessed weekdays or silent data cleanup, no changes to applied0013 | G05/G08/F25 |
+| #91 preview head f61b547 | Frontend preparation credit only, DAY/NIGHT toggles contradicted owner correction; no accepted runtime save | U01-U08 |
+
+Latest authority links: [#88 correction](https://github.com/takh86/SecurePlan/issues/88#issuecomment-6587888420),
+[#89 correction](https://github.com/takh86/SecurePlan/pull/89#issuecomment-6587890251),
+[#89 paint](https://github.com/takh86/SecurePlan/pull/89#issuecomment-6588075408),
+[#90](https://github.com/takh86/SecurePlan/issues/90),
+[#91 review](https://github.com/takh86/SecurePlan/pull/91#issuecomment-6588190627).
+All were inspected with GitHub API, including current issue bodies/comments and
+PR86/87/89/91 exact heads. Technical review comments are not owner technical approval.
 
 ## Code impact and independent foundations
 
@@ -75,7 +95,8 @@ and transaction-aware shared validation/persistence primitives.
 
 Inspected #87 code: draft diff/roles in `duty-editor-model.ts`, lease API calls,
 `MonthlyPlanPage.tsx` PublishSlot, matrix projection and `session-api.ts`.
-PublishSlot currently observes only the single-duty draft. PR B/C must include
+At #87 PublishSlot observes only the single-duty draft; #91 preview already adds
+month dirty state, which receives preparation credit. PR B/C must fully cover
 the employee-month draft and unknown-outcome state in that guard.
 
 Both PRs were OPEN, unmerged and GitHub-reported mergeable at investigation.
@@ -98,3 +119,11 @@ explicit bodyless option and test transmitted bytes. #87's Published browser
 fixture is not a call to the real Publish endpoint. Company-IANA-zone API/display,
 large-grid usability and human accessibility/UX sign-off also remain separate
 gates. This design does not quietly add a company-zone API field.
+
+Revision source observations: `shift-configurations.service.ts` uses project
+NO KEY UPDATE, current/future whole-set writes, no Expected-Version (last writer
+wins); its `assertNoSavedDutiesForConfiguration` calls the unlocked D3 interval
+predicate under P. The new calendar API deliberately proposes optimistic
+preconditions without changing that old API. #91 handoff R1-R10 is input, not an
+approved request schema; its changed-slot seam must adapt to a complete-month
+exclusive desired state. See [handoff](08-frontend-handoff.md).

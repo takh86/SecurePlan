@@ -104,7 +104,7 @@ A accounts (UUID order, final strength)
    Apply the internal admission rule below. No expiry from transaction-start
    `now()` or from a pre-wait application clock may authorize a write.
 9. **Preconditions and validation.** Refuse active leases on potentially changed
-   existing duties first; then lifecycle/slot/context/discovery drift. Compare
+   existing duties first; then lifecycle/slot/context/calendar/discovery drift. Compare
    against the pre-provisional-creation snapshot, excluding this transaction's
    tentative rows from the discovery comparison. If there is no effective delta,
    complete NO_OP without eligibility checks, lease changes or domain writes.
@@ -189,7 +189,9 @@ overlap(a,b)   = a.startsAt < b.endsAt AND a.endsAt > b.startsAt
 Check all resulting assignments of affected roster employees against this set,
 excluding only the same assignment/duty as appropriate. Include unchanged duties,
 both lifecycle states, other plans and adjacent-month overnight intervals.
-Explicitly check proposed additions against one another. Do not exclude whole
+Explicitly check proposed additions against one another. Independently count active memberships
+per employee/project/local dutyDate in the final set: at most one DAY/NIGHT, even
+when their saved UTC intervals are adjacent. No UTC-only shortcut is sufficient. Do not exclude whole
 other affected duties or all of this employee's old month: either would conceal
 real overlaps. Remove only the target's intended old memberships in the overlay.
 
@@ -301,3 +303,83 @@ provider delivery remains after commit. Cancellation/replacement reconciliation
 is outside this slice; when those tables arrive the guarded schema and writer
 integration must be reviewed together. Retention execution, privileged SQL,
 append-only DB roles, backup/restore and deployment remain #51's separate gates.
+
+## Revision: exclusive daily assignment and SP-90 across all writers
+
+Approved BR-1 supersedes the earlier nonoverlap-only proposal. Full read still
+includes two shared duty slots per date, but desired state is exclusive. The
+[SP-90 calendar design](../sp90-project-operating-weekdays.md) supplies proposed
+migration, effective interval, missing/legacy behavior, audit and guard rules.
+Do not deploy new invariants only inside the employee-month endpoint.
+
+| Path | Exclusive employee/project/dutyDate rule | Operating weekday / compatibility |
+|---|---|---|
+| SP-11 createEntry, staffed or empty | For every added employee validate final live assignment set, including other kind at same date; E locks cover submitted staff | New canonical duty date must be configured/open even if empty; retain explicit existing duty creation API until controlled P2 disposition |
+| SP-12 PATCH membership add/role/date/kind/time | Validate all remaining roster members at resulting project/local date against live duties excluding only this duty's old projection; old and new staff E union before P | New memberships, kind/date moves and role-mutated target work require open configured start date; preserved unchanged closed memberships can remain during unrelated repair; keep existing full resulting-roster eligibility rules |
+| SP-12 DELETE / pure membership removal | Cannot introduce dual; remaining changed-roster staff still checked as SP-12 requires; target removal can correct dual | Allow reduction on legacy closed/missing-calendar dates if existing operation-specific project/lease/version/other guards pass; do not introduce calendar veto on deleting bad data |
+| SP-88 full month | Final overlay removes target old memberships, adds at most one desired kind per date; reject invalid desired encoding and conflicting final result | Match effective calendar token; new/replaced/role-mutated target assignment open; no-op/unchanged/removal compatibility; no partial skip |
+| First Publish (#86 follow-up on integrated main) | Check entire live plan, all active memberships, same-date exclusivity plus independent UTC overlaps | Require configuration; all live duty start dates open, including empty duties (proposed P4/P2). Refusal rolls back lifecycle, audit, completion |
+| CR-03 after publication | Same create/PATCH/DELETE/batch checks, no secondary draft | Immediate changes with same guards, preserve publishedAt; no republish |
+| Project calendar PATCH | Does not mutate membership or repair dual automatically | P NO KEY UPDATE; newly excluded live duty guard, both lifecycles, staffed/empty; fresh interval reads |
+| Shift configuration / project status | Existing D3/D4 remain; no new shift-time rewrite | Same P barrier. Separate calendar does not weaken D3; configuration cannot accidentally overwrite weekdays |
+| Future cancellation/replacement | Later owner must validate resulting roster including newly accepted replacement employee under E and workflow tiers | Must honor start-date calendar on new/replaced work plus W reconciliation; future contracts gated, not implemented here |
+
+Removal-only compatibility is a scoped new-rule policy, not a waiver of SP-12's
+existing resulting-roster validation. For example another ineligible preserved
+worker can still block a shared-duty patch. A legacy target dual can be corrected
+by retaining one kind/removing the other, or removing both. A full month read with
+an unresolved dual must require explicit user correction before constructing its
+exclusive request. Existing bad data remains detectable; migration neither picks
+winners nor deletes it. First Publish is stricter than unrelated repair saves.
+
+### Protecting absent opposite-kind assignments without extra lock tiers
+
+Every membership-changing writer already takes affected employee E NO KEY UPDATE
+before P SHARE. Query the final active assignment set for each resulting employee,
+project and civil date in a **new statement after E/P waits**, excluding only old
+memberships explicitly replaced by the command. E serializes competing assignments
+for that employee even if DAY/NIGHT duties or plans are currently absent. Across
+employees, no shared exclusivity fact is overwritten; D versions protect shared
+aggregates. Date/kind mutations must validate all affected roster employees with
+their existing discovered/desired E set. Unknown newly discovered employees abort,
+never acquire E after D. No new late lock on an opposite duty, calendar row or
+account is permitted. Read the opposite duty through the protected parent scope.
+
+For calendars, take P SHARE as already specified, then fresh read the effective
+calendar. P NO KEY UPDATE from the calendar writer blocks all planning writes
+and Publish at their parent stage. Never take a calendar child UPDATE lock after
+Q, and never add L/D locks to the calendar dependency guard. Parent stability
+protects absent versions and their effective interval. Include calendar ID/version
+in the request preconditions and creation checksum, but not as an FK on tentative
+new duties; its parent scope is already held. All D (existing+new sorted UUID)
+still precede all A2 and all Q. The short idempotency claim FK prefix remains
+A/C/I/E/P/L KEY SHARE; it makes no calendar/business writes and releases before
+the complete business prefix. No migration may introduce a new FK causing a
+late calendar/project/employee lock after the owned parent stages.
+
+### Both-order outcomes required using actual schema
+
+Calendar-first COMMIT makes old batch calendar precondition stale, even for a
+compatible set; ROLLBACK leaves it valid. Batch-first COMMIT makes newly excluding
+calendar PATCH refuse; ROLLBACK leaves dependency-free PATCH eligible. If calendar
+PATCH is already forbidden by a saved dependency, test its refusal plus a separate
+fixture where a real configuration COMMIT is allowed. Concurrent opposite-kind
+SP-11/SP-12 adds for the same employee/date cannot both commit: later writer sees
+the first through E, or can proceed if it rolled back. Publish-first may complete
+before a new calendar proposal only if its protected plan is currently valid;
+a later closure cannot invalidate its saved duties. Batch-first is wholly visible
+to Publish after commit or invisible after rollback. Active leases are still
+checked before stale/calendar/business conflicts as the API specifies.
+
+This is a lock-order proof sketch under the all-writers protocol, not executed
+concurrency evidence. Actual-schema HTTP/PG tests must observe blocking and both
+COMMIT/ROLLBACK outcomes, including newly discovered staff, multiple D/A2/Q rows,
+calendar absence/bootstrap and idempotency claim/completion failure.
+
+Existing SP-12 **whole-duty DELETE** can remove inactive-project history under
+its approved removal contract; do not confuse it with membership-removal PATCH,
+whose effective-write ACTIVE project/resulting-roster rules still apply. The
+new calendar must not disable that existing correction path. Temporal PATCHes
+that change actual assigned work also require an open configured start date for
+all remaining staff, even if employee IDs are retained; unchanged snapshots and
+pure reductions follow the scoped compatibility rules.

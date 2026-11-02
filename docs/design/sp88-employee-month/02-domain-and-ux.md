@@ -1,7 +1,7 @@
 # Proposed domain and interaction contract
 
-Approval scope: recommended details for #88; only the one-command atomic business
-requirement is already approved. Decision IDs refer to the decision sheet.
+Approval scope: recommended details for #88; BR-1 through BR-5 and persistent paint interaction are already approved;
+API, compatibility and technical details below remain proposals. Decision IDs refer to the decision sheet.
 
 ## Intent and aggregate boundaries
 
@@ -13,7 +13,7 @@ remain the source of truth. An employee-month is a projection and command scope.
 
 | Alternative | Benefit | Cost / recommendation |
 |---|---|---|
-| Full desired state for every date and both kinds | Meaning of the displayed month is explicit; one clear review; omitted dates cannot accidentally mean deletion | **Recommend.** Require exactly every date, explicit null membership and a version/absence precondition for each slot. More conservative conflicts |
+| Full desired state for every date and one exclusive state | Meaning of the displayed month is explicit; one clear review; omitted dates cannot accidentally mean deletion | **Recommend.** Require exactly every date, explicit null membership and a version/absence precondition for each slot. More conservative conflicts |
 | Changed-days-only operations | Smaller payload; unrelated duties need not conflict | Requires an additional baseline and explicit ADD/REMOVE/KEEP semantics; omitted changes cannot express the whole selected month. Possible future optimization, not the initial primary contract |
 | Many single-duty saves | Reuses current UI API directly | Cannot meet the approved atomic requirement; excluded as implementation of Monat speichern |
 
@@ -22,32 +22,45 @@ any duty. The server derives the delta from locked current state **after matchin
 all preconditions**. The UI initializes every role from the read response and
 never resets retained SHIFT_LEAD roles to EMPLOYEE.
 
-## Meaning of each date
+## Exclusive daily desired state (approved behavior, proposed encoding)
 
-Represent DAY and NIGHT independently. Each has an expected duty identity/version
-or explicit absence, and a desired `selectedRole` of EMPLOYEE, SHIFT_LEAD or null.
+Each employee/project/company-local dutyDate has at most one of DAY, NIGHT or
+OFF (UI TAG, NACHT, FREI). DAY+NIGHT is forbidden even for adjacent UTC intervals.
+This is a SecurePlan business rule, not proof of labor-law compliance. Independent
+cross-date, cross-project/plan and adjacent-month UTC overlap checks remain.
 
-| Stored membership → desired role | Effect |
+Compare encodings: independent desired roles with a mutual-exclusion validator
+can work, but advertises an invalid fourth state and complicates paint/rebase.
+Recommend **two existing-slot preconditions plus one discriminated desired state**:
+`desired:{state:'OFF'}` or `desired:{state:'DAY'|'NIGHT',role:Role}`. DAY/NIGHT
+preconditions describe shared aggregates, not two permitted desired assignments.
+
+| Baseline -> desired | Effect |
 |---|---|
-| Absent → null | Unchanged; no duty or membership created |
-| Present → same role | Unchanged; same membership ID/source and duty version |
-| Absent → role | Add one new ACTIVE NORMAL membership; create a duty only if its live slot is absent |
-| Present → different role | Change this membership's duty function, preserve ID/source |
-| Present → null | Explicit removal: mark only this membership REMOVED, retain history |
+| OFF -> OFF | Unchanged; create no duty or membership |
+| DAY/NIGHT -> same kind and role | Unchanged; preserve membership ID/source/role |
+| Same kind -> explicit different role | Only target role changes; preserve ID/source |
+| DAY -> NIGHT, or NIGHT -> DAY | Remove target old membership; retain target chosen-kind membership if already present, otherwise add NORMAL/new ID |
+| Any assignment -> OFF | Tombstone only target memberships; never absence or whole-duty deletion |
+| Legacy DAY+NIGHT -> one kind/OFF | Explicit correction removes unwanted target membership(s); retained chosen membership keeps its role/ID/source |
 
-For a date, neither selected means **no membership in either duty** for this
-employee. Label it “Frei / nicht eingeplant” with an explanation; it is not a
-SICK, LEAVE, Wunschfrei or availability fact. DAY and NIGHT together are proposed
-when both intervals are valid and do not overlap, including adjacent intervals.
-The two selections may have different duty roles. The single-choice Phase 5
-sketch needs the explicit P1 amendment; no rest-time, daily-hours or leader
-minimum is inferred. Existing approved validation remains the boundary.
+Read legacy dual data as `INVALID_DUAL`, with both actual assignments, never a
+silently chosen winner. It has no legal desired-state encoding; require an explicit
+DAY/NIGHT/OFF choice before submitting a full month. Rebase never invents a dual
+choice or discards the draft. Existing closed assignments likewise stay visible
+with correction reasons; permit OFF, never silently erase them on read.
 
-DAY → NIGHT is a removal and addition, not a change of the shared DAY duty's kind.
-Other employees remain in DAY with the same roles, membership IDs and sources.
-The employee retains a current NIGHT membership if it already exists; otherwise
-the new membership gets a new ID/source NORMAL. Rejoining a removed membership
-creates a new historical row; never revive a REMOVED row.
+Persistent paint mode is selected **before** dates. TAG replaces NIGHT; NACHT
+replaces DAY; FREI removes assignment. Repeating the current mode is idempotent,
+not a toggle. Painting an unchanged kind preserves its role. A new kind defaults
+to EMPLOYEE; a currently existing selected-kind membership, including legacy
+SHIFT_LEAD, retains that role. Explicit secondary role control may choose SHIFT_LEAD;
+no role dialog per date and no invented leader minimum. Source is never writable.
+Rejoining REMOVED history creates a new row; never resurrect a tombstone.
+
+FREI means no work assignment on this project/date. It never creates SICK, LEAVE,
+paid vacation, Wunschfrei or availability records. Other employees in either
+shared duty retain every ID/role/source/history field.
 
 ## Missing slots, empty duties and other employees
 
@@ -72,6 +85,23 @@ show a neutral duty conflict and an authorized route to the aggregate editor.
 No broad new removal exception is proposed. Do not automatically unassign that
 colleague to make the selected employee's month valid.
 
+## Operating weekdays and legacy correction
+
+Use the authoritative [SP-90](../sp90-project-operating-weekdays.md) calendar for
+the plan month. Closed dates disable TAG/NACHT additions, but remain focusable,
+readable and correctable to FREI. MISSING is an explicit configuration blocker,
+not Mon-Fri or all-seven. NIGHT uses the local start date even when it ends next
+morning. Backend revalidates under P regardless of client hints.
+
+Recommended compatibility: no-op/unchanged legacy memberships are not silently
+rewritten. Removing a closed/missing-calendar assignment is allowed when existing
+SP-12 resulting-roster/project rules pass. Adding/replacing kind/changing target
+role requires configured open date. New exclusivity is checked against the final
+state on every effectively changed roster/date; legacy duals must be explicitly
+corrected, and First Publish validates the entire plan. Calendar changes cannot
+newly close live saved duties under the proposed dependency guard. These detailed
+migration/Publish semantics await P4/P5 and the controlled amendment.
+
 ## Lifecycle, history and eligibility
 
 UNPUBLISHED Save persists planning without publishing. PUBLISHED Save takes
@@ -80,7 +110,7 @@ publisher, lifecycle or a plan revision. If publication happens after this edito
 loaded, the expected lifecycle no longer matches: preserve input and require a
 fresh review of the now-immediate effect, even when duty versions match.
 
-Inherit SP-12, rather than adding a new historic-edit policy: no past-month/date
+Inherit SP-12 plus the proposed cross-writer calendar/exclusivity amendment; no new historic-edit policy: no past-month/date
 freeze. New/remaining assignments require ACTIVE employee status, inclusive
 employment on the local duty date, matching project-month assignment, shift
 eligibility, neutral availability and no UTC overlap. Existing duty times remain
@@ -99,12 +129,12 @@ absence rules is invented.
 ## Interaction and state machine
 
 1. Choose project/month, open or explicitly create its plan, choose one employee.
-   Show all dates and both shift choices; historical/current memberships stay
+   Show the complete month and persistent TAG/NACHT/FREI toolbar; historical/current memberships stay
    visible even when the employee is no longer selectable for new assignments.
 2. Load one consistent employee-month projection. Store an immutable baseline,
    the complete desired month and a separate dirty-date/role diff in memory.
    No lease or database transaction lasts through user editing.
-3. Apply cell changes locally. Show additions, removals and role changes with
+3. Paint dates locally with one click/tap/key activation; changing mode affects subsequent dates. Show additions, removals and role changes with
    text/icons, not color alone. Show a visible review summary and the immediate
    Published effect. Clearing the whole month must explicitly acknowledge the
    displayed removal count before final Save. There is one final submit action
@@ -160,3 +190,12 @@ No authoritative company-zone HTTP field is approved here. Use civil date/kind
 for selection and server-resolved UTC values for correctness. The existing
 company-zone display decision remains an explicit dependency for time labels
 and combined browser acceptance; device-zone inference cannot resolve it.
+
+## Primary interaction defaults resolved by owner direction
+
+Employee-month editing is primary; Alle Personen remains overview. After success,
+remain on the employee and offer Nächste Person (no automatic jump). No bulk helper
+beyond paint mode is included. Visible PUBLISHED direct-effect wording and a final
+review precede one Save; no additional popup per day. Retain draft on navigation,
+rejection and explicit reconciliation. Security-bound retention below remains T4,
+not permission to show a prior actor's draft after another login.

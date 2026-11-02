@@ -16,7 +16,7 @@ history, timestamps, leases and audits), not just HTTP codes or the first date.
 | F01 | Select 15 valid dates, mixed existing/missing duties, one Save | All 15 memberships and exact duty/audit/receipt deltas commit; one business transaction |
 | F02 | Same 15 dates, one selected date invalid (parameterize employment, eligibility, availability, overlap, configuration) | Atomic 409 with safe date/kind; zero changes to every domain/audit row, including provisionally created slots |
 | F03 | DAY→NIGHT where DAY and NIGHT contain other staff | Remove only target's DAY membership; add/retain target in NIGHT; preserve all other IDs/roles/sources and both existing duty intervals |
-| F04 | DAY+NIGHT same date, adjacent/non-overlapping; then overlapping intervals | Both valid selections commit together; invalid overlap refuses all. Also test next-day and adjacent-month overnight conflicts |
+| F04 | Attempt DAY+NIGHT same date with adjacent/nonoverlapping and overlapping intervals | Always reject dual; malformed union400, final invariant409; independent next-day/adjacent-month UTC overlap remains checked |
 | F05 | Missing slots, existing empty duty, tombstoned historical duty | Create only selected absent live slots; reuse empty live duty; recreated slot has new ID; no empty placeholder month |
 | F06 | Retained SHIFT_LEAD / REPLACEMENT membership, explicit role edit, remove then later rejoin | Retain role/ID/source unless explicitly changed; role-only update preserves source; rejoin creates new NORMAL membership |
 | F07 | Identical normalized desired month with valid preconditions | NO_OP, zero domain timestamp/version/audit/lease changes; durable replayable no-op receipt only |
@@ -27,7 +27,7 @@ history, timestamps, leases and audits), not just HTTP codes or the first date.
 | F12 | Force a real SQL constraint/error after several changes; fail receipt completion separately | All dates, history changes, versions and earlier audits roll back. No per-day commits/savepoint continuation |
 | F13 | Target unavailable versus preserved colleague unavailable | Only neutral approved codes/dates; no SICK/LEAVE, colleague ID, diagnosis, holder details or raw inputs in errors/receipts/logs |
 | F14 | PUBLISHED effective save and no-op; Publish race after draft read | Direct immediate Published mutations, unchanged publication instant/account, no republish; lifecycle change forces explicit review |
-| F15 | 28/29/30/31-day months; 62 selected slots; duplicates/omissions/out-of-month/invalid dates/extra fields/body limit | Exact strict shapes/bounds, safe structural errors; no fixtures leak or arbitrary roster cap |
+| F15 | 28/29/30/31-day months; 62 slot preconditions but at most31 selected states; duplicates/omissions/out-of-month/invalid dates/extra fields/body limit | Exact strict shapes/bounds, safe structural errors; no fixtures leak or arbitrary roster cap |
 | F16 | D6 gaps/folds, company/device-zone mismatch, effective whole-version kind missing, creation checksum changed | Canonical resolver and saved UTC preserved; new-slot checksum drift conflicts; no hard-coded times or device-zone writes |
 | F17 | Drop HTTP response after real COMMIT, later change one duty, then explicit result GET and exact retry | Original immutable receipt proves that command; no reapplication/audits; later changes remain intact; UI refreshes current state |
 | F18 | Crash between claim/business; stale live claimant; FAILED recovery; expired/missing receipt; no-op receipt | Attempt fence plus exclusive I prevents takeover of active writer; GET never retries; explicit recovery only; UNKNOWN is not failure proof |
@@ -35,6 +35,27 @@ history, timestamps, leases and audits), not just HTTP codes or the first date.
 | F20 | Live lease expires while batch waits; lease is renewed before admission; expiration after admission | Fresh post-wait evaluation decides; no transaction-start timestamp shortcut; admitted locks protect through COMMIT |
 | F21 | Existing INITIAL_PUBLISH records, publish replay and schema guards across new migration | Preserve old fingerprints/results/states; operation-specific CHECKs/FKs/JSON bounds; corrupted/partial schema fails closed |
 | F22 | Max safe duty version, statement/lock timeout, controlled deadlock/serialization failure | No wraparound/partial commit or blind retry; approved sanitized technical response and explicit outcome handling |
+| F23 | Paint TAG1,2,5,10 then NACHT17,19 then FREI5 in November; separately15 DAY-only and15 NIGHT-only | One exclusive state/date; one atomic command; five final assignments plus exact removal, never absence |
+| F24 | Repeat TAG on TAG/SHIFT_LEAD; FREI on OFF | No toggle; role/source retained; true no-op; no SICK/LEAVE writes |
+| F25 | Read legacy dual; explicitly choose DAY/NIGHT/OFF, including retained SHIFT_LEAD/source | INVALID_DUAL visible, no silent normalization; correction leaves at most one, history intact |
+| F26 | Strict exclusive DTO, calendar precondition drift, old independent selectedRole fields | Consistent full read; invalid request rejected; safe errors; no compatibility promise for unimplemented old DTO |
+
+## SP-90 acceptance (actual application schema, NOT_RUN)
+
+| ID | Fixture / action | Required result |
+|---|---|---|
+| G01 | All7, Mon-Fri, Mon-Sat; invalid/duplicate/out-of-range/empty weekdays | Exact ISO mapping/bounds; no universal weekend default; empty rejected under proposed P4 |
+| G02 | Beta Sunday November1 plus14 valid dates | Safe PROJECT_CLOSED_WEEKDAY on1; all15 rolled back |
+| G03 | Open Friday NIGHT ends closed Saturday; closed start ends open day | Start date controls; independent UTC overlap still checked |
+| G04 | GET missing/inherited/exact/future; PATCH expectedExact/expectedEffective | Latest complete set<=month; absence/stale409; no time-derived weekdays |
+| G05 | Migration existing projects and INITIAL_PUBLISH records | No guessed seed/cleanup; immutable0013; old Publish codec/replay; additive migration/replay/schema checks |
+| G06 | Narrow weekdays with staffed/empty live duty, both lifecycles | Dependency409, preserve duties/publishedAt; next calendar version bounds interval |
+| G07 | Compatible widening, exact same set, inherited-equal explicit version | Effective update, true no-op no audit, new version audited |
+| G08 | MISSING no-op/remove/add/role change; allowed/invalid past bootstrap | Exact compatibility; explicit first-only bootstrap covers all duties, no default |
+| G09 | First Publish missing/closed/dual including empty duty | Whole publication refused, no lifecycle/audit/completion |
+| G10 | SP-11/SP-12 bypass add/move/role/time/delete and Published variants | All-writer invariant, correction permitted and existing guards retained |
+| G11 | Calendar audit fails; stale version; tenant/role/session revoked | Entire calendar rollback, sanitized errors, fresh authority |
+| G12 | Calendar newly closes saved date; past rewrite; future gaps | Dependencies/past edit refused; bootstrap exception explicit; no automatic invalidation |
 
 Security cases:
 
@@ -82,6 +103,12 @@ and barriers after failures without forced database termination.
 | C22 | Second batch in another plan/month sharing roster employees | Global E order, overnight overlap across plan boundaries |
 | C23 | Acting-account role revocation/deactivation | A admission/replay security and no lock upgrade |
 | C24 | Acting-session logout/reset revocation | Session recheck under A; no late validateAndTouch |
+| C25 | Opposite-kind SP-11 creates for same employee/project/date, UTC nonoverlap | E serializes; second cannot create dual, rollback permits opposite writer |
+| C26 | SP-12 kind/date/roster edit versus batch correction | Full final set, no late opposite-duty lock or overwritten other staff |
+| C27 | Calendar create/replace versus batch | P barrier, fresh token/dependencies; no partial month |
+| C28 | Calendar versus SP-11 create/SP-12 edit/delete | Parent protects absence/dependency, no calendar-child -> plan inversion |
+| C29 | Calendar versus First Publish | Full revalidation, no newly closed published duty or partial publication |
+| C30 | Calendar versus shift config/status/second calendar/bootstrap | Same P prefix, exact optimistic preconditions/history exception |
 
 Where an existing D2/D3/D4/D5 guard forbids a workforce COMMIT, assert that refusal
 and rollback rather than disabling it. Also supply a feasible dependency-free
@@ -96,12 +123,13 @@ against publication/deactivation as well as the business transaction.
 | ID | Real browser → real API → verified disposable PostgreSQL proof |
 |---|---|
 | U01 | 15 local selections, one final Monat speichern, one batch POST, full persisted month after reload |
-| U02 | DAY→NIGHT, DAY+NIGHT, explicit role preservation/change, clear-month removal review, other staff intact |
+| U02 | DAY→NIGHT replacement, dual rejection, explicit role preservation/change, clear-month removal review, other staff intact |
 | U03 | Dirty employee/project/month/browser navigation; Publish guarded while dirty or outcome unknown; secondary editor does not steal leases |
 | U04 | One invalid/conflicted date: full draft retained, safe linked error summary, explicit rebase/confirmation, no network retry loop |
 | U05 | Response dropped after COMMIT: outcome-unknown UI, explicit safe lookup/exact retry, completion distinguished from refresh failure |
 | U06 | Real Initial Publish dialog/bodyless request followed by Published month Save; two independent users; no SQL PUBLISHED fixture substitutes for Publish |
 | U07 | 60–100-person month, keyboard/focus/error announcements, responsive layout, supported-browser sample, current company-zone contract and human UX review |
+| U08 | Persistent paint before dates, repeat no toggle, authoritative closed/missing reasons, visible legacy-dual correction; November sequence, mobile/keyboard, one final Save/no date popup |
 
 Mock/jsdom tests are useful regression coverage, not these browser proofs.
 Session/role failures retain the complete input hidden in a context-bound
@@ -112,33 +140,17 @@ Browser/tab destruction and expired receipts remain explicit recovery limits.
 
 ## Implementation PR sequence and file ownership
 
-0. **Design gate (this Draft PR):** PO decisions P1–P3, technical/security T1–T4,
-   controlled amendment version/date and baseline backports assigned. Review is
-   separate from granting implementation authority. Foundation owners resolve
-   #86 and #87 review/merge conditions; no design commits go onto either PR.
-1. **PR A — backend, Codex/backend owner:** branch from integrated current main,
-   after #86. Ship the complete atomic API, read/result projections, command
-   persistence migration, approved lease admission/session read contracts,
-   shared validation overlay and real PostgreSQL/HTTP/security/concurrency tests.
-   Do not merge a new writer without all affected guards and protocol integration.
-   No React changes. Preserve #86 Publish and SP-12 behavior by regression tests.
-2. **PR B — React, Claude/frontend owner:** build on bounded #87 foundation and
-   approved A contract. Employee-month draft/review/reconciliation, batch/result
-   API, matrix integration, unsaved navigation/Publish guard, safe conflict and
-   unknown-outcome states. Keep the existing duty editor as a secondary tool.
-   Frontend may develop against approved contract fixtures in parallel with A;
-   production enablement/merge waits for actual A and combined verification.
-3. **PR C — combined acceptance/integration, coordinated lead/QA:** integrate the
-   actual Publish dialog and month editor, bodyless Publish transport, real
-   browser scenarios, negative tenant/session and CR-03 regression. Claude owns
-   React/client fixes; backend owner owns backend fixes. Run exact combined-head
-   CI and independent review. Record human UX acceptance and residual #85/#88
-   criteria. This bounded admin flow does not implement SP-14 or certify the MVP.
+0. Design gate: P1-P6/T1-T4 and controlled amendments; no implementation permission inferred.
+1. A1 Codex: calendar DB/API and **all existing writer/Publish guards**, compatibility/audit/actual PG tests, on integrated main after #86.
+2. A2 Codex: employee-month complete API/additive receipts/session/lease transaction and actual PG proof, after A1.
+3. B Claude: paint/calendar admin UI/approved adapter/recovery/real Publish. Fixtures can overlap A1/A2; enable only with backend/combined checks.
+4. C independent QA: combined PG/browser/security/UX proof; fixes remain file-owner controlled.
 
 | Owner | Concrete proposed paths / boundary |
 |---|---|
-| A backend | New `apps/backend/src/modules/planning/employee-month-{controller,service,types}.ts`, `dto/employee-month.dto.ts`, transaction-aware planning validation/persistence helpers; narrow registration in `app.module.ts` or planning controller |
-| A command persistence | Additive `apps/backend/migrations/NNNN_employee_month_idempotency.sql`; existing `publish-idempotency.service.ts` factoring with unchanged Publish codec; catalogue classification and appropriate command-schema validation |
+| A1 calendar | New workforce/project-operating-calendars module, additive calendar migration, shared planning guards and existing writer/Publish tests; no React |
+| A2 backend | New `apps/backend/src/modules/planning/employee-month-{controller,service,types}.ts`, `dto/employee-month.dto.ts`, transaction-aware planning validation/persistence helpers; narrow registration in `app.module.ts` or planning controller |
+| A2 command persistence | Additive `apps/backend/migrations/NNNN_employee_month_idempotency.sql`; existing `publish-idempotency.service.ts` factoring with unchanged Publish codec; catalogue classification and appropriate command-schema validation |
 | A security/audit | Identity-owned transaction-aware session-read contract; `common/errors/error-contract.ts`, specific safe conflict validator and `common/filters/problem-details.filter.ts`; existing audit service only if approved scope needs a type extension |
 | A tests | New `apps/backend/test/employee-month-{real,concurrency-real,failures-real}.e2e-spec.ts`; DTO/fingerprint/overlay specs; reuse `test/helpers/planning-fixtures.ts`, isolated DB and observed-blocking patterns; extend Publish migration regressions |
 | B frontend — exclusive Claude ownership | `apps/frontend/src/features/planning/monthly-plans/**`: new EmployeeMonthEditor/draft/API/tests; `MonthlyPlanPage.tsx`, `MonthlyPlanningSection.tsx`, matrix, CSS and PublishSlot dirty-state integration |
@@ -159,69 +171,15 @@ tests and build. PR C adds real browser and supported-browser/human acceptance.
 Report exact commands/counts and all failures/NOT_RUN results per PR. Never
 reuse a development `.env` or infer safety from a localhost URL.
 
-## Effort, timeline and risks — proposed reforecast
+## Effort, timeline and risks
 
-Engineering ranges are estimates, not elapsed hours or an approved schedule.
-They assume the existing foundations are available, contracts are frozen, existing
-test hooks can be reused and no SP-14/M5/#51 work is pulled into SP-88.
+Original62-100h SP-88-only allowance is superseded for revised combined scope;
+see [remaining work/parallelism forecast](09-reforecast.md). Never double-charge
+#86/#87/#91 or old Publish integration. Risks: full-month conflicts, shared-roster
+footprint, missing-calendar rollout, legacy dual/empty duties, all-writer guards,
+lease admission, receipt/schema regression, revocation, finite review/staging.
+Dec3 remains high risk; no MUST cut or acceptance inferred from CI.
 
-| Work | Estimated focused effort | Principal uncertainty |
-|---|---|---|
-| Remaining controlled decisions, amendment backports and independent design review | 4–8h | Review turnaround and domain/default changes |
-| A: backend/migration/read+result API/overlay/leases/security and PG matrix | 28–44h | Shared-roster conflicts, recovery/FK prefix, session races and test hooks |
-| B: primary month editor, review/rebase/recovery and frontend regression | 18–28h | 31-day UX, preserved roles, existing-editor coordination |
-| C: Publish integration and genuine browser/security/regression evidence | 12–20h | Bodyless POST seam, drop-response harness, cross-browser/zone UX |
-| **SP-88 delivery package** | **62–100h** | Re-estimate after approval and first backend concurrency slice |
-
-Some C work overlaps the old SP-13/A10 integration allowance. Credit it explicitly
-when rebuilding the remaining backlog; do not add both full allowances. The
-company-zone display decision and any new API, major defects or operational #51
-work are not silently included. Existing #86/#87 implementation effort has
-already occurred and is not to be charged again as new implementation.
-
-The Nov 2 v1.2 DRAFT used 108h historical SP-13–27 plus 10–16h A10, against an
-upper-bound 160 gross hours through Dec 3 (112 planned + 48 reserve, Mo–Thu).
-Those figures predate #88 and do not measure today's accepted remaining work.
-Replacing that old A10 line with this package, **before crediting completed
-#86/#87 and overlapping integration**, gives a deliberately conservative
-170–208h scenario (108 + 62–100), above 160h. It is not a current remaining-hours
-claim. Actual Nov 2 time, meetings, review availability and the rest of SP-14–27
-must be measured before making a reliable completion promise.
-
-Reforecast formula: `new remaining = re-estimated remaining MUST backlog after
-foundation/integration credits + uncredited SP-88 work`. Reserve is at most 48h
-before existing overruns, less than this package's 62h lower bound. On one
-engineer's 8h gross days it represents about 8–13 additional days (roughly 2–3+
-Mo–Thu weeks), with productive time/review potentially longer. Agent parallelism
-does not create unlimited human implementation/review capacity.
-
-| Conditional window | Gate, assuming prompt approval and actual parallel owners |
-|---|---|
-| Nov 3–5 | Freeze contracts/CR and foundation scope; begin A with migration, one shared-duty atomic slice and rollback tests |
-| Nov 9–12 | Complete A concurrency/security matrix; B develops approved contract and retained-input states |
-| Nov 16–19 | Integrate A/B and complete C real Publish + employee-month scenarios and UX review |
-| Nov 23–26 | Resolve SP-88 regressions; protect remaining MUST feature-freeze evidence |
-| Nov 30–Dec 3 | Retain release regression/demo/acceptance capacity; do not plan new features here |
-
-These are proposed checkpoints, not commitments. The former Nov 5 G2 goal cannot
-be used as full #88 acceptance. Dec 3 is **high risk / uncommitted** until the
-owner approves an actual remaining-capacity plan. Recommend reuse/limited UX
-scope within the approved workflow and real additional implementation/review
-capacity, or a date change. Do not silently weaken atomicity, reduce the MUST
-workflow, consume all QA reserve or assume Fri–Sun overtime.
-
-| Risk | Consequence | Mitigation / owner |
-|---|---|---|
-| Full-month versions and plan admission contention | More stale conflicts and parent locks than single-duty editing | Explicit P1/T2 trade-off, measure realistic rosters, retain/rebase whole draft |
-| Lease shortcut or per-duty mini-transactions | Lost edits, token invalidation, partial month or deadlock | Approved internal admission, all D→all A2→all Q, real multi-duty races |
-| Snapshot-based per-add validation | False DAY→NIGHT errors or hidden mutual overlaps | One final-state overlay with cross-month UTC tests |
-| Incorrect idempotency generalization | Duplicate edits, corrupted Publish replay or private result leaks | Discriminated additive migration, immutable receipt, exact codec/old-record tests |
-| Guard-to-command revocation gap | Authorized-at-load but revoked-at-save writer | Identity-owned fresh session read under A/C; security race tests |
-| Unapproved dual-shift/empty-duty semantics | UX conflicts with controlled baseline | P1/P2 decision and dated amendment before coding |
-| Unknown outcome + silently discarded draft | Repeated mutation or lost selection | Explicit result lookup/exact retry and separate reconciliation state |
-| Remaining MVP scope and review capacity | Dec 3 target lacks credible reserve | P3 measured reforecast; no automatic MUST cuts or production claims |
-
-Recommended next coding mission: **only after this gate's contract/security
-decisions and explicit implementation authorization**, PR A on integrated main,
-backend only, with a 15-date atomic slice and real failure/shared-duty lease
-tests first. Do not begin with a frontend loop over existing PATCH endpoints.
+Next mission: A1 backend foundation after P/T approvals and explicit authorization,
+with actual-schema seven-day/Mon-Fri + Publish/race/audit-rollback slice. See
+[Claude handoff](08-frontend-handoff.md). No React edits in Codex backend mission.

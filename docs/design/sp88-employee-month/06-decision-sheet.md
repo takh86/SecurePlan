@@ -1,50 +1,60 @@
-# SP-88 decision sheet
+# SP-88 / SP-90 decision sheet - revised 2026-11-02
 
-Status 2026-11-02: recommendations ready; decisions below are **PENDING**, not
-inferred from the request to design or from CI. The one-employee/month interaction,
-single final Save, complete atomic rollback, safe conflicts and retained input
-are already approved by #88 and are not being reopened.
+## Already approved; do not reopen
 
-## Product Owner decisions genuinely remaining
+BR-1 exclusive DAY/NIGHT/FREI per employee/project/company-local duty date;
+BR-2 persistent paint before dates, replace rather than toggle;
+BR-3 FREI is unscheduled, never absence; BR-4 one atomic Save with all required
+audits and retained input on failure; BR-5 preserve other staff. Project-defined
+operating weekdays must be enforced by UI/backend. UTC overlap remains separate.
+Primary employee-month view, matrix overview, explicit rebase on shared edits,
+stay after Save with Nächste Person, no extra bulk helper are recorded owner
+review direction. No legal certification, implementation or merge approval implied.
 
-| ID | Recommended default to approve | Trade-off / controlled impact |
+## Remaining Product Owner / controlled-scope decisions
+
+| ID | Recommended default | Trade-off / alternative |
 |---|---|---|
-| P1 — desired-state and primary UX detail | Full month with explicit DAY/NIGHT selections and removal states, retained roles/source/history, both kinds allowed when UTC intervals do not overlap; full-month slot preconditions and explicit rebase; existing plan/assignment as prerequisites | Resolve A10 single-choice sketch and conservative conflicts, including unrelated staff edits in the month. A delta-only API or single-kind UI is an alternative, not an approved default. No staffing/rest-time rule added |
-| P2 — duty lifecycle side effects | Assignment to an absent slot creates its canonical duty atomically; unselected absence creates nothing; retain all existing empty duties and other employees; no duty time/kind mutation | Convenient employee-first planning, but empty duties continue to block affected configuration changes under D3. Alternative explicit duty creation adds steps; automatic whole-duty cleanup risks other workflows and is not recommended |
-| P3 — scope/effort baseline | Adopt a controlled M4/A10 amendment and measured remaining-capacity reforecast; use 62–100h package estimate until re-estimated; keep Dec 3 uncommitted/high risk until capacity is reconciled | New meaningful work exceeds the former A10 allowance. Choose real capacity/date adjustment if needed; no silent MUST cuts, lost atomicity or assumed weekend overtime |
+| P1 remaining | Full desired month, exclusive desired state plus two slot preconditions/date; require explicit legacy-dual correction; conservative full-month conflicts | Delta-only saves reduce unrelated conflicts but require a different read/intent protocol. Paint/exclusivity themselves are already approved |
+| P2 duty lifecycle | Create canonical duty only for a real new assignment; retain existing empty duties, including after last-member removal; separate explicit SP-12 delete | No placeholders created in normal month workflow. Retained empty duties continue to block time/calendar dependencies. Never infer deletion permission |
+| P3 scope/capacity | Approve controlled M3/M4/A10/Phase8 amendments and measured remaining-MUST plan; use revised ranges in reforecast pending measurement | No silent MUST cuts, automatic approval from agent speed, or Dec 3 promise |
+| P4 calendar applicability | Separate complete month-effective weekly set;1-7 ISO weekdays; NIGHT start date; compatible updates allowed but no newly closed live saved duty, including empty; strict full Publish validation | No all-closed set, retroactive override or holiday subsystem. Alternative all-closed/empty-duty exemptions need explicit deltas |
+| P5 legacy/bootstrap | No guessed migration seed; MISSING blocks new work/Publish, permits no-op/removal; explicitly requested one-time historical bootstrap must cover every live duty date | Needs review of past initialization exception; alternative owner-supplied per-project migration mapping. Never silently assume all seven or delete legacy rows |
+| P6 calendar audit vocabulary | One PROJECT_OPERATING_CALENDAR_UPDATED / PROJECT_OPERATING_CALENDAR / projectID with exact bounded old/new month, weekdays, version, bootstrap marker | New action requires explicit business audit owner + security approval; existing SHIFT_CONFIGURATION_UPDATED must not be relabelled silently |
 
-No new owner choice is needed to preserve CR-03, tenant isolation, existing
-employee/date eligibility, historical tombstones, zero staffing minimum, source
-preservation or neutral availability. Those already have authority. P1 records
-their application to the new UX, rather than changing them. If the owner wants
-an exception (for example editing an inactive project's history), that is a new
-separate proposal, not a hidden prerequisite to this gate.
+Existing SP-12 project/roster eligibility continues; no new staffing minimum,
+historic planning freeze, hours/rest law or availability model is requested.
+Details: [calendar](../sp90-project-operating-weekdays.md), [domain](02-domain-and-ux.md).
 
-## Technical / API / security decisions
+## Technical approval checklist T1-T4 (all pending)
 
-| ID | Recommended contract to ratify | Required reviewers / proof |
+| Gate | Exact review scope | Required proof / owner |
 |---|---|---|
-| T1 — API and error extension | POST save action plus projection/result GETs; complete 28–31-day DTO and 62-slot maximum; lifecycle and duty ID/version/absence preconditions; new-slot creation-context checksum; new bounded batch error | API/requirements owner: endpoint/DTO/OpenAPI/error-catalogue amendments and strict Problem Details whitelist. Existing single-duty header/status semantics unchanged |
-| T2 — LOCK-01 and lease mode | Full L1 parent discovery/prefix, L UPDATE immediately, all D then A2 then Q sorted, provisional new duties at D phase, final-state validation overlay; short internal admission blocks any active affected interactive lease, including own account | PostgreSQL/architecture/security: explicit Phase 8.7/ADR-0006 supplement, no late parent/upgrade, both-order COMMIT/ROLLBACK tests and realistic lock footprint. Existing SP-12 lease APIs retain token rules |
-| T3 — durable command result | Additive operation-discriminated idempotency migration; immutable bounded SaveResult; shared tested reservation/fencing protocol, context-FK claim prefix, exact semantic fingerprint, authorized safe result lookup | DB/API/security: migration/old-record regression, 24h replay/5min stale settings, no raw keys or cached absence facts, no automatic retries; never widen 0013 without updating constraints/codecs |
-| T4 — security/audit scope | Fresh Identity session read under existing A/C, strict neutral per-day errors, context-bound hidden memory retention after authorization failure, same-transaction existing duty/membership audit events only; no new audit vocabulary or notification promise | Identity/security/audit owner: session admission/expiry/revocation races, same-actor reauthentication/different-login isolation, bounded result privacy/retention, explicit permission to use existing audit shapes for this command. #86's Publish audit approval is not this approval |
+| T1 API/requirements | Exclusive desired union; complete read set, expectedCalendar and creation checksum; project GET/PATCH exact/effective version and next-boundary preconditions; strict safe conflict whitelist and new error catalogue/OpenAPI; no body/header changes for existing SP-12 | API/requirements owner signs codec, examples, precedence, bounds, projection consistency and migration-facing MISSING/legacy behavior |
+| T2 PostgreSQL/LOCK-01/leases | A/C/I/E/P/M/L UPDATE/all D/all A2/all Q/Z; tentative new duties at ordered D; E-protected exclusive final set; P-protected calendar/no new child locks in guard; internal admission blocks any live affected lease, own tab included | Architecture/DB/security approve ADR-0006/Phase8.7 supplement; actual-schema both orders COMMIT/ROLLBACK, missing slots, calendar and shared-roster races; no late parent or upgrade |
+| T3 DB/idempotency | Additive calendar and operation-discriminated receipt migrations, never edit0013; unchanged Publish codec; SAVE_V2 semantic hash includes exclusive intent/calendar; context FK short claim prefix, immutable bounded receipt, fencing/result GET | DB/API reviewer validates migration replay/old records/schema classification/privacy, partial SQL/audit/receipt rollback, lost response and expired receipt |
+| T4 Identity/security/audit | Fresh transaction-aware session read under A/C, no validateAndTouch upgrade; tenant/role checks on execute/replay/lookup; hidden actor-bound memory draft; neutral legacy/weekday errors; scoped existing duty audits and new calendar action only when approved | Identity/security/audit owners approve revocation/expiry races, different-login isolation, audit payload/envelope, receipt privacy/retention and exact new vocabulary |
 
-T1/T2 include deliberate departures from the older single-duty-only API
-interaction, not changes to existing SP-12 callers. Rejecting a lease-owning tab
-without a supplied proof is intentional; silently rotating it is not acceptable.
-The authoritative company-IANA-zone **display/API** decision stays separately
-open under #85; an opaque creation checksum does not decide it or certify UX.
+Approvals record approver/role/date/exact design commit, accepted default or delta,
+controlled amendment/version and backport owner. Approval must be followed by
+explicit implementation authorization. Author review, CI and owner UX approval
+are separate; this package claims none of them.
 
-## Approval record to complete, without changing historical baselines
+## Sequence and blockers
 
-For each P/T decision record: approver/role, date, exact design commit/hash,
-accepted default or concrete delta, controlled amendment ID/version and backport
-owner. Then record a separate explicit authorization to implement PR A/B/C.
-Technical review, green implementation tests, human UX acceptance and merge/
-deployment authorization remain distinct. This document supplies none of them.
+Foundation #86 remains independently reviewable as its current approved contract;
+new cross-writer rules require a later amendment on integrated main. #87 is a
+bounded supporting foundation only, pending owner disposition/combined checks;
+#91 stays Draft, must replace independent toggles, and is not merge-ready. Do not
+modify those PRs in this mission or close #85.
 
-Foundation disposition: #86 is independent backend work eligible for its normal
-review; #87 may merge only after an explicit bounded foundation-scope decision
-and combined verification. Neither alone completes #88 or closes #85. Prefer
-foundation #86 → bounded #87 → A backend → B employee-month UI → C combined
-Publish/browser acceptance. Keep all issue status/merge decisions with the owner.
+After approvals: A1 calendar DB/API plus **all existing writer/Publish guards** ->
+A2 SP-88 backend/read/save/result/idempotency and actual PG proof -> B Claude-owned
+calendar UI + exclusive month adapter -> C real Publish/browser/security integration.
+A1 and A2 may be developed sequentially in Codex while B uses frozen contract
+fixtures; enable no writer before its guards/migrations are present. Independent
+QA reviews and prepares separate evidence/harness files, serializes heavy DB runs.
+
+Next authorized coding request should be the bounded **A1 backend foundation**
+mission in [reforecast](09-reforecast.md), not a partial monthly PATCH loop.
+Company IANA-zone display/API remains a separate #85 integration decision.

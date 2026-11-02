@@ -1,63 +1,38 @@
-# SP-88 employee-month atomic planning — design gate
+# SP-88 atomic employee-month design + SP-90 project weekdays
 
-Date: 2026-11-02. Issue: [#88](https://github.com/takh86/SecurePlan/issues/88).
-Status: **business interaction and all-or-nothing requirement APPROVED; the
-detailed contracts below are PROPOSED; implementation approval PENDING.**
+Revision 2026-11-02, design gate for [#88](https://github.com/takh86/SecurePlan/issues/88),
+[#90](https://github.com/takh86/SecurePlan/issues/90), Draft [PR #89](https://github.com/takh86/SecurePlan/pull/89).
+Supersedes the dual-selection proposal at5467e21. No runtime application change.
 
-This is a design-only change. It neither changes the controlled baselines nor
-authorizes implementation, merging, issue closure or deployment. In particular,
-the scoped SP-13 audit approval does not approve this command. The recommendations
-form one reviewable contract; alternatives are recorded where they matter.
+Approved: persistent TAG/NACHT/FREI paint mode before dates; exactly one daily
+state per employee/project/company-local date; repeat same paint is no-op; one
+atomic Monat speichern; preserve others; FREI never absence; project-specific
+operating weekdays. These are product rules, not legal-compliance certification.
 
-## Recommendation and navigation
+Proposed: complete exclusive desired month with separate shared-duty preconditions,
+calendar version precondition, one final-state transaction under LOCK-01-L1,
+existing-lease admission, immutable idempotent result and safe recovery. Separate
+small month-effective calendar table/API avoids retroactively rewriting history.
+Creation-on-real-assignment/retained empty duties, calendar compatibility/bootstrap,
+audit vocabulary, capacity and technical T1-T4 still need explicit approval.
 
-One admin submits the complete desired DAY/NIGHT membership state of one
-employee in one existing project-month plan. The server compares every observed
-slot, changes only that employee's memberships, preserves other staff and empty
-existing duties, and commits all duty changes, required audit and command receipt
-in one PostgreSQL transaction. Duties remain canonical and individually versioned.
-
-Use a short plan-row UPDATE lock as an admission barrier for this new command,
-under the existing LOCK-01-L1 parent prefix. Respect every active interactive
-lease on a duty that would change, including another tab belonging to the same
-account. Hold no month lease or database lock while the user edits. Keep SP-12's
-single-duty API and lease protocol intact.
-
-| Artifact | Review purpose |
+| Artifact | Review content |
 |---|---|
-| [Requirements and source review](01-impact-and-sources.md) | Baseline traceability, proposed amendments, #86/#87 foundation assessment |
-| [Domain and UX](02-domain-and-ux.md) | Desired-state semantics, roles, missing/empty duties, recovery interaction |
-| [API and idempotency](03-api-and-idempotency.md) | DTOs, examples, preconditions, errors, migration and lost-response recovery |
-| [Transaction and security](04-transaction-and-security.md) | Exact lock phases, shared rosters, leases, validation overlay, audit and concurrency proof |
-| [Acceptance and delivery](05-acceptance-and-delivery.md) | Test matrix, PR/file ownership, estimates, risks and next mission |
-| [Decision sheet](06-decision-sheet.md) | Only remaining product and technical/security approvals |
-| [Investigation evidence](07-investigation-evidence.md) | Exact commands, exploratory PostgreSQL results, limitations and verification ledger |
+| [01 Requirements/source impact](01-impact-and-sources.md) | Approved corrections, baseline traceability, controlled amendment and foundations |
+| [02 Domain and UX](02-domain-and-ux.md) | Exclusive paint state, roles, history, duties, retained input |
+| [03 API and recovery](03-api-and-idempotency.md) | Complete November request/receipt, versions/calendar, errors, additive persistence |
+| [04 Transaction/security](04-transaction-and-security.md) | Exact locks, leases, all-writer invariants, session/audit/privacy |
+| [05 Acceptance/backlog](05-acceptance-and-delivery.md) | Actual-schema implementation tests and file ownership |
+| [06 Decision sheet](06-decision-sheet.md) | Remaining P1-P6, technical T1-T4 and next authorization |
+| [07 Investigation evidence](07-investigation-evidence.md) | Historical experiment versus revision checks; explicit NOT_RUN |
+| [08 Claude handoff](08-frontend-handoff.md) | Approved UX versus proposed wire contracts; #91 gaps |
+| [09 Reforecast](09-reforecast.md) | Credited remaining work, MUST backlog, capacity/parallelism and mission |
+| [SP-90 calendar design](../sp90-project-operating-weekdays.md) | Alternatives, schema, GET/PATCH, effective guard, migration/audit |
 
-## Authority and completion boundary
+#86/#87/#91 remain unchanged and unmerged by this mission. #86 independent review
+and #87 bounded-foundation disposition do not accept SP-88 or close #85. #91 is
+stacked preview preparation, not persistence or approved final UX.
 
-The owner's decision on #88 is final: a single **Monat speichern** commits the
-entire intended employee-month change or none of it. No client loop over SP-12
-writes can satisfy this requirement. Conflicts retain the entire unsaved draft
-and require an explicit human decision before another write.
-
-CR-03 remains authoritative: before first publication the plan is UNPUBLISHED;
-afterwards changes commit directly to PUBLISHED. No second draft, republish,
-employee-month business aggregate, absence record called Frei, or staffing
-minimum is introduced.
-
-The design identifies concrete defaults, logical safety arguments and an
-exploratory PostgreSQL result. It does **not** establish implemented SP-88
-atomicity, integrated Publish acceptance, human UX approval or production
-readiness. Those require the implementation and acceptance PRs in the backlog.
-
-## Git isolation
-
-The assigned worktree had no tracked modifications. The existing untracked
-`AGENTS.md` was read and retained locally. After refreshing origin, this branch
-was created from `origin/main@13b680c07929ae595c196a523a32d4226bfa8e64`:
-`agent/codex/sp88-employee-month-design`.
-
-SP-13 remains on `agent/codex/sp13-initial-publish` at
-`e30db8fb6a2db851e154c9d6dbf6ebcdf94129e2`; PR #86 is preserved. Claude's
-`agent/claude/sp12-a10-ui` at `662985e7d137940c8f6443bcf93ebb7eabd95423`
-and PR #87 were inspected read-only. No SP-13 commit is stacked into this PR.
+Application acceptance for the revised rules is NOT_RUN. Historical baseline CI
+and14/14 stand-in PG mechanisms do not prove the new rules, calendar schema or
+cross-writer safety. See evidence for exact scope and revision check commands.

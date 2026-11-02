@@ -1,3 +1,56 @@
+# SP-88 / SP-90 revision evidence - 2026-11-02
+
+This section records the revision mission. The original investigation/stand-in
+probe below is historical evidence at5467e21, not rerun or acceptance of the new
+rules. Revised business behavior is approved direction; detailed design remains
+P1-P6/T1-T4 pending. No runtime/backend/frontend/migration/CI file change.
+
+## Revision investigation and safe Git checks
+
+Ran `git status --short`, `git branch --show-current`, `git worktree list`,
+`git branch -avv`, `git remote -v`, `git fetch origin`, and
+`git log -1 --format='%H %s' origin/main`. Fetched origin/main remains
+13b680c07929ae595c196a523a32d4226bfa8e64. Existing design branch reused from5467e21.
+Initial tracked worktree clean; untracked local AGENTS.md never staged. Primary
+main/worktree, SP-13 e30db8f, #87 662985e and Claude #91 f61b547 preserved.
+No reset/discard/force-push/merge/deploy performed.
+
+Read latest GitHub issue88/90 bodies/comments and PR86/87/89/91 metadata/comments
+through connector; compact comment bodies included owner corrections/paint review.
+All four PRs open/unmerged at inspection; #89/#91 Draft. #91 base is #87 branch.
+Read Claude's current handoff/worktree read-only; frontend unchanged here.
+Open issue inventory obtained read-only via:
+`gh issue list --repo takh86/SecurePlan --state open --limit 100 --json number,title,url`.
+Two connector list-issues calls had argument-binding errors; CLI read succeeded.
+No issue metadata was changed by those reads.
+
+Rechecked actual0007/0009/0011/0012, shift-config service/guard/planning dependencies,
+monthly-plans service/error catalogue and ADR-0006; #86 code/migration read via
+`git show` without switching branches. Existing controlled source register retained;
+public historical roadmap remains explicitly historical, not current acceptance.
+Some guessed read paths and an initial patch hunk failed without application
+changes; corrected via rg enumeration and bounded file edits. Windows pipe
+encoding artifacts in draft prose were corrected and checked before delivery.
+No implementation or DB experiment was attempted. Future tests must use actual
+application migrations/tables with verified disposable PostgreSQL.
+
+## Revision checks and exact scope
+
+| Command/check | Actual result |
+|---|---|
+| `node .env.sp88-runtime/verify-revision.mjs` | PASS:11 Markdown files,33 relative links,5 parsed JSON examples,81 unique acceptance rows,30-day November exclusive request,receipt/removal counts,forecast sums/19 Mo-Thu capacity days,unchanged old probe hash |
+| `npm run check:public` | First attempt blocked by sandbox spawnSync git EPERM; separately rerun with read-only Git access PASS exit0 |
+| `git diff --check` | PASS exit0; only normal configured LF-to-CRLF notices |
+| `git diff --name-only -- apps scripts infra package.json package-lock.json .github` | Empty runtime/test/dependency/infra/workflow diff |
+| Staged-path/branch/ancestry verification before commit | Required:11 design Markdown paths only; AGENTS.md excluded; #86/#87/#91 heads unchanged |
+| Lint/typecheck/build/unit/E2E/migration/browser locally | NOT_RUN for this docs-only revision; no revised application behavior exists |
+| New calendar/exclusivity/batch/Publish acceptance | NOT_RUN;81 planned rows and120 concurrency schedules are not executed tests |
+| Exact revised-head Foundation CI | Report final state/run in PR89; baseline regression only, never proof of new rules |
+
+The probe14/14 and Foundation CI362 unit/607 frontend/34 scripts/1135 PG E2E below
+belong to the earlier design head. No reuse of that run as revised-head CI.
+No development/production database or fixture was touched in this revision.
+
 # SP-88 design investigation evidence
 
 Date: 2026-11-02. Design base:
@@ -255,4 +308,87 @@ try {
 } finally {
   await Promise.all(clients.map((client) => client.end()));
 }
+```
+
+## Revision document validator source
+
+Reproduce by saving this block to the ignored local path shown in the command;
+it checks design examples and historical probe integrity, not application behavior.
+
+```mjs
+import assert from 'node:assert/strict';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { createHash } from 'node:crypto';
+const root = 'docs/design/sp88-employee-month';
+const files = readdirSync(root).filter(n => n.endsWith('.md')).map(n => `${root}/${n}`);
+files.push('docs/design/sp90-project-operating-weekdays.md');
+assert.equal(files.length, 11);
+let links = 0, examples = 0;
+const parsed = [];
+for (const path of files) {
+  const text = readFileSync(path, 'utf8');
+  assert.notEqual(text.charCodeAt(0), 0xfeff, `${path}: BOM`);
+  assert.equal([...text.matchAll(/^```[^\r\n]*$/gm)].length % 2, 0, `${path}: fence`);
+  assert.ok(!/\d\?\d|N\?chste|BR-1\?/.test(text), `${path}: encoding`);
+  for (const [, link] of text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+    if (/^https?:|^#/.test(link)) continue;
+    assert.ok(existsSync(resolve(dirname(path), link.split('#')[0])), `${path}: ${link}`);
+    links++;
+  }
+  for (const [, json] of text.matchAll(/```json\n([\s\S]*?)\n```/g)) {
+    parsed.push(JSON.parse(json)); examples++;
+  }
+}
+assert.equal(examples, 5);
+const request = parsed.find(x => x.days);
+assert.equal(request.days.length, 30);
+assert.equal(new Set(request.days.map(x => x.date)).size, 30);
+assert.match(request.expectedCreationContext, /^[a-f0-9]{64}$/);
+request.days.forEach((day, i) => {
+  assert.equal(day.date, `2026-11-${String(i + 1).padStart(2, '0')}`);
+  assert.deepEqual(Object.keys(day.expected).sort(), ['day', 'night']);
+  assert.ok(['OFF', 'DAY', 'NIGHT'].includes(day.desired.state));
+  assert.deepEqual(Object.keys(day.desired).sort(), day.desired.state === 'OFF' ? ['state'] : ['role', 'state']);
+});
+assert.deepEqual(request.days.filter(x => x.desired.state === 'DAY').map(x => Number(x.date.slice(-2))), [1,2,10]);
+assert.deepEqual(request.days.filter(x => x.desired.state === 'NIGHT').map(x => Number(x.date.slice(-2))), [17,19]);
+assert.equal(request.days[4].desired.state, 'OFF');
+assert.equal(request.days[4].expected.day.version, 7);
+const result = parsed.find(x => x.outcome === 'APPLIED');
+assert.deepEqual(result.counts, {createdDuties:5,changedDuties:1,addedMemberships:5,removedMemberships:1,updatedMemberships:0});
+assert.equal(result.changes.length, 6);
+assert.equal(result.changes.find(x => x.date === '2026-11-05').assignment, null);
+for (const c of result.changes) assert.ok(Date.parse(c.endsAt) > Date.parse(c.startsAt));
+const error = parsed.find(x => x.code === 'EMPLOYEE_MONTH_SAVE_CONFLICT');
+assert.equal(error.conflicts[0].date, '2026-11-01');
+assert.equal(error.conflicts[0].reason, 'PROJECT_CLOSED_WEEKDAY');
+assert.equal(new Date('2026-11-01T00:00:00Z').getUTCDay(), 0);
+const patch = parsed.find(x => 'bootstrap' in x);
+assert.ok('expectedNextEffectiveFromMonth' in patch);
+assert.deepEqual(patch.operatingWeekdays, [1,2,3,4,5,6]);
+const acceptance = readFileSync(`${root}/05-acceptance-and-delivery.md`, 'utf8');
+let rows = 0;
+for (const [prefix, count] of [['F',26],['S',5],['C',30],['U',8],['G',12]]) {
+  for (let i = 1; i <= count; i++) {
+    const id = `${prefix}${String(i).padStart(2,'0')}`;
+    assert.equal(acceptance.split(`| ${id} |`).length - 1, 1, id); rows++;
+  }
+}
+assert.equal(rows, 81);
+const evidence = readFileSync(`${root}/07-investigation-evidence.md`, 'utf8');
+const appendix = /```javascript\n([\s\S]*?)\n```/.exec(evidence)[1];
+const probe = readFileSync('.env.sp88-runtime/probe.mjs', 'utf8');
+assert.equal(`${appendix}\n`, probe);
+assert.ok(evidence.includes(createHash('sha256').update(probe).digest('hex')));
+assert.equal([6,22,30,14,6,6,12,8].reduce((a,b)=>a+b),104);
+assert.equal([10,34,46,22,10,10,20,14].reduce((a,b)=>a+b),166);
+assert.equal([8,4,44,6,12,12].reduce((a,b)=>a+b),86);
+assert.equal([14,8,72,10,20,18].reduce((a,b)=>a+b),142);
+let days = 0;
+for (let d = new Date('2026-11-03T00:00:00Z'); d <= new Date('2026-12-03T00:00:00Z'); d.setUTCDate(d.getUTCDate()+1)) {
+  if ([1,2,3,4].includes(d.getUTCDay())) days++;
+}
+assert.equal(days,19);
+console.log(`SP88_SP90_DOCS files=${files.length} relativeLinks=${links} jsonExamples=${examples} acceptanceRows=${rows} estimateSums=PASS capacityDays=${days} oldProbeHash=MATCH PASS`);
 ```

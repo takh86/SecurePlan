@@ -39,11 +39,13 @@ type PlanState = {
   status: 'UNPUBLISHED' | 'PUBLISHED';
   publishedAt: null | INSTANT;
 };
-type SaveSlot = { expectedDuty: ExpectedDuty; selectedRole: Role | null };
+type Desired = { state: 'OFF' } | { state: 'DAY' | 'NIGHT'; role: Role };
+type SlotPreconditions = { day: ExpectedDuty; night: ExpectedDuty };
 type SaveEmployeeMonth = {
   expectedPlan: PlanState;
   expectedCreationContext: SHA256_HEX;
-  days: Array<{ date: DATE; day: SaveSlot; night: SaveSlot }>;
+  expectedCalendar: null | { id: UUID; version: number };
+  days: Array<{ date: DATE; expected: SlotPreconditions; desired: Desired }>;
 };
 type Assignment = { id: UUID; dutyRole: Role; source: 'NORMAL' | 'REPLACEMENT' };
 type ReadSlot = null | {
@@ -54,8 +56,14 @@ type EmployeeMonthRead = {
   plan: { id: UUID; projectId: UUID; monthStart: DATE } & PlanState;
   employeeId: UUID;
   creationContextFingerprint: SHA256_HEX;
+  operatingCalendar: { state: 'MISSING' | 'CONFIGURED'; effective: null | { id: UUID; version: number; effectiveFromMonth: DATE; operatingWeekdays: number[] } };
   unavailableDates: DATE[]; // neutral current facts for this employee only
-  days: Array<{ date: DATE; day: ReadSlot; night: ReadSlot }>;
+  days: Array<{
+    date: DATE; day: ReadSlot; night: ReadSlot;
+    currentState: 'OFF' | 'DAY' | 'NIGHT' | 'INVALID_DUAL';
+    operatingState: 'OPEN' | 'CLOSED' | 'MISSING';
+    violations: Array<'INVALID_DUAL' | 'PROJECT_CLOSED_WEEKDAY' | 'PROJECT_CALENDAR_MISSING'>;
+  }>;
 };
 type SaveResult = {
   commandId: UUID; outcome: 'APPLIED' | 'NO_OP'; completedAt: INSTANT;
@@ -80,8 +88,10 @@ and aggregate version remain a precondition. Removed duty/member history is not
 a live slot. Do not return other staff names, lease holders or absence reasons.
 
 Exactly N unique dates cover the plan's complete calendar month, N = 28/29/30/31;
-both slot properties are mandatory on every date. At most 62 slot preconditions
-and 62 desired memberships. Require positive safe-integer versions
+both expected slot properties and one exclusive desired state are mandatory on
+every date. At most 62 slot preconditions and 31 desired memberships. An array
+of desired states, desired DAY and NIGHT roles together, role on OFF or a legacy
+INVALID_DUAL desired value is structural 400; never infer which should win. Require positive safe-integer versions
 1…9007199254740991, UUID IDs, canonical plan-state combination (UNPUBLISHED/null
 or PUBLISHED/timestamp), and a 64 lowercase-hex fingerprint. No coercion of null
 to absent, strings to booleans/versions, or duplicate-date deduplication. Date
@@ -110,12 +120,19 @@ leader or workdays quota is authorized. Maximum result JSON is proposed at
    compares identities, versions and roster signatures, not just counts.
 4. For any newly created duty, `expectedCreationContext` must equal a fresh
    server-computed fingerprint of the company zone, project/month, effective
-   **whole** shift-configuration version/rules and D6 resolution-contract version.
+   **whole** shift-configuration version/rules, effective calendar identity/version/set
+   and D6 resolution-contract version.
    Canonical tuple encoding is fixed in API tests. It is an opaque concurrency
    checksum, not a signed credential or a company-zone display API. Ignore this
    comparison when no duty is created, while still fingerprinting the submitted
    value for command identity. Existing saved UTC snapshots are not re-resolved.
-5. Employee/other-staff employment, status, project-month links, availability and
+5. `expectedCalendar` equals the effective calendar's exact ID/version, or null
+   for MISSING, for **every** save including removals/no-op. P SHARE freezes it.
+   New/interposed versions or replacements require a fresh review even when their
+   weekday sets happen to agree. MISSING never permits a new assignment. The
+   creation checksum also includes calendar identity/version/set, preserving one
+   canonical versioned encoding; no calendar facts are added to the receipt.
+6. Employee/other-staff employment, status, project-month links, availability and
    overlap have no new public version tokens. They are freshly revalidated under
    their existing parent locks. This command never overwrites these facts. A
    still-valid workforce change may therefore be accepted; no guarantee that
@@ -131,8 +148,8 @@ server merge. No single `Expected-Version` header or If-Match/412 is invented fo
 ## Full request example
 
 Synthetic IDs and an illustrative server-issued checksum. This is a complete
-February 2027 request (28 dates), adding DAY on February 2; every other slot is
-known absent and unselected. Real clients must use their actual read baseline.
+November 2026 request (30 dates), five final assignments and one removal;
+project Alpha is open all seven weekdays. Real clients must use their actual read baseline.
 
 ```http
 POST /api/v1/monthly-plans/10000000-0000-4000-8000-000000000001/employee-months/20000000-0000-4000-8000-000000000001/save
@@ -143,56 +160,92 @@ X-CSRF-Token: <session-bound-token>
 
 ```json
 {
-  "expectedPlan": {"status":"UNPUBLISHED","publishedAt":null},
-  "expectedCreationContext":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "expectedPlan": {
+    "status": "UNPUBLISHED",
+    "publishedAt": null
+  },
+  "expectedCreationContext": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "expectedCalendar": {
+    "id": "90000000-0000-4000-8000-000000000001",
+    "version": 1
+  },
   "days": [
-    {"date":"2027-02-01","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-02","day":{"expectedDuty":null,"selectedRole":"EMPLOYEE"},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-03","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-04","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-05","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-06","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-07","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-08","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-09","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-10","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-11","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-12","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-13","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-14","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-15","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-16","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-17","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-18","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-19","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-20","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-21","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-22","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-23","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-24","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-25","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-26","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-27","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}},
-    {"date":"2027-02-28","day":{"expectedDuty":null,"selectedRole":null},"night":{"expectedDuty":null,"selectedRole":null}}
+    {"date":"2026-11-01","expected":{"day":null,"night":null},"desired":{"state":"DAY","role":"EMPLOYEE"}},
+    {"date":"2026-11-02","expected":{"day":null,"night":null},"desired":{"state":"DAY","role":"EMPLOYEE"}},
+    {"date":"2026-11-03","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-04","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-05","expected":{"day":{"id":"30000000-0000-4000-8000-000000000005","version":7},"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-06","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-07","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-08","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-09","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-10","expected":{"day":null,"night":null},"desired":{"state":"DAY","role":"EMPLOYEE"}},
+    {"date":"2026-11-11","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-12","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-13","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-14","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-15","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-16","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-17","expected":{"day":null,"night":null},"desired":{"state":"NIGHT","role":"EMPLOYEE"}},
+    {"date":"2026-11-18","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-19","expected":{"day":null,"night":null},"desired":{"state":"NIGHT","role":"EMPLOYEE"}},
+    {"date":"2026-11-20","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-21","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-22","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-23","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-24","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-25","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-26","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-27","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-28","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-29","expected":{"day":null,"night":null},"desired":{"state":"OFF"}},
+    {"date":"2026-11-30","expected":{"day":null,"night":null},"desired":{"state":"OFF"}}
   ]
 }
 ```
 
-A retained existing membership is submitted with its current role and, for
-example, `expectedDuty: {"id":"30000000-0000-4000-8000-000000000001","version":7}`.
-Explicit removal sets only `selectedRole` to null. This still supplies the duty
-precondition and never requests deletion of its other members.
+This complete November 2026 request is the final draft after TAG on 1,2,5,10,
+NACHT on 17,19, then FREI on 5. Example project Alpha is open all seven days.
+Day 5's existing DAY duty/version remains a precondition and its target membership
+is removed. Other shown expected slots are absent; five assignments create five
+canonical duties if P2 is approved. The sample checksum is synthetic, not a valid
+server token. Retained SHIFT_LEAD uses desired role SHIFT_LEAD explicitly.
+
+For project Beta (Mon-Fri), date 1 is closed: the same requested DAY yields
+PROJECT_CLOSED_WEEKDAY on 2026-11-01 and **none** of the other dates persist.
+Do not silently skip Sunday. A legacy dual read contains both assignments and
+currentState INVALID_DUAL; only explicit exclusive desired state can correct it.
 
 Full success is HTTP 200 after COMMIT, with a new correlation ID. Example:
 
 ```json
 {
-  "commandId":"60000000-0000-4000-8000-000000000001",
-  "outcome":"APPLIED","completedAt":"2026-11-02T20:00:00.000001Z",
-  "plan":{"id":"10000000-0000-4000-8000-000000000001","projectId":"40000000-0000-4000-8000-000000000001","monthStart":"2027-02-01","status":"UNPUBLISHED","publishedAt":null},
-  "employeeId":"20000000-0000-4000-8000-000000000001",
-  "counts":{"createdDuties":1,"changedDuties":0,"addedMemberships":1,"removedMemberships":0,"updatedMemberships":0},
-  "changes":[{"date":"2027-02-02","shiftKind":"DAY","dutyId":"30000000-0000-4000-8000-000000000002","version":1,"startsAt":"2027-02-02T05:00:00Z","endsAt":"2027-02-02T17:00:00Z","assignment":{"id":"50000000-0000-4000-8000-000000000002","dutyRole":"EMPLOYEE","source":"NORMAL"}}]
+  "commandId": "60000000-0000-4000-8000-000000000001",
+  "outcome": "APPLIED",
+  "completedAt": "2026-11-02T20:00:00.000001Z",
+  "plan": {
+    "id": "10000000-0000-4000-8000-000000000001",
+    "projectId": "40000000-0000-4000-8000-000000000001",
+    "monthStart": "2026-11-01",
+    "status": "UNPUBLISHED",
+    "publishedAt": null
+  },
+  "employeeId": "20000000-0000-4000-8000-000000000001",
+  "counts": {
+    "createdDuties": 5,
+    "changedDuties": 1,
+    "addedMemberships": 5,
+    "removedMemberships": 1,
+    "updatedMemberships": 0
+  },
+  "changes": [
+    {"date":"2026-11-01","shiftKind":"DAY","dutyId":"30000000-0000-4000-8000-000000000001","version":1,"startsAt":"2026-11-01T05:00:00Z","endsAt":"2026-11-01T17:00:00Z","assignment":{"id":"50000000-0000-4000-8000-000000000001","dutyRole":"EMPLOYEE","source":"NORMAL"}},
+    {"date":"2026-11-02","shiftKind":"DAY","dutyId":"30000000-0000-4000-8000-000000000002","version":1,"startsAt":"2026-11-02T05:00:00Z","endsAt":"2026-11-02T17:00:00Z","assignment":{"id":"50000000-0000-4000-8000-000000000002","dutyRole":"EMPLOYEE","source":"NORMAL"}},
+    {"date":"2026-11-05","shiftKind":"DAY","dutyId":"30000000-0000-4000-8000-000000000005","version":8,"startsAt":"2026-11-05T05:00:00Z","endsAt":"2026-11-05T17:00:00Z","assignment":null},
+    {"date":"2026-11-10","shiftKind":"DAY","dutyId":"30000000-0000-4000-8000-000000000010","version":1,"startsAt":"2026-11-10T05:00:00Z","endsAt":"2026-11-10T17:00:00Z","assignment":{"id":"50000000-0000-4000-8000-000000000010","dutyRole":"EMPLOYEE","source":"NORMAL"}},
+    {"date":"2026-11-17","shiftKind":"NIGHT","dutyId":"30000000-0000-4000-8000-000000000017","version":1,"startsAt":"2026-11-17T17:00:00Z","endsAt":"2026-11-18T05:00:00Z","assignment":{"id":"50000000-0000-4000-8000-000000000017","dutyRole":"EMPLOYEE","source":"NORMAL"}},
+    {"date":"2026-11-19","shiftKind":"NIGHT","dutyId":"30000000-0000-4000-8000-000000000019","version":1,"startsAt":"2026-11-19T17:00:00Z","endsAt":"2026-11-20T05:00:00Z","assignment":{"id":"50000000-0000-4000-8000-000000000019","dutyRole":"EMPLOYEE","source":"NORMAL"}}
+  ]
 }
 ```
 
@@ -228,7 +281,8 @@ lock set; return discovery conflict instead.
 409 version/lifecycle/context drift retains `PLAN_CONCURRENT_MODIFICATION`.
 **Proposed new** 409 `EMPLOYEE_MONTH_SAVE_CONFLICT` covers the LEASE or VALIDATION
 stage; it requires catalogue/OpenAPI approval and a strict allowlisted extension
-in ProblemDetailsFilter. Existing SP-12 codes/status mappings do not change.
+in ProblemDetailsFilter. Existing SP-12 guard/header precedence remains; new shared-rule codes require
+the explicit controlled catalogue amendment described below.
 
 ```json
 {
@@ -239,20 +293,27 @@ in ProblemDetailsFilter. Existing SP-12 codes/status mappings do not change.
   "code":"EMPLOYEE_MONTH_SAVE_CONFLICT",
   "correlationId":"80000000-0000-4000-8000-000000000001",
   "stage":"VALIDATION",
-  "conflicts":[{"date":"2027-02-15","shiftKind":"NIGHT","reason":"EMPLOYEE_UNAVAILABLE"}]
+  "conflicts":[{"date":"2026-11-01","shiftKind":"DAY","reason":"PROJECT_CLOSED_WEEKDAY"}]
 }
 ```
 
-The example is a different attempted month selection with a failing February 15
-assignment. It carries no success counts: **zero domain changes**. The extension
+The error example is the Beta attempt with Sunday November 1 closed. It carries no success counts: **zero domain changes**. The extension
 is optional on existing PLAN_CONCURRENT_MODIFICATION and required on the new
 batch error. Define it as `stage` plus `conflicts` (1…62) and optional single
-`contextConflict` enum PLAN_LIFECYCLE / CREATION_CONTEXT / DISCOVERY / PROJECT.
+`contextConflict` enum PLAN_LIFECYCLE / CREATION_CONTEXT / CALENDAR / DISCOVERY / PROJECT.
 When a context-only conflict exists, conflicts is `[]`; at least one of the two
 must be present. Reason values are only current applicable staffing/config codes
-plus proposed ACTIVE_DUTY_EDIT and PRESERVED_ROSTER_CONFLICT. Version-slot reasons
-use PLAN_CONCURRENT_MODIFICATION. These two new reason values are not new audit
-actions or standalone HTTP error codes.
+plus proposed ACTIVE_DUTY_EDIT, PRESERVED_ROSTER_CONFLICT, PROJECT_CALENDAR_MISSING,
+PROJECT_CLOSED_WEEKDAY and EMPLOYEE_DAILY_SHIFT_CONFLICT. An unchanged colleague
+conflict remains neutral PRESERVED_ROSTER_CONFLICT, never their employee ID. Version-slot reasons
+use PLAN_CONCURRENT_MODIFICATION. ACTIVE_DUTY_EDIT and PRESERVED_ROSTER_CONFLICT are batch reasons, not new audit
+actions. The three calendar/exclusive rule codes are proposed shared409 codes
+for SP-11/SP-12/Publish and batch reason values, requiring a controlled error
+catalogue extension. Their shared-writer safe extension may contain conflicts
+(date, shiftKind, reason only; max62, first safe reason per duty slot), never an
+employee identity. Existing SP-12 mappings/header requirements remain otherwise
+unchanged. First Publish may return the first safe shared-rule failure with this
+extension; no publication or completed receipt persists on refusal.
 
 Unavailability never identifies SICK/LEAVE, absence ID or text. An invalid
 preserved colleague becomes PRESERVED_ROSTER_CONFLICT without their ID/reason.
@@ -297,15 +358,18 @@ route this operation through the hard-coded publish codec, copy its service into
 a subtly divergent protocol, or change INITIAL_PUBLISH's hash/scope/result rules.
 Migration/regression tests must prove old publication records and replays survive.
 Update affected catalogue classification/signature checks together; the four
-canonical planning tables themselves need no schema change.
+canonical planning tables themselves need no schema change for SP-88; SP-90 adds
+its own calendar table in a separately allocated additive migration.
 
 ## Key, fingerprint, replay and explicit retry
 
 Use the Phase 8.7 key format (8…128 visible ASCII), cryptographic hash at rest and
 scope `(company, actor account, operation, key hash)`, spanning all plans/employees.
 The fingerprint is SHA-256 of a versioned canonical tuple containing both route
-IDs, normalized lifecycle/time, creation-context checksum and every date/kind's
-expected duty ID/version and selected role. Sort dates, normalize UUID case and
+IDs, normalized lifecycle/time, creation-context checksum and every date's
+DAY/NIGHT expected duty IDs/versions, single desired state/role and expected
+calendar ID/version/null. Use fingerprint codec EMPLOYEE_MONTH_SAVE_V2 (V1 is an
+unimplemented, superseded proposal, not a deployed operation). Sort dates, normalize UUID case and
 canonical timestamps; JSON property order/whitespace and input date-array order
 do not affect identity. Exclude correlation/CSRF/session tokens and the key.
 
@@ -360,3 +424,19 @@ contract or authorize automatic retry. Account/session revocation and hidden
 resources still deny receipt access. Global session-account locking may serialize
 same-account requests before they reach I; immediate HTTP in-progress response is
 not promised by the advisory lock alone.
+
+## Explicit rejection examples (same atomic failure schema)
+
+| Attempt | HTTP / safe code | Result |
+|---|---|---|
+| desired contains DAY and NIGHT, or legacy day/night selectedRole fields | 400 VALIDATION_FAILED with safe field pointers | No claim/business write; exclusive DTO enforced |
+| Valid exclusive DAY but final roster would retain a second live kind for this employee/date through a competing path | 409 EMPLOYEE_MONTH_SAVE_CONFLICT, VALIDATION, dated EMPLOYEE_DAILY_SHIFT_CONFLICT | Entire transaction rolled back |
+| Beta 2026-11-01 DAY | 409 same code, VALIDATION, dated PROJECT_CLOSED_WEEKDAY | All dates rolled back |
+| Calendar MISSING and new DAY | 409 same code, VALIDATION, dated PROJECT_CALENDAR_MISSING | Configure project first; no inferred weekend policy |
+| Day 5 expected version7, freshly locked version8 | 409 PLAN_CONCURRENT_MODIFICATION, CONCURRENCY, date2026-11-05/kindDAY | Entire transaction rolled back, retain every choice |
+| Effective calendar ID/version changes | 409 PLAN_CONCURRENT_MODIFICATION, contextConflict CALENDAR | Full explicit reconciliation required |
+
+Read errors/violations never expose other employees, absence categories or holder
+identity. Receipts stay immutable with only effective duty/member changes; they
+record neither full read projections nor calendar/availability history. Update
+only the new operation codec; never change INITIAL_PUBLISH fingerprints or 0013.
