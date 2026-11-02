@@ -18,6 +18,8 @@ type DayDetailsProps = {
   nameOf: (employeeId: string) => string;
   onEdit: (duty: Duty) => void;
   onCreate: (kind: ShiftKind) => void;
+  /** Opens the person's employee-month planner (#88 preview); only for a person cell. */
+  onPlanMonth?: () => void;
   onClose: () => void;
 };
 
@@ -33,7 +35,7 @@ function peopleCount(count: number): string {
  * possible action – edit an existing duty or create a missing one. Nothing is
  * changed here; every write happens in the duty editor or the create form.
  */
-export function PlanningDayDetails({ row, date, day, monthLabel, projectActive, timeZone, nameOf, onEdit, onCreate, onClose }: DayDetailsProps) {
+export function PlanningDayDetails({ row, date, day, monthLabel, projectActive, timeZone, nameOf, onEdit, onCreate, onPlanMonth, onClose }: DayDetailsProps) {
   const entries = row?.cells.get(date) ?? [];
   const unavailable = entries.some((entry) => entry.unavailable);
   return (
@@ -68,6 +70,11 @@ export function PlanningDayDetails({ row, date, day, monthLabel, projectActive, 
               <StatusBadge tone="attention">Hinweis</StatusBadge> Am Diensttag nicht verfügbar. Bestehende Dienste werden
               dadurch nicht automatisch geändert.
             </p>
+          )}
+          {onPlanMonth && (
+            <button type="button" className="employees-button planning-day__month" onClick={onPlanMonth}>
+              Monat von {row.name} planen (Vorschau)
+            </button>
           )}
         </>
       )}

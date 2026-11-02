@@ -460,3 +460,301 @@
     max-width: 9rem;
   }
 }
+
+/* Issue #88 employee-month planner (preview): one person, every day of the month. */
+
+.planning-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0 0 16px;
+  padding: 8px 12px 12px;
+  border: 1px solid var(--sp-color-border);
+  border-radius: var(--sp-radius-small);
+}
+
+.planning-views legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.planning-views label,
+.month-planner__roles label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.planning-views input,
+.month-planner__roles input {
+  width: 20px;
+  height: 20px;
+}
+
+.planning-day__month {
+  justify-self: start;
+}
+
+.month-planner {
+  display: grid;
+  gap: 16px;
+}
+
+.month-planner p,
+.month-planner h4 {
+  margin: 0;
+}
+
+/* Shares the look of the app's preview notice; the planner grid sets its own spacing. */
+.month-planner__preview {
+  margin: 0;
+}
+
+.month-planner__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* xl: day details and changes beside the month; below, they follow it. */
+@media (min-width: 1280px) {
+  .month-planner__layout {
+    grid-template-columns: minmax(0, 34rem) minmax(20rem, 1fr);
+  }
+
+  .month-planner__side {
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+  }
+}
+
+.month-planner__side {
+  display: grid;
+  gap: 16px;
+}
+
+.month-planner__day,
+.month-planner__changes {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius);
+  background: var(--sp-color-surface);
+}
+
+.month-planner__others {
+  color: var(--sp-color-muted);
+  font-size: 14px;
+}
+
+.month-planner__roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 20px;
+  margin: 0;
+  padding: 0 8px 4px;
+  border: 1px solid var(--sp-color-border);
+  border-radius: var(--sp-radius-small);
+}
+
+.month-planner__change-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.month-planner__change--conflict {
+  padding: 4px 8px;
+  border-left: 4px solid var(--sp-tone-attention-fg);
+  background: var(--sp-tone-attention-bg);
+}
+
+.month-planner__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sp-color-brand);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.month-planner__small {
+  min-height: 36px;
+  padding: 4px 10px;
+  font-size: 14px;
+}
+
+/* The single save action stays reachable at the bottom while scrolling the month. */
+.month-planner__savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius);
+  background: var(--sp-color-surface);
+  box-shadow: 0 -4px 12px rgb(0 0 0 / 8%);
+}
+
+.month-planner__count {
+  flex: 1 1 12rem;
+  font-weight: 600;
+}
+
+.month-planner__save-note {
+  flex-basis: 100%;
+  color: var(--sp-color-muted);
+  font-size: 14px;
+}
+
+.month-planner__savebar .employees-button--primary[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Below xl the month scrolls with the page (sticky header, sticky save bar); no nested scroll frame. */
+.month-grid__wrap {
+  border: 1px solid var(--sp-color-border);
+  border-radius: var(--sp-radius);
+  background: var(--sp-color-surface);
+}
+
+@media (min-width: 1280px) {
+  .month-grid__wrap {
+    max-height: 70vh;
+    overflow: auto;
+  }
+}
+
+.month-grid {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+}
+
+.month-grid th,
+.month-grid td {
+  padding: 0;
+  border-bottom: 1px solid var(--sp-color-border);
+  background: var(--sp-color-surface);
+  text-align: center;
+}
+
+.month-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 6px 4px;
+  color: var(--sp-color-muted);
+  font-weight: 600;
+}
+
+.month-grid tbody th {
+  width: 4.5rem;
+  padding: 4px 8px;
+  font-weight: 600;
+  text-align: start;
+  white-space: nowrap;
+}
+
+.month-grid__weekend th,
+.month-grid__weekend td {
+  background: var(--sp-color-canvas);
+}
+
+.month-grid td.month-grid__notes {
+  padding: 4px 8px;
+  color: var(--sp-color-muted);
+  font-size: 13px;
+  text-align: start;
+}
+
+/* 44 px targets; text and marks, not color alone, carry state and change. */
+.month-grid__cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 5.5rem;
+  min-height: 44px;
+  margin: 2px;
+  padding: 2px 4px;
+  border: 2px solid var(--sp-color-border);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-color-surface);
+  color: var(--sp-color-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.month-grid__cell--planned {
+  border-color: var(--sp-tone-info-fg);
+  background: var(--sp-tone-info-bg);
+  color: var(--sp-tone-info-fg);
+  font-weight: 600;
+}
+
+.month-grid__cell--added,
+.month-grid__cell--role-changed {
+  border-style: dashed;
+  border-color: var(--sp-color-brand);
+}
+
+.month-grid__cell--removed {
+  border-style: dashed;
+  border-color: var(--sp-color-border-strong);
+  background: var(--sp-color-canvas);
+}
+
+.month-grid__cell--restricted {
+  border-style: dotted;
+  cursor: not-allowed;
+}
+
+.month-grid__cell--problem {
+  border-color: var(--sp-tone-attention-fg);
+  background: var(--sp-tone-attention-bg);
+  color: var(--sp-tone-attention-fg);
+}
+
+.month-grid__cell:focus-visible {
+  outline: 3px solid var(--sp-color-focus);
+  outline-offset: 1px;
+}
+
+.month-grid__mark {
+  font-weight: 700;
+}
+
+@media (max-width: 719px) {
+  .month-grid__cell {
+    width: 4.25rem;
+  }
+
+  .month-planner__savebar {
+    gap: 6px 8px;
+    padding: 8px 12px;
+  }
+
+  .month-planner__save-note {
+    font-size: 13px;
+  }
+
+  .month-grid tbody th {
+    width: 3.5rem;
+    padding: 4px;
+  }
+}
