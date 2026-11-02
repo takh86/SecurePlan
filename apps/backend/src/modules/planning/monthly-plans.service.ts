@@ -1,6 +1,6 @@
 /**
  * SP-11 PR-1 planning slice (SP11A-R1 Rev3.1 with K1-K3; COMPANY_ADMIN only):
- * create/list/read monthly plans and create/list duties (MonthlyPlanEntry).
+ * create/list/read monthly plans and create/list/read duties (MonthlyPlanEntry).
  * No publish, edit, removal, lease or replacement route exists in this slice,
  * so plans created here stay UNPUBLISHED (the accepted pre-publication boundary).
  *
@@ -243,6 +243,29 @@ export class MonthlyPlansService implements OnModuleInit {
         items: duties.rows.map((duty) =>
           toMonthlyPlanEntryResponse(duty, members.filter((member) => member.duty_id === duty.id), unavailable)),
       };
+    });
+  }
+
+  /**
+   * SP-12: the same current aggregate as the collection, scoped to its exact
+   * plan and tenant. Tombstones and ARCHIVED projects remain concealed. One
+   * read-only snapshot keeps the duty version, memberships and neutral absence
+   * conflicts consistent if a writer commits between the component reads.
+   * No lease/version precondition or business success audit applies to a GET.
+   */
+  async getEntry(tenant: TenantContext, planId: string, entryId: string): Promise<MonthlyPlanEntryResponse> {
+    return this.database.withTransaction(async (client) => {
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+      await assertPlanningSchemaComplete(client);
+      const plan = await this.visiblePlan(client, tenant, planId);
+      const duty = requireRow(await client.query<DutyRow>(
+        `SELECT ${dutyColumns('d')} FROM public.duties AS d
+         WHERE d.company_id = $1 AND d.monthly_plan_id = $2 AND d.id = $3 AND d.removed_at IS NULL`,
+        [tenant.companyId, plan.id, entryId],
+      ));
+      const members = await this.activeMembers(client, tenant, [duty.id]);
+      const unavailable = await this.unavailableKeys(client, tenant, members, duty.duty_date, duty.duty_date);
+      return toMonthlyPlanEntryResponse(duty, members, unavailable);
     });
   }
 
