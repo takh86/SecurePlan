@@ -24,9 +24,10 @@ try {
   const planning = await client.query(`SELECT
     EXISTS (SELECT 1 FROM schema_migrations WHERE name = '0011_planning_foundation.sql')
     AND (SELECT count(*) = 3 FROM pg_class WHERE oid IN
-      ('monthly_plans'::regclass, 'duties'::regclass, 'plan_assignments'::regclass) AND relkind = 'r')
+      ('public.monthly_plans'::regclass, 'public.duties'::regclass, 'public.plan_assignments'::regclass)
+      AND relkind = 'r' AND relpersistence = 'p' AND NOT relrowsecurity AND NOT relforcerowsecurity)
     AND (SELECT count(*) = 2 FROM pg_index WHERE indexrelid IN
-      ('uq_duties__live_slot'::regclass, 'uq_plan_assignments__active_employee'::regclass)
+      ('public.uq_duties__live_slot'::regclass, 'public.uq_plan_assignments__active_employee'::regclass)
       AND indisunique AND indisvalid AND indpred IS NOT NULL) AS valid`);
   if (!planning.rows[0]?.valid) throw new Error("Missing planning integrity catalogue");
   console.log("PostgreSQL connection and foundation migration verified.");

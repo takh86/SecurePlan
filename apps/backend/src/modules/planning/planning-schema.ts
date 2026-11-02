@@ -7,7 +7,9 @@
  *   public.plan_assignments exist as ordinary tables, with exactly the columns,
  *   constraints and indexes of migration 0011 (compared by definition, index
  *   names normalized away), and no other relation anywhere carries a planning
- *   name from the central classification;
+ *   name from the central classification (including temporary schemas).
+ *   RLS, policies, user triggers/rules, inheritance/partitioning, unlogged
+ *   tables and disabled integrity triggers/indexes are unsupported;
  * - ABSENT: no planning-named relation exists (migration 0011 not applied);
  * - INVALID: anything else (partial, altered, misnamed, extra or moved).
  *
@@ -83,8 +85,8 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
   monthly_plans: [
     "c CHECK ((((planning_month >= '0001-01-01'::date) AND (planning_month <= '9999-12-01'::date)) AND (EXTRACT(day FROM planning_month) = (1)::numeric)))",
     "c CHECK ((((status = 'UNPUBLISHED'::text) AND (published_at IS NULL) AND (published_by_account_id IS NULL)) OR ((status = 'PUBLISHED'::text) AND (published_at IS NOT NULL) AND isfinite(published_at) AND (published_by_account_id IS NOT NULL))))",
-    'f FOREIGN KEY (company_id, project_id) REFERENCES projects(company_id, id) ON DELETE RESTRICT',
-    'f FOREIGN KEY (company_id, published_by_account_id) REFERENCES accounts(company_id, id) ON DELETE RESTRICT',
+    'f FOREIGN KEY (company_id, project_id) REFERENCES public.projects(company_id, id) ON DELETE RESTRICT',
+    'f FOREIGN KEY (company_id, published_by_account_id) REFERENCES public.accounts(company_id, id) ON DELETE RESTRICT',
     'p PRIMARY KEY (id)',
     'u UNIQUE (company_id, id)',
     'u UNIQUE (company_id, project_id, planning_month)',
@@ -99,7 +101,7 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
     'c CHECK (((length(time_zone) >= 1) AND (length(time_zone) <= 255)))',
     'c CHECK (((removed_at IS NULL) OR isfinite(removed_at)))',
     "c CHECK ((shift_kind = ANY (ARRAY['TAG'::text, 'NACHT'::text])))",
-    'f FOREIGN KEY (company_id, project_id, planning_month, monthly_plan_id) REFERENCES monthly_plans(company_id, project_id, planning_month, id) ON DELETE RESTRICT',
+    'f FOREIGN KEY (company_id, project_id, planning_month, monthly_plan_id) REFERENCES public.monthly_plans(company_id, project_id, planning_month, id) ON DELETE RESTRICT',
     'p PRIMARY KEY (id)',
     'u UNIQUE (company_id, id)',
   ],
@@ -107,8 +109,8 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
     "c CHECK ((duty_function = ANY (ARRAY['MITARBEITER'::text, 'SCHICHTLEITER'::text])))",
     "c CHECK ((source = ANY (ARRAY['NORMAL'::text, 'REPLACEMENT'::text])))",
     "c CHECK ((((state = 'ACTIVE'::text) AND (removed_at IS NULL)) OR ((state = 'REMOVED'::text) AND (removed_at IS NOT NULL) AND isfinite(removed_at))))",
-    'f FOREIGN KEY (company_id, duty_id) REFERENCES duties(company_id, id) ON DELETE RESTRICT',
-    'f FOREIGN KEY (company_id, employee_id) REFERENCES employees(company_id, id) ON DELETE RESTRICT',
+    'f FOREIGN KEY (company_id, duty_id) REFERENCES public.duties(company_id, id) ON DELETE RESTRICT',
+    'f FOREIGN KEY (company_id, employee_id) REFERENCES public.employees(company_id, id) ON DELETE RESTRICT',
     'p PRIMARY KEY (id)',
     'u UNIQUE (company_id, id)',
   ],
@@ -131,7 +133,7 @@ const EXPECTED_INDEXES: Record<PlanningRelation, readonly string[]> = {
 };
 
 type CatalogRow = {
-  relations: { schema: string; name: string; kind: string }[];
+  relations: { schema: string; name: string; kind: string; safe: boolean }[];
   columns: { relation: string; signature: string }[];
   constraints: { relation: string; signature: string }[];
   indexes: { relation: string; signature: string }[];
@@ -139,20 +141,29 @@ type CatalogRow = {
 
 /**
  * One catalog statement (one snapshot). Planning names are matched in every
- * schema except the reserved pg_* system schemas, as the classification does.
+ * schema, including pg_temp_*: temporary names can shadow ordinary tables.
  */
 const CATALOG_SQL = `
   WITH planning AS (
-    SELECT c.oid, ns.nspname AS schema, c.relname AS name, c.relkind::text AS kind
+    SELECT c.oid, ns.nspname AS schema, c.relname AS name, c.relkind::text AS kind,
+           c.relpersistence = 'p' AND NOT c.relrowsecurity AND NOT c.relforcerowsecurity
+           AND NOT c.relispartition
+           AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_inherits i WHERE i.inhrelid = c.oid OR i.inhparent = c.oid)
+           AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid)
+           AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger t WHERE t.tgrelid = c.oid
+                           AND (NOT t.tgisinternal OR t.tgenabled <> 'O'))
+           AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_rewrite r WHERE r.ev_class = c.oid)
+           AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_index x WHERE x.indrelid = c.oid
+                           AND (NOT x.indisvalid OR NOT x.indisready OR NOT x.indislive)) AS safe
     FROM pg_catalog.pg_class AS c
     JOIN pg_catalog.pg_namespace AS ns ON ns.oid = c.relnamespace
-    WHERE c.relname = ANY($1::text[]) AND ns.nspname !~ '^pg_'
+    WHERE c.relname = ANY($1::text[])
   ), canonical AS (
     SELECT oid, name FROM planning
     WHERE schema = 'public' AND kind = 'r' AND name = ANY($2::text[])
   )
   SELECT
-    (SELECT coalesce(jsonb_agg(jsonb_build_object('schema', schema, 'name', name, 'kind', kind)), '[]'::jsonb)
+    (SELECT coalesce(jsonb_agg(jsonb_build_object('schema', schema, 'name', name, 'kind', kind, 'safe', safe)), '[]'::jsonb)
        FROM planning) AS relations,
     (SELECT coalesce(jsonb_agg(jsonb_build_object('relation', t.name, 'signature',
               a.attname || ' ' || pg_catalog.format_type(a.atttypid, a.atttypmod)
@@ -162,7 +173,8 @@ const CATALOG_SQL = `
        JOIN pg_catalog.pg_attribute AS a ON a.attrelid = t.oid AND a.attnum > 0 AND NOT a.attisdropped
        LEFT JOIN pg_catalog.pg_attrdef AS d ON d.adrelid = t.oid AND d.adnum = a.attnum) AS columns,
     (SELECT coalesce(jsonb_agg(jsonb_build_object('relation', t.name, 'signature',
-              k.contype::text || ' ' || pg_catalog.pg_get_constraintdef(k.oid))), '[]'::jsonb)
+              k.contype::text || ' ' || regexp_replace(pg_catalog.pg_get_constraintdef(k.oid),
+                'REFERENCES (projects|accounts|monthly_plans|duties|employees)\\(', 'REFERENCES public.\\1('))), '[]'::jsonb)
        FROM canonical AS t
        JOIN pg_catalog.pg_constraint AS k ON k.conrelid = t.oid) AS constraints,
     (SELECT coalesce(jsonb_agg(jsonb_build_object('relation', t.name, 'signature',
@@ -187,6 +199,9 @@ export function classifyPlanningSchema(catalog: CatalogRow): PlanningSchemaRepor
   if (canonical.length !== PLANNING_RELATIONS.length || catalog.relations.length !== canonical.length) {
     const found = catalog.relations.map(({ schema, name, kind }) => `${schema}.${name}(${kind})`).sort().join(', ');
     return { state: 'INVALID', reason: `unexpected planning relation set: ${found}` };
+  }
+  if (canonical.some(({ safe }) => safe !== true)) {
+    return { state: 'INVALID', reason: 'unsupported planning table visibility, persistence or integrity state' };
   }
   for (const relation of PLANNING_RELATIONS) {
     const of = (rows: { relation: string; signature: string }[]) =>
@@ -221,8 +236,14 @@ const logger = new Logger('PlanningSchema');
 
 /** Call inside the caller's transaction, before any planning dependency read or write. */
 export async function assertPlanningSchemaComplete(client: Queryable): Promise<void> {
-  const report = await readPlanningSchema(client);
-  if (report.state === 'COMPLETE') return;
+  let report = await readPlanningSchema(client);
+  if (report.state === 'COMPLETE') {
+    // Protect against ACCESS EXCLUSIVE canonical DDL until the caller commits.
+    // Re-read after any lock wait; do not authorize using a pre-wait snapshot.
+    await client.query('LOCK TABLE public.monthly_plans, public.duties, public.plan_assignments IN ACCESS SHARE MODE');
+    report = await readPlanningSchema(client);
+    if (report.state === 'COMPLETE') return;
+  }
   logger.error(JSON.stringify({ event: 'planning.schema.not_usable', state: report.state, reason: report.reason }));
   throw new PlanningSchemaError(report.state);
 }

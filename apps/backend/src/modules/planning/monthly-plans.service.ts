@@ -130,13 +130,14 @@ export class MonthlyPlansService implements OnModuleInit {
       params.push(query.status);
       where.push(`mp.status = $${params.length}`);
     }
-    const from = `monthly_plans AS mp
+    const from = `public.monthly_plans AS mp
       JOIN projects AS p ON p.company_id = mp.company_id AND p.id = mp.project_id
       WHERE ${where.join(' AND ')}`;
 
     return this.database.withTransaction(async (client) => {
       // Count and page from ONE snapshot, so totals match the returned page.
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+      await assertPlanningSchemaComplete(client);
       const counted = await client.query<{ total: number }>(`SELECT count(*)::int AS total FROM ${from}`, params);
       const rows = await client.query<MonthlyPlanRow>(
         `SELECT ${monthlyPlanColumns('mp')} FROM ${from}
@@ -153,8 +154,10 @@ export class MonthlyPlansService implements OnModuleInit {
   }
 
   async get(tenant: TenantContext, planId: string): Promise<MonthlyPlanResponse> {
-    return this.database.withTransaction(async (client) =>
-      toMonthlyPlanResponse(await this.visiblePlan(client, tenant, planId)));
+    return this.database.withTransaction(async (client) => {
+      await assertPlanningSchemaComplete(client);
+      return toMonthlyPlanResponse(await this.visiblePlan(client, tenant, planId));
+    });
   }
 
   /**
@@ -180,7 +183,7 @@ export class MonthlyPlansService implements OnModuleInit {
 
       // Deterministic 409 for the common case; the UNIQUE constraint decides races.
       const existing = await client.query(
-        'SELECT 1 FROM monthly_plans WHERE company_id = $1 AND project_id = $2 AND planning_month = $3::date',
+        'SELECT 1 FROM public.monthly_plans WHERE company_id = $1 AND project_id = $2 AND planning_month = $3::date',
         [tenant.companyId, dto.projectId, dto.monthStart],
       );
       if (existing.rowCount !== 0) conflict('MONTHLY_PLAN_ALREADY_EXISTS');
@@ -188,7 +191,7 @@ export class MonthlyPlansService implements OnModuleInit {
       let row: MonthlyPlanRow;
       try {
         row = (await client.query<MonthlyPlanRow>(
-          `INSERT INTO monthly_plans AS mp (company_id, project_id, planning_month)
+          `INSERT INTO public.monthly_plans AS mp (company_id, project_id, planning_month)
            VALUES ($1, $2, $3::date)
            RETURNING ${monthlyPlanColumns('mp')}`,
           [tenant.companyId, dto.projectId, dto.monthStart],
@@ -220,6 +223,7 @@ export class MonthlyPlansService implements OnModuleInit {
     return this.database.withTransaction(async (client) => {
       // Plan, duties, members and absence facts from ONE snapshot.
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+      await assertPlanningSchemaComplete(client);
       const plan = await this.visiblePlan(client, tenant, planId);
       const params: unknown[] = [tenant.companyId, plan.id];
       let kindFilter = '';
@@ -228,7 +232,7 @@ export class MonthlyPlansService implements OnModuleInit {
         kindFilter = `AND d.shift_kind = $${params.length}`;
       }
       const duties = await client.query<DutyRow>(
-        `SELECT ${dutyColumns('d')} FROM duties AS d
+        `SELECT ${dutyColumns('d')} FROM public.duties AS d
          WHERE d.company_id = $1 AND d.monthly_plan_id = $2 AND d.removed_at IS NULL ${kindFilter}
          ORDER BY ${dutyOrder('d')}`,
         params,
@@ -312,13 +316,13 @@ export class MonthlyPlansService implements OnModuleInit {
       )).rows;
       // L: the plan lifecycle row, SHARE (a first publication takes UPDATE).
       requireRow(await client.query(
-        'SELECT 1 FROM monthly_plans WHERE company_id = $1 AND id = $2 FOR SHARE',
+        'SELECT 1 FROM public.monthly_plans WHERE company_id = $1 AND id = $2 FOR SHARE',
         [tenant.companyId, plan.id],
       ));
 
       if (project.status !== 'ACTIVE') conflict('PROJECT_INACTIVE');
       const slot = await client.query(
-        `SELECT 1 FROM duties
+        `SELECT 1 FROM public.duties
          WHERE company_id = $1 AND monthly_plan_id = $2 AND duty_date = $3::date AND shift_kind = $4
            AND removed_at IS NULL`,
         [tenant.companyId, plan.id, dto.dutyDate, kind],
@@ -353,7 +357,7 @@ export class MonthlyPlansService implements OnModuleInit {
       let duty: DutyRow;
       try {
         duty = (await client.query<DutyRow>(
-          `INSERT INTO duties AS d (
+          `INSERT INTO public.duties AS d (
              company_id, project_id, monthly_plan_id, planning_month, duty_date, shift_kind,
              starts_at, ends_at, time_zone, config_effective_from_month, start_local, end_local
            )
@@ -370,7 +374,7 @@ export class MonthlyPlansService implements OnModuleInit {
       }
 
       const members = employeeIds.length === 0 ? [] : (await client.query<MembershipRow>(
-        `INSERT INTO plan_assignments AS pa (company_id, duty_id, employee_id, duty_function)
+        `INSERT INTO public.plan_assignments AS pa (company_id, duty_id, employee_id, duty_function)
          SELECT $1, $2, t.employee_id, t.duty_function
          FROM unnest($3::uuid[], $4::text[]) AS t(employee_id, duty_function)
          RETURNING ${MEMBERSHIP_COLUMNS}`,
@@ -438,8 +442,8 @@ export class MonthlyPlansService implements OnModuleInit {
     );
     const overlapping = new Set((await client.query<{ employee_id: string }>(
       `SELECT DISTINCT pa.employee_id
-       FROM plan_assignments AS pa
-       JOIN duties AS d ON d.company_id = pa.company_id AND d.id = pa.duty_id
+       FROM public.plan_assignments AS pa
+       JOIN public.duties AS d ON d.company_id = pa.company_id AND d.id = pa.duty_id
        WHERE pa.company_id = $1 AND pa.employee_id = ANY($2::uuid[]) AND pa.state = 'ACTIVE'
          AND d.removed_at IS NULL
          AND d.starts_at < $4::timestamptz AND d.ends_at > $3::timestamptz`,
@@ -466,7 +470,7 @@ export class MonthlyPlansService implements OnModuleInit {
   private async visiblePlan(client: Queryable, tenant: TenantContext, planId: string): Promise<MonthlyPlanRow> {
     return requireRow(await client.query<MonthlyPlanRow>(
       `SELECT ${monthlyPlanColumns('mp')}
-       FROM monthly_plans AS mp
+       FROM public.monthly_plans AS mp
        JOIN projects AS p ON p.company_id = mp.company_id AND p.id = mp.project_id
        WHERE mp.company_id = $1 AND mp.id = $2 AND p.status IN ('ACTIVE', 'INACTIVE')`,
       [tenant.companyId, planId],
@@ -476,7 +480,7 @@ export class MonthlyPlansService implements OnModuleInit {
   private async activeMembers(client: Queryable, tenant: TenantContext, dutyIds: readonly string[]): Promise<MembershipRow[]> {
     if (dutyIds.length === 0) return [];
     return (await client.query<MembershipRow>(
-      `SELECT ${MEMBERSHIP_COLUMNS} FROM plan_assignments AS pa
+      `SELECT ${MEMBERSHIP_COLUMNS} FROM public.plan_assignments AS pa
        WHERE pa.company_id = $1 AND pa.duty_id = ANY($2::uuid[]) AND pa.state = 'ACTIVE'`,
       [tenant.companyId, [...dutyIds]],
     )).rows;

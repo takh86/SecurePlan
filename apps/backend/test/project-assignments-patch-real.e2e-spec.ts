@@ -972,7 +972,9 @@ describe('SP-09 PATCH — rollback and planning protection', () => {
     const probe = await db().connect();
     try {
       // Migration 0011 is applied: the real D2 check runs and finds no dependency.
+      await probe.query('BEGIN');
       await expect(assertNoPlanningDependency(probe, tenantA.companyId, [tuple])).resolves.toBeUndefined();
+      await probe.query('ROLLBACK');
       for (const table of PLANNING_GUARD_TABLES.filter((name) => !(PLANNING_RELATIONS as readonly string[]).includes(name))) {
         // DDL inside a transaction is invisible to every other connection and rolled back afterwards.
         await probe.query('BEGIN');

@@ -201,6 +201,7 @@ describe('E-10 / SP-11 - both guards consult the same schema signature before an
     ['ABSENT (migration 0011 missing)', []],
     ['an extra planning relation in another schema', [{ schema: 'planning', name: 'duties', kind: 'r' }]],
     ['a planning view instead of a table', [{ schema: 'public', name: 'plan_entry', kind: 'v' }]],
+    ['a temporary planning shadow', [{ schema: 'pg_temp_3', name: 'duties', kind: 'r' }]],
   ] as const)('%s: both guards fail closed as a technical error after exactly one identical catalog read', async (_case, relations) => {
     const sp09 = recordingClient([...relations]);
     const sp08b = recordingClient([...relations]);
@@ -210,8 +211,8 @@ describe('E-10 / SP-11 - both guards consult the same schema signature before an
     expect(sp09.calls).toHaveLength(1);
     expect(sp09.calls).toEqual(sp08b.calls);
     expect(sp09.calls[0].values[0]).toEqual([...PLANNING_GUARD_TABLES]);
-    // Every schema counts except the reserved pg_* system schemas; information_schema is not exempt.
-    expect(sp09.calls[0].text).toContain("ns.nspname !~ '^pg_'");
+    // No schema-name exclusion may silently exempt pg_temp_* shadows.
+    expect(sp09.calls[0].text).not.toContain("ns.nspname !~ '^pg_'");
     expect(sp09.calls[0].text).not.toContain("'information_schema'");
   });
 });

@@ -10,8 +10,8 @@
  *
  * Defense in three layers:
  * 1. Runtime: the schema signature matches relations from PLANNING_GUARD_TABLES
- *    in ANY schema except PostgreSQL's reserved `pg_*` schemas,
- *    information_schema included. Only the three canonical relations of
+ *    in ANY schema, including temporary schemas and information_schema.
+ *    Only the three canonical relations of
  *    migration 0011, unaltered and in `public`, are trusted; any other
  *    planning-named relation makes every planning check fail closed.
  * 2. CI, static tripwire: planning-table-classification.spec.ts scans the

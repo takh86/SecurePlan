@@ -22,6 +22,7 @@ import pg, { type PoolClient } from 'pg';
 import type { DatabaseService } from '../src/database/database.service.js';
 import { BusinessAuditService } from '../src/modules/audit/business-audit.service.js';
 import { PLANNING_RELATIONS, PlanningSchemaError, readPlanningSchema } from '../src/modules/planning/planning-schema.js';
+import { hasLiveAssignmentDependency } from '../src/modules/planning/planning-dependencies.js';
 import { PLANNING_GUARD_TABLES } from '../src/modules/workforce/planning-guard/planning-table-classification.js';
 import { assertNoPlanningDependency } from '../src/modules/workforce/project-assignments/planning-dependency-guard.js';
 import { ProjectAssignmentsService } from '../src/modules/workforce/project-assignments/project-assignments.service.js';
@@ -32,10 +33,11 @@ import {
   createSyntheticProject,
   createSyntheticTenant,
   inTransaction,
-  openLocalTestPool,
   removeSyntheticTenants,
   type TestPool,
 } from './helpers/synthetic-tenants.js';
+import { insertDuty, insertMembership, insertPlan } from './helpers/planning-fixtures.js';
+import { isolatedPlanningDatabase } from './helpers/isolated-planning-database.js';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
@@ -47,6 +49,7 @@ const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations/', import.meta.url))
 const EXTRA_NAMES = PLANNING_GUARD_TABLES.filter((name) => !(PLANNING_RELATIONS as readonly string[]).includes(name));
 
 let pool: TestPool | undefined;
+let isolated: Awaited<ReturnType<typeof isolatedPlanningDatabase>>;
 const createdCompanies: string[] = [];
 
 function db(): TestPool {
@@ -98,24 +101,34 @@ async function inRolledBackTransaction(work: (client: PoolClient) => Promise<voi
 async function withClient<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await db().connect();
   try {
+    await client.query('BEGIN');
     return await work(client);
   } finally {
+    await client.query('ROLLBACK');
     client.release();
   }
 }
 
-beforeAll(() => {
-  pool = openLocalTestPool(6);
-});
+beforeAll(async () => {
+  isolated = await isolatedPlanningDatabase();
+  pool = isolated.pool;
+}, 30_000);
 
 afterAll(async () => {
   if (pool) {
     await removeSyntheticTenants(pool, createdCompanies);
-    await pool.end();
+    await isolated.close();
   }
 });
 
 describe('SP-11 — planning schema signature, real PostgreSQL', () => {
+  it.each(['public', 'pg_catalog, public', 'pg_catalog'])('constraint signatures are independent of search_path = %s', async (searchPath) => {
+    await inRolledBackTransaction(async (client) => {
+      await client.query(`SET LOCAL search_path = ${searchPath}`);
+      expect(await readPlanningSchema(client)).toMatchObject({ state: 'COMPLETE' });
+    });
+  });
+
   it('the migrated database is COMPLETE: exactly the three canonical relations exist and both guards pass without dependencies', async () => {
     const found = await db().query<{ schema: string; name: string; kind: string }>(
       `SELECT ns.nspname AS schema, c.relname AS name, c.relkind::text AS kind
@@ -205,11 +218,80 @@ describe('SP-11 — planning schema signature, real PostgreSQL', () => {
     });
   });
 
-  it('a relation in a temporary schema of the session does not count (reserved pg_ schemas are system schemas)', async () => {
+  it('a planning name in the session temporary schema fails closed', async () => {
     await inRolledBackTransaction(async (client) => {
       await client.query('CREATE TEMPORARY TABLE plan_entry (id uuid) ON COMMIT DROP');
-      expect(await guardOutcomes(client)).toEqual(OPEN);
+      expect(await guardOutcomes(client)).toEqual(INVALID);
     });
+  });
+
+  it.each(PLANNING_RELATIONS)('%s: either RLS flag, policies, user triggers and disabled FK triggers are INVALID', async (table) => {
+    for (const ddl of [
+      `ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY`,
+      `ALTER TABLE public.${table} FORCE ROW LEVEL SECURITY`,
+      `CREATE POLICY sp79_hidden ON public.${table} USING (false)`,
+      `CREATE FUNCTION public.sp79_suppress() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$;
+       CREATE TRIGGER sp79_suppress BEFORE INSERT ON public.${table} FOR EACH ROW EXECUTE FUNCTION public.sp79_suppress()`,
+      `CREATE FUNCTION public.sp79_suppress() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$;
+       CREATE TRIGGER sp79_suppress BEFORE INSERT ON public.${table} FOR EACH ROW EXECUTE FUNCTION public.sp79_suppress();
+       ALTER TABLE public.${table} DISABLE TRIGGER sp79_suppress`,
+      `ALTER TABLE public.${table} DISABLE TRIGGER ALL`,
+      `CREATE RULE sp79_hide_insert AS ON INSERT TO public.${table} DO INSTEAD NOTHING`,
+    ]) {
+      await inRolledBackTransaction(async (client) => {
+        await client.query(ddl);
+        expect(await guardOutcomes(client), ddl).toEqual(INVALID);
+      });
+    }
+    await withClient(async (client) => expect(await guardOutcomes(client)).toEqual(OPEN));
+  });
+
+  it('unlogged tables and inheritance in either direction are INVALID even with canonical columns/constraints', async () => {
+    for (const ddl of [
+      'ALTER TABLE public.plan_assignments SET UNLOGGED',
+      'CREATE TABLE public.sp79_child () INHERITS (public.duties)',
+      'CREATE TABLE public.sp79_parent (); ALTER TABLE public.plan_assignments INHERIT public.sp79_parent',
+    ]) {
+      await inRolledBackTransaction(async (client) => {
+        await client.query(ddl);
+        expect(await guardOutcomes(client), ddl).toEqual(INVALID);
+      });
+    }
+  });
+
+  it.each(PLANNING_RELATIONS)('temporary %s cannot shadow a real dependency, even with an explicit pg_temp search path', async (table) => {
+    await inRolledBackTransaction(async (client) => {
+      await client.query(`CREATE TEMP TABLE ${table} (LIKE public.${table}) ON COMMIT DROP`);
+      await client.query('SET LOCAL search_path = pg_temp, public');
+      expect((await client.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0].n).toBe(0);
+      expect(await guardOutcomes(client)).toEqual(INVALID);
+    });
+  });
+
+  it('RLS can hide a real membership from a restricted role, but the guard refuses to interpret it as no dependency', async () => {
+    const tenant = await createSyntheticTenant(db(), 'SP79 RLS');
+    createdCompanies.push(tenant.companyId);
+    const employee = await createSyntheticEmployee(db(), tenant.employee);
+    const project = await createSyntheticProject(db(), tenant.companyId, 'SP79 RLS');
+    const planId = await insertPlan(db(), tenant.companyId, project.projectId, '2027-01-01');
+    const dutyId = await insertDuty(db(), { companyId: tenant.companyId, projectId: project.projectId, planId,
+      month: '2027-01-01', dutyDate: '2027-01-10', startsAt: '2027-01-10T05:00:00Z', endsAt: '2027-01-10T17:00:00Z' });
+    await insertMembership(db(), tenant.companyId, dutyId, employee.employeeId);
+    const tuple = { employeeId: employee.employeeId, projectId: project.projectId, monthStart: '2027-01-01' };
+    await inRolledBackTransaction(async (client) => {
+      expect(await hasLiveAssignmentDependency(client, tenant.companyId, [tuple])).toBe(true);
+      const role = `sp79_rls_${suffix()}`;
+      await client.query(`CREATE ROLE ${role} NOLOGIN;
+        GRANT USAGE ON SCHEMA public TO ${role};
+        GRANT SELECT ON public.monthly_plans, public.duties, public.plan_assignments TO ${role};
+        ALTER TABLE public.plan_assignments ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE public.plan_assignments FORCE ROW LEVEL SECURITY;
+        CREATE POLICY sp79_deny ON public.plan_assignments USING (false);
+        SET LOCAL ROLE ${role}`);
+      expect((await client.query('SELECT count(*)::int AS n FROM public.plan_assignments WHERE company_id = $1', [tenant.companyId])).rows[0].n).toBe(0);
+      await expect(hasLiveAssignmentDependency(client, tenant.companyId, [tuple])).rejects.toBeInstanceOf(PlanningSchemaError);
+    });
+    await withClient(async (client) => expect(await hasLiveAssignmentDependency(client, tenant.companyId, [tuple])).toBe(true));
   });
 });
 
@@ -249,9 +331,13 @@ describe('SP-11 — ABSENT schema and committed versus uncommitted DDL across se
       // DDL on a canonical table needs ACCESS EXCLUSIVE, which waits for readers of that
       // table; once committed, the next transaction refuses the altered schema.
       await sessionB.query('DROP TABLE public.plan_entry');
+      await sessionA.query('BEGIN');
       expect(await guardOutcomes(sessionA), 'extra relation dropped again').toEqual(OPEN);
+      await sessionA.query('COMMIT');
       await sessionB.query('DROP INDEX uq_duties__live_slot');
+      await sessionA.query('BEGIN');
       expect(await guardOutcomes(sessionA), 'committed index drop').toEqual(INVALID);
+      await sessionA.query('ROLLBACK');
     } finally {
       await sessionA.end().catch(() => {});
       await sessionB.end().catch(() => {});

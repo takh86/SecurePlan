@@ -531,8 +531,10 @@ describe('SP-08b — tenant isolation, integrity, rollback and planning guard', 
     });
     try {
       // Migration 0011 is applied: the real D3 check runs and finds no saved duty.
+      await probe.query('BEGIN');
       await expect(assertNoSavedDutiesForConfiguration(probe, tenantA.companyId, north.projectId, '2027-01-01'))
         .resolves.toBeUndefined();
+      await probe.query('ROLLBACK');
       for (const table of PLANNING_GUARD_TABLES.filter((name) => !(PLANNING_RELATIONS as readonly string[]).includes(name))) {
         // DDL inside a transaction is invisible to every other connection and rolled back afterwards.
         await probe.query('BEGIN');

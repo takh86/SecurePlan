@@ -49,8 +49,8 @@ export async function hasLiveAssignmentDependency(
     const found = await exists(
       client,
       `SELECT 1
-       FROM plan_assignments AS pa
-       JOIN duties AS d ON d.company_id = pa.company_id AND d.id = pa.duty_id
+       FROM public.plan_assignments AS pa
+       JOIN public.duties AS d ON d.company_id = pa.company_id AND d.id = pa.duty_id
        WHERE pa.company_id = $1 AND pa.employee_id = $2 AND pa.state = 'ACTIVE'
          AND d.removed_at IS NULL AND d.project_id = $3 AND d.planning_month = $4::date`,
       [companyId, tuple.employeeId, tuple.projectId, tuple.monthStart],
@@ -76,7 +76,7 @@ export async function hasLiveDutiesInConfigurationInterval(
   return exists(
     client,
     `SELECT 1
-     FROM duties AS d
+     FROM public.duties AS d
      WHERE d.company_id = $1 AND d.project_id = $2 AND d.removed_at IS NULL
        AND d.duty_date >= $3::date
        AND d.duty_date < coalesce(
@@ -97,7 +97,7 @@ export async function hasUnresolvedFutureDuties(
   await assertPlanningSchemaComplete(client);
   return exists(
     client,
-    `SELECT 1 FROM duties AS d
+    `SELECT 1 FROM public.duties AS d
      WHERE d.company_id = $1 AND d.project_id = $2 AND d.removed_at IS NULL
        AND d.ends_at > $3::timestamptz`,
     [companyId, projectId, evaluatedAt],
@@ -122,8 +122,8 @@ export async function hasNewlyExcludedFutureDuties(
   return exists(
     client,
     `SELECT 1
-     FROM plan_assignments AS pa
-     JOIN duties AS d ON d.company_id = pa.company_id AND d.id = pa.duty_id
+     FROM public.plan_assignments AS pa
+     JOIN public.duties AS d ON d.company_id = pa.company_id AND d.id = pa.duty_id
      WHERE pa.company_id = $1 AND pa.employee_id = $2 AND pa.state = 'ACTIVE'
        AND d.removed_at IS NULL AND d.ends_at > $3::timestamptz
        AND $4::date IS NOT NULL AND $4::date <= d.duty_date
@@ -146,8 +146,8 @@ export async function hasFutureDutyMemberships(
   return exists(
     client,
     `SELECT 1
-     FROM plan_assignments AS pa
-     JOIN duties AS d ON d.company_id = pa.company_id AND d.id = pa.duty_id
+     FROM public.plan_assignments AS pa
+     JOIN public.duties AS d ON d.company_id = pa.company_id AND d.id = pa.duty_id
      WHERE pa.company_id = $1 AND pa.employee_id = $2 AND pa.state = 'ACTIVE'
        AND d.removed_at IS NULL AND d.ends_at > $3::timestamptz`,
     [companyId, employeeId, evaluatedAt],
