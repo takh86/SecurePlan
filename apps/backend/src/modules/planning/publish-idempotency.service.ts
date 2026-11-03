@@ -16,6 +16,7 @@ import { toMonthlyPlanResponse, type MonthlyPlanRow } from './monthly-plan.mappe
 import type { MonthlyPlanResponse } from './monthly-plan.types.js';
 import { PLANNING_WRITER_TIMEOUTS } from './planning-locks.js';
 import { assertSessionInTransaction } from '../../auth/session.service.js';
+import { reservationLock, lockAttempt } from './idempotency-lock.js';
 
 const OPERATION = 'INITIAL_PUBLISH';
 const digest = (value: string) => createHash('sha256').update(value).digest();
@@ -56,8 +57,7 @@ export class PublishIdempotencyService implements OnModuleInit {
     // can only cause a temporary in-progress refusal, never cross-scope replay.
     const lockId = digest(JSON.stringify(['publish-reservation-v1', ...scope.slice(0, 3), keyHash.toString('hex')])).readBigInt64BE().toString();
     const reserveLock = async (client: PoolClient) => {
-      const { rows: [row] } = await client.query<{ held: boolean }>('SELECT pg_try_advisory_xact_lock($1::bigint) AS held', [lockId]);
-      if (!row.held) inProgress();
+      await reservationLock(client, lockId);
     };
     const enter = async (client: PoolClient) => {
       await client.query(PLANNING_WRITER_TIMEOUTS);
@@ -116,13 +116,7 @@ export class PublishIdempotencyService implements OnModuleInit {
       return await this.database.withTransaction(async (client) => {
         await enter(client);
         await reserveLock(client);
-        const locked = await client.query<Claim>(
-          `SELECT id, attempt_id FROM public.idempotency_records
-           WHERE company_id = $1 AND actor_account_id = $2 AND operation = $3 AND key_hash = $4
-             AND id = $5 AND attempt_id = $6 AND state = 'IN_PROGRESS' FOR UPDATE`,
-          [...scope, claim.id, claim.attempt_id],
-        );
-        if (locked.rowCount !== 1) inProgress();
+        await lockAttempt(client, tenant.companyId, tenant.accountId, OPERATION, keyHash, claim.id, claim.attempt_id);
         const result = await publish(client);
         const completed = await client.query(
           `WITH moment AS (SELECT clock_timestamp() AS at)

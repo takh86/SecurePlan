@@ -16,6 +16,7 @@ import {
 } from '../errors/error-contract.js';
 import type { CorrelatedRequest } from '../middleware/correlation-id.middleware.js';
 import { EMPLOYMENT_PERIOD_CONFLICT, safeEmploymentPeriodConflict } from '../errors/employment-period-conflict.js';
+import { safeSaveConflict } from '../../modules/planning/employee-month.contract.js';
 
 type ErrorResolution = { status: number; code: string };
 
@@ -104,6 +105,7 @@ function safeDetail(status: number, code: string): string {
   if (code === 'VALIDATION_FAILED' || code === 'UNKNOWN_FIELD') return 'One or more fields are invalid.';
   if (status === 404) return 'The requested resource was not found.';
   if (code === 'PLAN_CONCURRENT_MODIFICATION') return 'The plan has changed. Reload the current state and try again.';
+  if (code === 'EMPLOYEE_MONTH_SAVE_CONFLICT') return 'The employee month could not be saved. Review the conflicts.';
   if (code === 'PROJECT_CALENDAR_CONCURRENT_MODIFICATION') return 'The calendar has changed. Reload the current state and review the change again.';
   if (code === 'PROJECT_CALENDAR_DEPENDENCY_CONFLICT') return 'The change would close a saved duty date. Correct or remove the duty explicitly, or choose a later effective month.';
   if (code === 'PROJECT_CALENDAR_MISSING') return 'Explicitly configure the project operating calendar before scheduling or publishing.';
@@ -147,6 +149,10 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     const response = http.getResponse<Response>();
     let { status, code } = resolveError(exception);
     const calendarPath = /^\/api\/v1\/projects\/[^/]+\/operating-calendar(?:\/|$)/i.test(request.path);
+    const employeeMonthPath = /^\/api\/v1\/monthly-plans\/[^/]+\/employee-months(?:\/|$)/i.test(request.path);
+    const monthConflict = ['EMPLOYEE_MONTH_SAVE_CONFLICT','PLAN_CONCURRENT_MODIFICATION'].includes(code) && exception instanceof HttpException
+      ? safeSaveConflict(exception.getResponse()) : undefined;
+    if (code === 'EMPLOYEE_MONTH_SAVE_CONFLICT' && monthConflict === undefined) { status=500;code='INTERNAL_ERROR'; }
     if (calendarPath && code === 'VALIDATION_FAILED') code = 'PROJECT_CALENDAR_INVALID';
     const conflict = code === EMPLOYMENT_PERIOD_CONFLICT && exception instanceof HttpException
       ? safeEmploymentPeriodConflict(exception.getResponse()) : undefined;
@@ -163,7 +169,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       response.setHeader('Cache-Control', 'no-store');
     }
     if (conflict !== undefined) response.setHeader('Cache-Control', 'no-store');
-    if (calendarPath) {
+    if (calendarPath || employeeMonthPath) {
       response.setHeader('Cache-Control', 'no-store');
     }
 
@@ -177,6 +183,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       correlationId,
       ...(errors !== undefined ? { errors } : {}),
       ...(conflict !== undefined ? conflict : {}),
+      ...(monthConflict !== undefined ? monthConflict : {}),
     };
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {

@@ -312,8 +312,12 @@ The implementation separates the consistent projection, operation-specific
 receipt codec and atomic command; shares I-tier admission/fencing with Publish;
 and keeps INITIAL_PUBLISH hashes and result reconstruction unchanged.
 Replay defaults: 86400 seconds; abandoned claim: 300 seconds, using existing
-validated idempotency settings. Cleanup is operator-owned bounded deletion of
-expired records under the same I lock. No operational cleanup job is introduced.
+validated idempotency settings. Explicit maintenance entry point
+`EmployeeMonthIdempotencyService.pruneExpired` requires current admin/session,
+and removes only that principal's expired A2 records (default 100, maximum 1000
+candidates), under each key's nonwaiting I lock and a fresh expiry predicate.
+Live writers are skipped, retained records and INITIAL_PUBLISH are untouched.
+No HTTP cleanup route, startup cleanup or operational job is introduced.
 
 Implementation-specific PostgreSQL/HTTP evidence, independent review,
 frontend/browser acceptance, human accessibility/security and stage/production

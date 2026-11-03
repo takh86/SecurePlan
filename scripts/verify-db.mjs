@@ -51,12 +51,20 @@ try {
     AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.project_operating_calendars'::regclass
       AND contype = 'u' AND pg_get_constraintdef(oid) = 'UNIQUE (company_id, project_id, effective_from_month)') AS valid`);
   if (!calendar.rows[0]?.valid) throw new Error("Missing operating calendar integrity catalogue");
+  const employeeMonth = await client.query(`SELECT
+    EXISTS (SELECT 1 FROM schema_migrations WHERE name = '0015_employee_month_save.sql')
+    AND (SELECT count(*)=4 FROM pg_attribute WHERE attrelid='public.idempotency_records'::regclass
+      AND attname IN ('context_plan_id','context_employee_id','result_json','result_schema_version') AND NOT attisdropped)
+    AND (SELECT count(*)=3 FROM pg_constraint WHERE conrelid='public.idempotency_records'::regclass
+      AND conname IN ('fk_idempotency_records__context_plan','fk_idempotency_records__context_employee','ck_idempotency_records__employee_month') AND convalidated) AS valid`);
+  if (!employeeMonth.rows[0]?.valid) throw new Error("Missing employee-month receipt integrity catalogue");
   console.log("PostgreSQL connection and foundation migration verified.");
   console.log("SP-10 migration, revision and unique indexes verified.");
   console.log("SP-11 planning relations and live unique indexes verified.");
   console.log("SP-12 duty edit-lease relation and uniqueness verified.");
   console.log("SP-13 publish idempotency relation and scope uniqueness verified.");
   console.log("A1 operating calendar relation and project/month uniqueness verified.");
+  console.log("A2 employee-month context FKs and bounded receipt constraint verified.");
 } catch {
   console.error(
     "Database verification failed. Check connection and run migrations.",

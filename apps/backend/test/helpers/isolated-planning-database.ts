@@ -6,7 +6,7 @@ import pg from 'pg';
 import { openLocalTestPool } from './synthetic-tenants.js';
 
 /** Called after the mandatory disposable-target globalSetup, on that same cluster. */
-export async function isolatedPlanningDatabase() {
+export async function isolatedPlanningDatabase(beforeMigration?: (pool: pg.Pool, filename: string) => Promise<void>) {
   const admin = openLocalTestPool(2);
   // This identifier is generated here, never supplied by the environment/user.
   const name = `sp79_schema_${randomBytes(10).toString('hex')}`;
@@ -40,6 +40,7 @@ export async function isolatedPlanningDatabase() {
     const client = await pool.connect();
     try {
       for (const file of readdirSync(dir).filter((file) => /^\d+.*\.sql$/.test(file)).sort()) {
+        await beforeMigration?.(pool, file);
         await client.query('BEGIN');
         await client.query(readFileSync(`${dir}/${file}`, 'utf8'));
         await client.query('COMMIT');
