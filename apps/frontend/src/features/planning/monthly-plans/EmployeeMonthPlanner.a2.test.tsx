@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '../../../shared/api/api-error';
+import { createSessionMemory, SessionMemoryContext, type SessionMemory } from '../../auth/session-memory';
 import { fullName } from '../../employees/employee-types';
 import type { Project } from '../../projects/project-types';
 import { EmployeeMonthWorkspace } from './EmployeeMonthWorkspace';
@@ -41,10 +42,10 @@ const EXAMPLE: MonthSpec = {
   night: { 4: { dutyId: OWN_NIGHT, version: 2, role: 'EMPLOYEE' } },
 };
 
-type Options = { duties?: Duty[]; project?: Project };
+type Options = { duties?: Duty[]; project?: Project; memory?: SessionMemory; server?: ReturnType<typeof employeeMonthServer> };
 
 async function renderWorkspace(spec: MonthSpec = EXAMPLE, options: Options = {}) {
-  const server = employeeMonthServer(spec);
+  const server = options.server ?? employeeMonthServer(spec);
   const month = spec.month ?? '2026-12';
   const monthStart = `${month}-01`;
   const duties = options.duties ?? [];
@@ -52,7 +53,8 @@ async function renderWorkspace(spec: MonthSpec = EXAMPLE, options: Options = {})
     .find((row) => row.key === MIRA_ID.toLowerCase())!;
   const onReloadDuties = vi.fn();
   const onEditStateChange = vi.fn();
-  render(
+  const view = render(
+    <SessionMemoryContext value={options.memory ?? null}>
     <EmployeeMonthWorkspace
       api={server.api}
       plan={plan({ monthStart, status: server.model.plan.status, publishedAt: server.model.plan.publishedAt })}
@@ -64,10 +66,11 @@ async function renderWorkspace(spec: MonthSpec = EXAMPLE, options: Options = {})
       onReloadDuties={onReloadDuties}
       dutiesReloading={false}
       onEditStateChange={onEditStateChange}
-    />,
+    />
+    </SessionMemoryContext>,
   );
   await screen.findByRole('grid');
-  return { server, onReloadDuties, onEditStateChange, user: userEvent.setup() };
+  return { server, onReloadDuties, onEditStateChange, user: userEvent.setup(), view };
 }
 
 function dateButton(day: number) {
@@ -115,6 +118,55 @@ async function alertTitled(name: string | RegExp) {
 }
 
 describe('#88 A2 — one atomic save of the complete month', () => {
+  const principal = { accountId: 'actor-a', companyId: 'company-a', role: 'COMPANY_ADMIN' as const, email: 'a@example.invalid' };
+
+  it('hides a suspended draft, restores it only after a fresh read and requires explicit reconciliation', async () => {
+    const boundary = createSessionMemory();
+    const first = await renderWorkspace(EXAMPLE, { memory: boundary.activate(principal) });
+    await paint(first.user, 'Frei', [8]);
+    boundary.suspend();
+    first.view.unmount();
+    expect(screen.queryByRole('grid')).toBeNull();
+    // Another administrator changed the same duty while the session was absent.
+    const server = employeeMonthServer({ ...EXAMPLE, day: { ...EXAMPLE.day, 8: { dutyId: LEAD_DAY, version: 7, role: 'EMPLOYEE' } } });
+    await renderWorkspace(EXAMPLE, { memory: boundary.activate(principal), server });
+    expect(server.reads()).toHaveLength(1);
+    expect(stateOf(8)).toBe('Frei (nicht eingeplant)');
+    expect(saveNote()).toMatch(/Entscheiden Sie zuerst/);
+    expect(server.saves()).toHaveLength(0);
+  });
+
+  it('retains an uncertain exact intent across login and recovers by lookup without another save', async () => {
+    const boundary = createSessionMemory();
+    const first = await renderWorkspace(EXAMPLE, { memory: boundary.activate(principal) });
+    first.server.loseNextSave();
+    await paint(first.user, 'Tag', [5]);
+    await first.user.click(saveButton());
+    await alertTitled('Ergebnis unbekannt');
+    const sent = first.server.saves()[0];
+    boundary.suspend();
+    first.view.unmount();
+    const second = await renderWorkspace(EXAMPLE, { memory: boundary.activate(principal), server: first.server });
+    await alertTitled('Ergebnis unbekannt');
+    expect(saveNote()).toMatch(/zuerst das Ergebnis/);
+    await second.user.click(screen.getByRole('button', { name: 'Ergebnis abfragen' }));
+    await waitFor(() => expect(first.server.lookups()).toHaveLength(1));
+    expect(first.server.lookups()[0].idempotencyKey).toBe(sent.idempotencyKey);
+    expect(first.server.saves()).toHaveLength(1);
+  });
+
+  it.each([{ accountId: 'actor-b' }, { companyId: 'company-b' }, { role: 'EMPLOYEE' as const }])('never restores another principal’s selection: %j', async (change) => {
+    const boundary = createSessionMemory();
+    const first = await renderWorkspace(EXAMPLE, { memory: boundary.activate(principal) });
+    await paint(first.user, 'Tag', [5]);
+    boundary.suspend();
+    first.view.unmount();
+    const second = await renderWorkspace(EXAMPLE, { memory: boundary.activate({ ...principal, ...change }) });
+    expect(stateOf(5)).toBe('Frei (nicht eingeplant)');
+    expect(saveNote()).toBe('Es gibt keine ungespeicherten Änderungen.');
+    expect(second.server.saves()).toHaveLength(0);
+  });
+
   it('loads the month, saves it in ONE request with every precondition of the read, then re-reads it', async () => {
     const { server, user, onReloadDuties, onEditStateChange } = await renderWorkspace();
     expect(screen.queryByText(/Vorschau/)).toBeNull();

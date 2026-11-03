@@ -16,6 +16,7 @@ import { createProjectsApi } from '../../projects/projects-api';
 import { createShiftConfigurationApi } from '../../projects/shift-configuration-api';
 import { MonthlyPlanPage, type PlanPageApis } from './MonthlyPlanPage';
 import { employeeMonthServer } from './employee-month.test-support';
+import { renderPlanning } from './monthly-planning-render.test-support';
 import { createMonthlyPlansApi } from './monthly-plans-api';
 import { JONAS_ID, MIRA_ID, PLAN_ID, duty, member, plan, planningCompany } from './monthly-planning.test-support';
 
@@ -55,6 +56,23 @@ function dateButton(day: number) {
 }
 
 describe('#88 plan page — employee-month view with the A2 port', () => {
+  it('constructs the live adapter in the production section and sends one atomic command', async () => {
+    const company = planningCompany({ plans: [plan()] });
+    const a2 = employeeMonthServer();
+    const { requests } = renderPlanning(PLAN_PATH, request => request.path.includes('/employee-months/') ? a2.handler(request) : company.handler(request));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('radio', { name: /Monat einer Person planen/ }));
+    await screen.findByRole('grid');
+    expect(screen.queryByText('Vorschau')).toBeNull();
+    await user.click(within(screen.getByRole('group', { name: 'Eintragen als' })).getByRole('radio', { name: 'Tag' }));
+    await user.click(dateButton(5));
+    await user.click(screen.getByRole('button', { name: 'Monat speichern' }));
+    await waitFor(() => expect(a2.log.commits).toBe(1));
+    const writes = requests.filter(r => r.method !== 'GET');
+    expect(writes).toHaveLength(1);
+    expect(writes[0].path).toMatch(/\/employee-months\/[^/]+\/save$/);
+    expect((writes[0].body as { days: unknown[] }).days).toHaveLength(31);
+  });
   it('is no preview: plans on the A2 read, saves once, stays on the person and offers the next one', async () => {
     const user = userEvent.setup();
     const { a2, session } = renderPage();

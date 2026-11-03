@@ -1,10 +1,34 @@
 // @vitest-environment jsdom
 // @vitest-environment-options {"url":"https://localhost:8443/monatsplanung"}
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { RouterProvider, createMemoryRouter } from 'react-router';
 import userEvent from '@testing-library/user-event';
 import { JONAS_ID, LEA_ID, MIRA_ID, PAUL_ID, PLAN_ID, duty, member, plan, planningCompany } from './monthly-planning.test-support';
-import { renderPlanning } from './monthly-planning-render.test-support';
+import { fakeSessionApi, type Handler } from '../../employees/employees.test-support';
+import { createEmployeesApi } from '../../employees/employees-api';
+import { createProjectsApi } from '../../projects/projects-api';
+import { createProjectAssignmentsApi } from '../../projects/project-assignments-api';
+import { createShiftConfigurationApi } from '../../projects/shift-configuration-api';
+import { createMonthlyPlansApi } from './monthly-plans-api';
+import { MonthlyPlanPage } from './MonthlyPlanPage';
+
+// Explicitly exercise the optional-port preview fallback. The production
+// section now constructs the live adapter (covered separately).
+function renderPlanning(path: string, handler: Handler) {
+  const fake = fakeSessionApi(handler);
+  const apis = {
+    plans: createMonthlyPlansApi(fake.api), projects: createProjectsApi(fake.api),
+    employees: createEmployeesApi(fake.api), assignments: createProjectAssignmentsApi(fake.api),
+    shiftConfigurations: createShiftConfigurationApi(fake.api),
+  };
+  const router = createMemoryRouter([
+    { path: '/monatsplanung', element: <main>Übersicht</main> },
+    { path: '/monatsplanung/:planId', element: <main><MonthlyPlanPage planId={PLAN_ID} basePath="/monatsplanung" apis={apis} timeZone="Europe/Berlin" publishSlot={() => null} /></main> },
+  ], { initialEntries: [path] });
+  render(<RouterProvider router={router} />);
+  return { ...fake, location: () => `${router.state.location.pathname}${router.state.location.search}` };
+}
 
 afterEach(() => cleanup());
 

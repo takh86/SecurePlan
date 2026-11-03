@@ -373,6 +373,7 @@ export function employeeMonthServer(spec: MonthSpec = {}) {
   const reads = () => session.requests.filter((request) => request.method === 'GET' && !request.path.endsWith('/save-result'));
 
   return {
+    handler: handle,
     api: createEmployeeMonthApi(session.api),
     requests: session.requests,
     saves,
