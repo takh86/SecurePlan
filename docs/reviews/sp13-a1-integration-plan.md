@@ -1,8 +1,9 @@
 # A1 (#92) + SP-13 First Publish UI (#93): combined integration test plan
 
-Date: 2026-11-03. Status: **plan only, NOT_RUN.** Nothing here is evidence. Do not report
-combined A1/browser acceptance until these cases have run against the integrated code and a
-migrated 0014 database, with the evidence listed below.
+Date: 2026-11-03. Status: **executed** on the integrated tree (A1 #92 merged as `7d4b2a8`,
+merged into #93). The per-case results, deviations from this plan and NOT_RUN items are in
+[`sp13-a1-integration-evidence.md`](sp13-a1-integration-evidence.md). This file stays the plan
+as written before the run; §4 F-A1-1 has since been implemented.
 
 Inputs: Draft PR #92 (A1 operating calendar and cross-writer guards, reviewed head `512b4d3`,
 current head `9e2f5fb` with the development runbook `docs/development-a1-rollout.md`), Draft PR

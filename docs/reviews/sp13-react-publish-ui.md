@@ -205,9 +205,10 @@ evidence outside Git.
 - Exact-head GitHub CI is recorded on the PR, not here (`dcb7ac5`: push 41591138515 and
   pull_request 41591338408 passed; CI has no browser job).
 - `scripts/activation-demo.test.mjs` — its guard accepts only the development DB (CI covers it).
-- **Combined A1 (#92) + #93 integration** — not run; see
-  [`sp13-a1-integration-plan.md`](sp13-a1-integration-plan.md). Nothing in this document is
-  evidence for the integrated code or the 0014 schema.
+- The sections above are evidence for #93 **before** A1 (migration 0013). The combined A1 + #93
+  run (merged tree, 0014, both browser harnesses, full E2E) is recorded separately in
+  [`sp13-a1-integration-evidence.md`](sp13-a1-integration-evidence.md), including its own NOT_RUN
+  items.
 - Screen readers (NVDA/JAWS/VoiceOver) — semantics checked through roles, names, focus and live
   regions in Chrome and jsdom only.
 - Browsers other than Chrome 156 (Firefox/Safari dialog and Escape behaviour), real mobile devices.
@@ -219,15 +220,13 @@ evidence outside Git.
 
 ## Integration dependencies and limitations
 
-- **#90 calendar and exclusive-day guards are not on `main`.** They are in Draft PR #92 (A1),
-  which is unmerged. On current `main`, publication re-validates only the existing SP-11/SP-12
-  rules (project active, configuration, employee active/employed/assigned/eligible/unavailable,
-  overlap). The UI adds no client-side calendar or exclusivity rule and must not be read as
-  covering them. **#93 must not be merged before the A1 integration gate**: it would expose a
-  working publish action on a server that does not enforce the approved #90 invariants. The gate
-  is to merge A1 with a controlled calendar setup, rebase #93 and run the combined browser check
-  of the integration plan. **The overall planning/publishing system is not ready for staging**
-  (the #51 operational gates named in #86 also remain).
+- **A1 (#92) is merged** (`7d4b2a8`) and merged into this branch (`1f2a7d2`). The server enforces
+  the #90 calendar and same-date DAY/NIGHT rules for duty writers and First Publish. The UI adds no
+  client-side substitute: since F-A1-1 (`b6ce3c4`) it only explains the server's refusals in German.
+  The combined acceptance is in `sp13-a1-integration-evidence.md`. There is no calendar admin UI
+  (F-A1-2); calendars are set through the admin API following `docs/development-a1-rollout.md`.
+  **The overall planning/publishing system is not ready for staging** (the #51 operational gates
+  named in #86 also remain).
 - PR #91's employee-month "Monat speichern" remains unconnected; its atomic save contract (#88)
   is not approved.
 - Versionless publish: the server publishes the state at commit time, not a guaranteed reviewed
