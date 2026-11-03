@@ -325,13 +325,44 @@ describe('SP14 real HTTP + PG ownership H1-H26/C1-C4', () => {
     await insertPlan(pool, a.companyId, other.projectId, MONTH, {
       byAccountId: a.admin.accountId,
     });
-    await insertPlan(pool, b.companyId, alien.projectId, MONTH, {
-      byAccountId: b.admin.accountId,
-    });
-    expect((await read().expect(200)).body).toEqual(before);
-    expect((await read(undefined, foreign).expect(403)).body.code).toBe(
-      'ACTION_FORBIDDEN',
+    const alienEmployee = await createSyntheticEmployee(pool, b.employee);
+    const alienPlan = await insertPlan(
+      pool,
+      b.companyId,
+      alien.projectId,
+      MONTH,
+      { byAccountId: b.admin.accountId },
     );
+    const alienDuty = await insertDuty(pool, {
+      companyId: b.companyId,
+      projectId: alien.projectId,
+      planId: alienPlan,
+      month: MONTH,
+      dutyDate: '2026-12-02',
+      startsAt: '2026-12-02T05:00:00Z',
+      endsAt: '2026-12-02T17:00:00Z',
+    });
+    await insertMembership(
+      pool,
+      b.companyId,
+      alienDuty,
+      alienEmployee.employeeId,
+    );
+    await insertProjectAssignment(
+      pool,
+      b.companyId,
+      alienEmployee.employeeId,
+      alien.projectId,
+      MONTH,
+    );
+    expect((await read().expect(200)).body).toEqual(before);
+    const foreignRead = await read(undefined, foreign).expect(200);
+    expect(foreignRead.body.items[0].planId).toBe(alienPlan);
+    expect(
+      foreignRead.body.items[0].duties.map((d: { dutyId: string }) => d.dutyId),
+    ).toEqual([alienDuty]);
+    expect(foreignRead.text).not.toContain(duty);
+    expect((await read().expect(200)).text).not.toContain(alienDuty);
     await pool.query(
       "UPDATE plan_assignments SET state='REMOVED',removed_at=clock_timestamp() WHERE employee_id=$1",
       [own.employeeId],
@@ -449,6 +480,17 @@ describe('SP14 real HTTP + PG ownership H1-H26/C1-C4', () => {
     const result = await read(query).expect(400);
     expect(result.body.code).toBe(code);
     expect(result.headers['cache-control']).toBe('private, no-store');
+    if (query === 'monthStart=2026-13-01&employeeId=x') {
+      expect(
+        (await read('monthStart=2026-12-02&employeeId=x').expect(400)).body
+          .code,
+      ).toBe('UNKNOWN_FIELD');
+    }
+    if (query === 'monthStart[]=2026-12-01') {
+      expect(
+        (await read('monthStart%5B%5D=2026-12-01').expect(400)).body.code,
+      ).toBe('VALIDATION_FAILED');
+    }
   });
   it.each(['0001-01-01', '0099-01-01', '9999-12-01'])(
     'H17 accepts full-range %s',
@@ -706,15 +748,42 @@ describe('SP14 additional real writer, integrity and snapshot regressions', () =
       .set('Expected-Version', '1')
       .set('Edit-Lease-Token', lease.body.leaseToken)
       .send({
+        dutyDate: '2026-12-30',
+        shiftKind: 'DAY',
         assignments: [
           { employeeId: own.employeeId, dutyRole: 'SHIFT_LEAD' },
           { employeeId: coworker.employeeId, dutyRole: 'EMPLOYEE' },
         ],
       });
     expect([changed.status, changed.body.code]).toEqual([200, undefined]);
-    expect((await read().expect(200)).body.items[0].duties[0].dutyRole).toBe(
-      'SHIFT_LEAD',
-    );
+    expect((await read().expect(200)).body.items[0].duties[0]).toMatchObject({
+      dutyRole: 'SHIFT_LEAD',
+      dutyDate: '2026-12-30',
+      shiftKind: 'DAY',
+      startsAt: '2026-12-30T05:00:00Z',
+      endsAt: '2026-12-30T17:00:00Z',
+    });
+    for (const includeOwner of [false, true]) {
+      await request(app.getHttpServer())
+        .patch(path)
+        .set('Cookie', admin.cookie)
+        .set('Origin', ORIGIN)
+        .set('X-CSRF-Token', admin.csrf)
+        .set('Expected-Version', includeOwner ? '3' : '2')
+        .set('Edit-Lease-Token', lease.body.leaseToken)
+        .send({
+          assignments: [
+            ...(includeOwner
+              ? [{ employeeId: own.employeeId, dutyRole: 'EMPLOYEE' }]
+              : []),
+            { employeeId: coworker.employeeId, dutyRole: 'EMPLOYEE' },
+          ],
+        })
+        .expect(200);
+      expect((await read().expect(200)).body.items[0].duties).toHaveLength(
+        includeOwner ? 1 : 0,
+      );
+    }
     expect(
       (
         await pool.query('SELECT published_at FROM monthly_plans WHERE id=$1', [
