@@ -108,6 +108,44 @@ describe('SP-12 — edit and removal error texts', () => {
   });
 });
 
+describe('A1 (#90) — operating calendar and one-shift-per-day texts', () => {
+  const A1_CODES = ['PROJECT_CALENDAR_MISSING', 'PROJECT_CLOSED_WEEKDAY', 'EMPLOYEE_DAILY_SHIFT_CONFLICT'] as const;
+  const OUTCOME = { 'create-duty': 'Es wurde nichts gespeichert.', 'update-duty': 'Es wurde nichts geändert.', 'publish-plan': 'Der Plan wurde nicht veröffentlicht.' } as const;
+
+  it.each(Object.entries(OUTCOME))('%s: every A1 refusal has a German text that states its outcome and names no person, duty or date', (write, outcome) => {
+    for (const code of A1_CODES) {
+      const text = planningErrorText(http(409, code), write as keyof typeof OUTCOME);
+      expect(text, code).toBeDefined();
+      expect(text!.title, code).not.toBe('Konflikt');
+      expect(text!.description, code).toContain(outcome);
+      // Privacy: the server reports the first violated rule only; the text adds no person, duty, date or reason.
+      expect(`${text!.title} ${text!.description}`, code).not.toMatch(/Mira|Jonas|\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2}|krank|urlaub|abwesen|sick|leave/i);
+    }
+  });
+
+  it('a missing calendar never sends the admin to a page that does not exist (A1 ships no calendar UI)', () => {
+    for (const write of ['create-duty', 'update-duty', 'publish-plan'] as const) {
+      expect(planningErrorText(http(409, 'PROJECT_CALENDAR_MISSING'), write)!.description, write)
+        .toContain('Eine Seite zum Festlegen der Betriebstage gibt es in dieser Ausbaustufe noch nicht.');
+    }
+    expect(planningErrorText(http(409, 'PROJECT_CALENDAR_MISSING'), 'publish-plan')!.description).toContain('auch ein Plan ohne Dienste');
+  });
+
+  it('the start date decides for night duties; edits keep removal as the correction path', () => {
+    expect(planningErrorText(http(409, 'PROJECT_CLOSED_WEEKDAY'), 'create-duty')!.description).toContain('bei Nachtdiensten also der Starttag');
+    expect(planningErrorText(http(409, 'PROJECT_CLOSED_WEEKDAY'), 'update-duty')!.description).toContain('Austragen und Löschen schon');
+    expect(planningErrorText(http(409, 'PROJECT_CALENDAR_MISSING'), 'update-duty')!.description).toContain('Austragen und Löschen bleiben möglich');
+    expect(planningErrorText(http(409, 'EMPLOYEE_DAILY_SHIFT_CONFLICT'), 'update-duty')!.description).toContain('Austragen bleibt möglich');
+    expect(planningErrorText(http(409, 'EMPLOYEE_DAILY_SHIFT_CONFLICT'), 'publish-plan')!.description).toContain('aus einem der beiden Dienste aus');
+  });
+
+  it('untrusted (unknown-status) A1 codes keep the shared default text', () => {
+    for (const code of A1_CODES) expect(planningErrorText(http(409, null), 'create-duty'), code).toBeUndefined();
+    // Removal is not refused by the A1 guards: no removal text exists for them.
+    for (const code of A1_CODES) expect(planningErrorText(http(409, code), 'remove-duty'), code).toBeUndefined();
+  });
+});
+
 describe('SP-13 — First Publish error texts', () => {
   it('every definitive refusal says the plan was not published', () => {
     const codes: [number, KnownErrorCode][] = [

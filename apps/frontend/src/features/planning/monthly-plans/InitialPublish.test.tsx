@@ -341,6 +341,10 @@ describe('SP-13 First Publish — concurrent changes by other admins', () => {
     [409, 'EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT', 'Nicht für die Dienstart freigegeben', true],
     [409, 'DUTY_ASSIGNMENT_CONFLICT', 'Zeitliche Überschneidung', true],
     [409, 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST', 'Vorgang stimmt nicht überein', true],
+    // A1 (#90): calendar missing, a duty on a closed weekday, DAY and NIGHT on one date.
+    [409, 'PROJECT_CALENDAR_MISSING', 'Keine Betriebstage festgelegt', true],
+    [409, 'PROJECT_CLOSED_WEEKDAY', 'Dienst an einem geschlossenen Tag', true],
+    [409, 'EMPLOYEE_DAILY_SHIFT_CONFLICT', 'Tag- und Nachtdienst am selben Tag', true],
     [404, 'RESOURCE_NOT_FOUND', 'Monatsplan nicht verfügbar', true],
     [400, 'IDEMPOTENCY_KEY_INVALID', 'Veröffentlichung nicht angenommen', false],
     [403, 'ACTION_FORBIDDEN', 'Kein Zugriff', false],

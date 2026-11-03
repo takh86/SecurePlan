@@ -466,6 +466,10 @@ describe('SP-11 PR-2 / SP-12 A10 — add a duty from the focus panel', () => {
     ['DUTY_ASSIGNMENT_CONFLICT', 'Zeitliche Überschneidung'],
     ['EMPLOYEE_NOT_ASSIGNED_TO_PROJECT_MONTH', 'Nicht dem Projekt zugeordnet'],
     ['DUTY_TIME_RANGE_INVALID', 'Dienstzeit nicht bestimmbar'],
+    // A1 (#90): operating calendar and one shift per person, project and date.
+    ['PROJECT_CALENDAR_MISSING', 'Keine Betriebstage festgelegt'],
+    ['PROJECT_CLOSED_WEEKDAY', 'Kein Betriebstag'],
+    ['EMPLOYEE_DAILY_SHIFT_CONFLICT', 'Tag- und Nachtdienst am selben Tag'],
   ] as const)('a server refusal %s keeps every input and says nothing was saved', async (code, title) => {
     const server = planningCompany({ plans: [plan()] });
     server.fail((request) => (request.method === 'POST' ? httpError(409, code) : undefined));

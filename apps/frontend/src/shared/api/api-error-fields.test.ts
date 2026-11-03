@@ -90,6 +90,20 @@ describe('SP-07 — field errors and employee codes', () => {
     }
   });
 
+  it('A1: trusts the planning-writer calendar codes only with their catalogued 409', async () => {
+    for (const code of ['PROJECT_CALENDAR_MISSING', 'PROJECT_CLOSED_WEEKDAY', 'EMPLOYEE_DAILY_SHIFT_CONFLICT'] as const) {
+      expect((await parseApiError(problem(409, { code }))).code, code).toBe(code);
+      for (const status of [400, 404, 500]) {
+        expect((await parseApiError(problem(status, { code }))).code, `${code} ${status}`).toBeNull();
+      }
+    }
+    // The calendar-write codes are not consumed by any screen yet and stay untrusted.
+    for (const code of ['PROJECT_CALENDAR_INVALID', 'PROJECT_CALENDAR_CONCURRENT_MODIFICATION', 'PROJECT_CALENDAR_DEPENDENCY_CONFLICT']) {
+      const status = code === 'PROJECT_CALENDAR_INVALID' ? 400 : 409;
+      expect((await parseApiError(problem(status, { code }))).code, code).toBeNull();
+    }
+  });
+
   it('has German texts for every SP-07 code', () => {
     const codes = [
       'EMPLOYEE_CODE_ALREADY_EXISTS',

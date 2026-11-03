@@ -7,6 +7,13 @@
  * publication, project deactivation and employee change asserted below is produced through the UI by
  * one of two administrators and read back from PostgreSQL. No publication is ever written by SQL.
  *
+ * A1 (migration 0014): every project's operating calendar is configured ONLY through the authenticated
+ * admin API (GET, then PATCH with the read's exact/effective/next preconditions and the session's CSRF
+ * token, from inside the logged-in page) before any duty exists. No calendar row is ever written by SQL,
+ * and no weekday set is a default: each set below is an explicit synthetic example. Groups A1-* execute
+ * the I-cases of docs/reviews/sp13-a1-integration-plan.md that need no pre-A1 binary (I7 runs in
+ * scripts/sp13-a1-legacy-browser-acceptance.mjs).
+ *
  * The proxy observes publish requests (method, path, header presence, body length) and can drop a
  * committed answer (truncated body), refuse to forward a request (502) or fail one plan read (502).
  * It never alters a forwarded request. Idempotency keys stay in memory for hash comparison only.
@@ -50,14 +57,21 @@ const ids = {
   company: randomUUID(), foreignCompany: randomUUID(),
   admin: randomUUID(), secondAdmin: randomUUID(), foreignAdmin: randomUUID(),
   alphaAccount: randomUUID(), bravoAccount: randomUUID(), charlieAccount: randomUUID(),
-  alpha: randomUUID(), bravo: randomUUID(), charlie: randomUUID(),
+  deltaAccount: randomUUID(), echoAccount: randomUUID(),
+  alpha: randomUUID(), bravo: randomUUID(), charlie: randomUUID(), delta: randomUUID(), echo: randomUUID(),
   foreignProject: randomUUID(), foreignPlan: randomUUID(),
 };
 const PROJECTS = {
   hafen: 'Synthetic Objekt Hafen', nord: 'Synthetic Objekt Nord', sued: 'Synthetic Objekt Süd',
   west: 'Synthetic Objekt West', ost: 'Synthetic Objekt Ost', mitte: 'Synthetic Objekt Mitte',
   kai: 'Synthetic Objekt Kai', werft: 'Synthetic Objekt Werft',
+  // A1 groups: starts WITHOUT a calendar (MISSING) on purpose.
+  kalender: 'Synthetic Objekt Kalender',
 };
+/** Explicit synthetic example policy (ISO weekdays, Tuesday-Saturday); not a default or business rule. */
+const POLICY = [2, 3, 4, 5, 6];
+/** Every calendar write of this run, for the audit totals (codes and outcomes only). */
+const calendarWrites = [];
 const projectIds = Object.fromEntries(Object.keys(PROJECTS).map((key) => [key, randomUUID()]));
 const password = randomBytes(24).toString('base64url');
 const email = (label, id) => `browser-${label}-${id}@secureplan.invalid`;
@@ -189,6 +203,134 @@ async function openDialog(target) {
   return dialog;
 }
 
+// --- A1 helpers ---
+/**
+ * One authenticated API call from inside the logged-in page: same-origin credentials, the browser's
+ * own Origin, and the session's CSRF token read from GET /api/v1/me (as the app does after a reload).
+ * Only status, the problem `code`, Cache-Control and the parsed body are returned; nothing is logged.
+ */
+async function adminApi(target, method, path, body = null, extraHeaders = {}) {
+  return target.evaluate(async ([verb, url, payload, extra]) => {
+    const headers = { ...extra };
+    if (verb !== 'GET') {
+      const me = await fetch('/api/v1/me', { credentials: 'same-origin', cache: 'no-store' });
+      headers['X-CSRF-Token'] = me.headers.get('X-CSRF-Token') ?? '';
+    }
+    if (payload !== null) headers['Content-Type'] = 'application/json';
+    const response = await fetch(url, {
+      method: verb, credentials: 'same-origin', cache: 'no-store', headers,
+      body: payload === null ? undefined : JSON.stringify(payload),
+    });
+    let json = null;
+    try { json = await response.json(); } catch { /* empty body */ }
+    return {
+      status: response.status, cacheControl: response.headers.get('cache-control'),
+      replayed: response.headers.get('idempotency-replayed'), body: json, code: json && typeof json.code === 'string' ? json.code : null,
+    };
+  }, [method, path, body, extraHeaders]);
+}
+const calendarPath = (projectId) => `/api/v1/projects/${projectId}/operating-calendar`;
+async function readCalendar(target, projectId, month = `${MONTH}-01`) {
+  const read = await adminApi(target, 'GET', `${calendarPath(projectId)}?effectiveForMonth=${month}`);
+  assert.equal(read.status, 200, 'calendar read');
+  assert.equal(read.cacheControl, 'no-store');
+  return read.body;
+}
+/** PATCH with the given read's preconditions (or explicit stale ones). Records outcome/code for the totals. */
+async function patchCalendar(target, key, read, { weekdays, month = `${MONTH}-01`, bootstrap = false, projectId = projectIds[key] }) {
+  const answer = await adminApi(target, 'PATCH', calendarPath(projectId), {
+    effectiveFromMonth: month,
+    expectedExactVersion: read.exactVersion,
+    expectedEffective: read.effective ? { id: read.effective.id, version: read.effective.version } : null,
+    expectedNextEffectiveFromMonth: read.nextEffectiveFromMonth,
+    operatingWeekdays: weekdays,
+    bootstrap,
+  });
+  calendarWrites.push({ key, status: answer.status, outcome: answer.body?.outcome ?? null, code: answer.code });
+  assert.equal(answer.cacheControl, 'no-store', 'calendar answers are no-store');
+  return answer;
+}
+/** Explicit configuration of one project for the plan month: GET (must be MISSING), then PATCH. */
+async function configureCalendar(target, key, weekdays = POLICY) {
+  const read = await readCalendar(target, projectIds[key]);
+  assert.deepEqual([read.state, read.effective, read.exactVersion], ['MISSING', null, null], `${key}: no default calendar`);
+  const answer = await patchCalendar(target, key, read, { weekdays });
+  assert.equal(answer.status, 200, `${key}: calendar PATCH`);
+  assert.deepEqual([answer.body.outcome, answer.body.state, answer.body.effective.operatingWeekdays, answer.body.effective.version],
+    ['APPLIED', 'CONFIGURED', weekdays, 1]);
+  return answer.body;
+}
+async function calendarRows(projectId) {
+  return (await pool.query(
+    `SELECT id, to_char(effective_from_month, 'YYYY-MM-DD') AS month, weekday_mask, version::text AS version
+     FROM project_operating_calendars WHERE company_id = $1 AND project_id = $2 ORDER BY effective_from_month`,
+    [ids.company, projectId])).rows;
+}
+async function calendarAudits(companyId = ids.company) {
+  return (await pool.query(
+    `SELECT resource_id, old_values, new_values FROM audit_event
+     WHERE company_id = $1 AND action = 'PROJECT_OPERATING_CALENDAR_UPDATED' ORDER BY occurred_at`, [companyId])).rows;
+}
+async function dutyRows(planId) {
+  return (await pool.query(
+    `SELECT d.id, to_char(d.duty_date, 'YYYY-MM-DD') AS date, d.shift_kind AS kind, d.concurrency_version::text AS version,
+       ARRAY(SELECT pa.employee_id::text || ':' || pa.duty_function FROM plan_assignments pa
+             WHERE pa.company_id = d.company_id AND pa.duty_id = d.id AND pa.state = 'ACTIVE' ORDER BY pa.employee_id) AS members
+     FROM duties d WHERE d.company_id = $1 AND d.monthly_plan_id = $2 AND d.removed_at IS NULL ORDER BY d.duty_date, d.shift_kind`,
+    [ids.company, planId])).rows;
+}
+/** Closes a focus panel; unsaved input is discarded through the page's own guard. */
+async function closePanel(target, panel) {
+  if (await panel.count() === 0) return;
+  await panel.getByRole('button', { name: 'Schließen', exact: true }).first().click();
+  const leave = target.getByRole('button', { name: /^(Eingaben|Änderungen) verwerfen und wechseln$/ });
+  if (await leave.waitFor({ timeout: 2000 }).then(() => true, () => false)) await leave.click();
+  await panel.waitFor({ state: 'detached' });
+}
+const closeCreateForm = (target) => closePanel(target, region(target, 'Dienst hinzufügen'));
+/** Creates a duty through the "Dienst hinzufügen" form; returns the server's status and problem code. */
+async function submitDuty(target, { date, kind, people = [] }) {
+  await closeCreateForm(target);
+  await target.getByRole('button', { name: 'Dienst hinzufügen', exact: true }).click();
+  const form = region(target, 'Dienst hinzufügen');
+  await form.getByLabel('Datum').fill(date);
+  await form.getByRole('radio', { name: kind === 'DAY' ? 'Tagdienst' : 'Nachtdienst', exact: true }).check();
+  for (const person of people) await form.getByRole('checkbox', { name: new RegExp(`^${person} `) }).check();
+  const answer = target.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith('/entries'));
+  await form.getByRole('button', { name: 'Dienst anlegen', exact: true }).click();
+  const response = await answer;
+  const status = response.status();
+  const code = status >= 400 ? ((await response.json().catch(() => null))?.code ?? null) : null;
+  // A saved duty closes its panel (the notice takes focus); a refusal keeps the form and its input.
+  if (status === 201) await form.waitFor({ state: 'detached' });
+  return { form, status, code };
+}
+/** Opens the SP-12 editor of a duty from its day row and waits for the lease. */
+async function openEditor(target, dayCell, dayRegion, kindLabel, panelName) {
+  await grid(target).getByRole('button', { name: dayCell }).click();
+  await region(target, dayRegion).getByRole('button', { name: `${kindLabel} bearbeiten`, exact: true }).click();
+  const panel = region(target, panelName);
+  await panel.getByText('Für Sie reserviert').waitFor();
+  return panel;
+}
+async function saveEditor(target, panel) {
+  const answer = target.waitForResponse((r) => r.request().method() === 'PATCH' && /\/entries\/[^/]+$/.test(new URL(r.url()).pathname));
+  await panel.getByRole('button', { name: 'Änderungen speichern', exact: true }).click();
+  const response = await answer;
+  const status = response.status();
+  const code = status >= 400 ? ((await response.json().catch(() => null))?.code ?? null) : null;
+  if (status === 200) await panel.waitFor({ state: 'detached' });
+  return { status, code };
+}
+/** The planning alert in a region: German title + outcome sentence, and no person, date or reason in the text. */
+async function assertRefusal(container, title, outcome) {
+  const heading = container.getByRole('heading', { name: title, exact: true });
+  await heading.waitFor();
+  const text = (await heading.locator('xpath=ancestor::*[@role="alert"][1]').innerText()).replace(/\s+/g, ' ');
+  assert.ok(text.includes(outcome), `${title}: outcome sentence`);
+  assert.doesNotMatch(text, /Synthetic|\d{2}\.\d{2}\.\d{4}|krank|urlaub/i, `${title}: privacy-safe`);
+}
+
 let origin;
 try {
   const backendPort = await freePort();
@@ -306,6 +448,8 @@ try {
       [ids.alphaAccount, ids.company, email('employee', ids.alphaAccount), 'EMPLOYEE'],
       [ids.bravoAccount, ids.company, email('employee', ids.bravoAccount), 'EMPLOYEE'],
       [ids.charlieAccount, ids.company, email('employee', ids.charlieAccount), 'EMPLOYEE'],
+      [ids.deltaAccount, ids.company, email('employee', ids.deltaAccount), 'EMPLOYEE'],
+      [ids.echoAccount, ids.company, email('employee', ids.echoAccount), 'EMPLOYEE'],
     ];
     for (const [accountId, companyId, address, role] of accounts) {
       await client.query("INSERT INTO accounts(id,company_id,email,account_scope,role,status,password_hash) VALUES($1,$2,$3,'TENANT',$4,'ACTIVE',$5)",
@@ -315,6 +459,8 @@ try {
       [ids.alpha, ids.alphaAccount, 'SYN-ALPHA', 'Synthetic', 'Alpha', 'BOTH'],
       [ids.bravo, ids.bravoAccount, 'SYN-BRAVO', 'Synthetic', 'Bravo', 'TAG'],
       [ids.charlie, ids.charlieAccount, 'SYN-CHARLIE', 'Synthetic', 'Charlie', 'BOTH'],
+      [ids.delta, ids.deltaAccount, 'SYN-DELTA', 'Synthetic', 'Delta', 'BOTH'],
+      [ids.echo, ids.echoAccount, 'SYN-ECHO', 'Synthetic', 'Echo', 'BOTH'],
     ];
     for (const [employeeId, accountId, number, first, last, eligibility] of staff) {
       await client.query(
@@ -331,8 +477,10 @@ try {
       }
     }
     await client.query("INSERT INTO projects(id,company_id,name,status) VALUES($1,$2,$3,'ACTIVE')", [ids.foreignProject, ids.foreignCompany, FOREIGN_PROJECT]);
-    // One project per person and month: Alpha and Bravo work at Hafen, Charlie at Werft.
-    for (const [employeeId, projectId] of [[ids.alpha, projectIds.hafen], [ids.bravo, projectIds.hafen], [ids.charlie, projectIds.werft]]) {
+    // One project per person and month (UNIQUE in 0008): Alpha and Bravo at Hafen, Charlie at Werft,
+    // Delta and Echo at Kalender (A1 groups).
+    for (const [employeeId, projectId] of [[ids.alpha, projectIds.hafen], [ids.bravo, projectIds.hafen], [ids.charlie, projectIds.werft],
+      [ids.delta, projectIds.kalender], [ids.echo, projectIds.kalender]]) {
       await client.query('INSERT INTO project_assignments(company_id,employee_id,project_id,planning_month) VALUES($1,$2,$3,$4::date)',
         [ids.company, employeeId, projectId, `${MONTH}-01`]);
     }
@@ -345,8 +493,20 @@ try {
   const foreignBefore = JSON.stringify((await pool.query('SELECT id, status, published_at FROM monthly_plans WHERE company_id = $1', [ids.foreignCompany])).rows);
 
   const plans = {};
-  await step('P01 plan and duties created through the UI; the plan status offers the First Publish action', async () => {
+  await step('A1-0 (I0) before any duty: every regression project reads MISSING (no default) and is configured explicitly through the admin API', async () => {
     page = await login(context, `/monatsplanung?month=${MONTH}`, emails.admin);
+    for (const key of ['hafen', 'nord', 'sued', 'west', 'ost', 'mitte', 'kai', 'werft']) {
+      assert.equal((await calendarRows(projectIds[key])).length, 0, `${key}: no calendar row before the API write`);
+      await configureCalendar(page, key);
+      const rows = await calendarRows(projectIds[key]);
+      assert.deepEqual(rows.map((row) => [row.month, row.weekday_mask, row.version]), [[`${MONTH}-01`, 62, '1']], key);
+    }
+    assert.equal((await calendarRows(projectIds.kalender)).length, 0, 'the A1 project stays MISSING for now');
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM duties WHERE company_id = $1', [ids.company])).rows[0].n, 0,
+      'no duty exists before the calendars');
+  });
+
+  await step('P01 plan and duties created through the UI; the plan status offers the First Publish action', async () => {
     plans.hafen = (await createPlan(page, 'hafen')).id;
     await cellButton(page, 'Synthetic Alpha, Do., 3. Dezember: frei').click();
     await region(page, 'Synthetic Alpha · Do., 03.12.2026').getByRole('button', { name: 'Tagdienst anlegen', exact: true }).click();
@@ -657,6 +817,237 @@ try {
     // Chrome logs every failed request (the deliberate 401/409/502/truncations above); nothing else.
     assert.equal(report.consoleCategories.other ?? 0, 0, 'no application console errors');
   });
+
+  // ===== A1 + SP-13 combined groups (docs/reviews/sp13-a1-integration-plan.md, I1-I6, I8) =====
+  let kalenderRead;
+  await step('A1-I1a unconfigured project: calendar GET 200 MISSING, no effective/exact version, no-store; no row exists', async () => {
+    kalenderRead = await readCalendar(page, projectIds.kalender);
+    assert.deepEqual([kalenderRead.state, kalenderRead.effective, kalenderRead.exactVersion, kalenderRead.nextEffectiveFromMonth],
+      ['MISSING', null, null, null]);
+    assert.equal((await calendarRows(projectIds.kalender)).length, 0);
+  });
+
+  await step('A1-I1c MISSING blocks the First Publish of an empty plan: 409 PROJECT_CALENDAR_MISSING, German alert, nothing published', async () => {
+    plans.kalender = (await createPlan(page, 'kalender')).id;
+    await openPlan(page, plans.kalender);
+    const dialog = await openDialog(page);
+    await dialog.getByRole('button', { name: 'Jetzt veröffentlichen', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await assertRefusal(region(page, 'Planstatus'), 'Keine Betriebstage festgelegt', 'Der Plan wurde nicht veröffentlicht.');
+    const sent = publishesFor(plans.kalender);
+    assert.deepEqual(sent.map((entry) => entry.status), [409]);
+    assert.equal((await planOf(projectIds.kalender)).status, 'UNPUBLISHED');
+    assert.equal((await publishAudit(plans.kalender)).length, 0);
+    const keyRows = (await pool.query('SELECT state FROM idempotency_records WHERE company_id = $1 AND key_hash = $2',
+      [ids.company, sha256(sent[0].key)])).rows;
+    assert.ok(keyRows.every((row) => row.state !== 'COMPLETED'), 'no completed reservation for a refused command');
+    report.refusedPublishKeyRows = keyRows.map((row) => row.state);
+  });
+
+  await step('A1-I1b MISSING blocks duty creation: 409 PROJECT_CALENDAR_MISSING, German text, input kept, nothing saved', async () => {
+    const { form, status, code } = await submitDuty(page, { date: '2026-12-08', kind: 'DAY', people: ['Synthetic Delta'] });
+    assert.deepEqual([status, code], [409, 'PROJECT_CALENDAR_MISSING']);
+    await assertRefusal(form, 'Keine Betriebstage festgelegt', 'Es wurde nichts gespeichert.');
+    assert.equal(await form.getByLabel('Datum').inputValue(), '2026-12-08', 'input kept');
+    assert.ok(await form.getByRole('checkbox', { name: /^Synthetic Delta / }).isChecked(), 'selection kept');
+    assert.equal((await dutyRows(plans.kalender)).length, 0);
+  });
+
+  await step('A1-I1d explicit configuration through the admin API: APPLIED version 1, one bounded calendar audit (no bootstrap flag)', async () => {
+    const answer = await patchCalendar(page, 'kalender', kalenderRead, { weekdays: POLICY });
+    assert.equal(answer.status, 200);
+    assert.deepEqual([answer.body.outcome, answer.body.state, answer.body.effective.operatingWeekdays, answer.body.effective.version, answer.body.exactVersion.version],
+      ['APPLIED', 'CONFIGURED', POLICY, 1, 1]);
+    assert.deepEqual((await calendarRows(projectIds.kalender)).map((row) => [row.month, row.weekday_mask, row.version]), [[`${MONTH}-01`, 62, '1']]);
+    const audits = (await calendarAudits()).filter((row) => row.resource_id === projectIds.kalender);
+    assert.equal(audits.length, 1);
+    assert.equal(audits[0].old_values, null);
+    assert.deepEqual(audits[0].new_values, { effectiveFromMonth: `${MONTH}-01`, operatingWeekdays: POLICY, version: 1 });
+  });
+
+  await step('A1-I1e stale preconditions: 409 PROJECT_CALENDAR_CONCURRENT_MODIFICATION; a fresh same-set write is NO_OP; neither is audited', async () => {
+    const stale = await patchCalendar(page, 'kalender', kalenderRead, { weekdays: [1, 2, 3, 4, 5, 6, 7] });
+    assert.deepEqual([stale.status, stale.code], [409, 'PROJECT_CALENDAR_CONCURRENT_MODIFICATION']);
+    const same = await patchCalendar(page, 'kalender', await readCalendar(page, projectIds.kalender), { weekdays: POLICY });
+    assert.deepEqual([same.status, same.body.outcome], [200, 'NO_OP']);
+    assert.deepEqual((await calendarRows(projectIds.kalender)).map((row) => [row.weekday_mask, row.version]), [[62, '1']]);
+    assert.equal((await calendarAudits()).filter((row) => row.resource_id === projectIds.kalender).length, 1);
+  });
+
+  await step('A1-I2a the kept input is saved once the calendar exists: DAY duty on an operating Tuesday (201)', async () => {
+    const form = region(page, 'Dienst hinzufügen');
+    const answer = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith('/entries'));
+    await form.getByRole('button', { name: 'Dienst anlegen', exact: true }).click();
+    assert.equal((await answer).status(), 201);
+    await page.getByText('Der Tagdienst am Di., 08.12.2026 wurde angelegt.', { exact: true }).waitFor();
+    assert.deepEqual((await dutyRows(plans.kalender)).map((row) => [row.date, row.kind, row.members]),
+      [['2026-12-08', 'TAG', [`${ids.delta}:MITARBEITER`]]]);
+  });
+
+  await step('A1-I2b a NIGHT starting on an operating Saturday and ending on a closed Sunday is accepted (the start date decides)', async () => {
+    const { status } = await submitDuty(page, { date: '2026-12-12', kind: 'NIGHT', people: ['Synthetic Echo'] });
+    assert.equal(status, 201);
+    await page.getByText('Der Nachtdienst am Sa., 12.12.2026 wurde angelegt.', { exact: true }).waitFor();
+  });
+
+  await step('A1-I3a/I3b closed weekdays: DAY on a Monday and NIGHT starting on a Sunday → 409 PROJECT_CLOSED_WEEKDAY; nothing saved', async () => {
+    const before = (await dutyRows(plans.kalender)).length;
+    const monday = await submitDuty(page, { date: '2026-12-07', kind: 'DAY', people: ['Synthetic Delta'] });
+    assert.deepEqual([monday.status, monday.code], [409, 'PROJECT_CLOSED_WEEKDAY']);
+    await assertRefusal(monday.form, 'Kein Betriebstag', 'Es wurde nichts gespeichert.');
+    const sunday = await submitDuty(page, { date: '2026-12-13', kind: 'NIGHT' });
+    assert.deepEqual([sunday.status, sunday.code], [409, 'PROJECT_CLOSED_WEEKDAY']);
+    await assertRefusal(sunday.form, 'Kein Betriebstag', 'Es wurde nichts gespeichert.');
+    await closeCreateForm(page);
+    assert.equal((await dutyRows(plans.kalender)).length, before);
+  });
+
+  await step('A1-I3c editing a duty onto a closed Monday → 409 PROJECT_CLOSED_WEEKDAY; duty unchanged; input and lease kept', async () => {
+    const before = await dutyRows(plans.kalender);
+    const panel = await openEditor(page, 'Di., 8. Dezember: Tagdienst, 1 Person; kein Nachtdienst', 'Dienste am Di., 08.12.2026',
+      'Tagdienst', 'Tagdienst am Di., 08.12.2026 bearbeiten');
+    await panel.getByLabel('Datum').fill('2026-12-14');
+    const { status, code } = await saveEditor(page, panel);
+    assert.deepEqual([status, code], [409, 'PROJECT_CLOSED_WEEKDAY']);
+    await assertRefusal(panel, 'Kein Betriebstag', 'Es wurde nichts geändert.');
+    assert.equal(await panel.getByLabel('Datum').inputValue(), '2026-12-14', 'input kept');
+    await panel.getByText('Für Sie reserviert').waitFor();
+    assert.deepEqual(await dutyRows(plans.kalender), before);
+    await closePanel(page, panel);
+  });
+
+  await step('A1-I3d a calendar change cannot newly close an occupied date: 409 PROJECT_CALENDAR_DEPENDENCY_CONFLICT; version unchanged', async () => {
+    // Closing Tuesday from December would close the saved duty of 8 December.
+    const closing = await patchCalendar(page, 'kalender', await readCalendar(page, projectIds.kalender), { weekdays: [3, 4, 5, 6] });
+    assert.deepEqual([closing.status, closing.code], [409, 'PROJECT_CALENDAR_DEPENDENCY_CONFLICT']);
+    assert.deepEqual((await calendarRows(projectIds.kalender)).map((row) => [row.weekday_mask, row.version]), [[62, '1']]);
+  });
+
+  await step('A1-I4a/I4b one shift per person, project and date: DAY then NIGHT and NIGHT then DAY → 409 EMPLOYEE_DAILY_SHIFT_CONFLICT', async () => {
+    assert.equal((await submitDuty(page, { date: '2026-12-09', kind: 'DAY', people: ['Synthetic Delta'] })).status, 201);
+    const night = await submitDuty(page, { date: '2026-12-09', kind: 'NIGHT', people: ['Synthetic Delta'] });
+    assert.deepEqual([night.status, night.code], [409, 'EMPLOYEE_DAILY_SHIFT_CONFLICT']);
+    await assertRefusal(night.form, 'Tag- und Nachtdienst am selben Tag', 'Es wurde nichts gespeichert.');
+    assert.equal((await submitDuty(page, { date: '2026-12-10', kind: 'NIGHT', people: ['Synthetic Echo'] })).status, 201);
+    const day = await submitDuty(page, { date: '2026-12-10', kind: 'DAY', people: ['Synthetic Echo'] });
+    assert.deepEqual([day.status, day.code], [409, 'EMPLOYEE_DAILY_SHIFT_CONFLICT']);
+    await assertRefusal(day.form, 'Tag- und Nachtdienst am selben Tag', 'Es wurde nichts gespeichert.');
+    await closeCreateForm(page);
+    // DAY 06-18 and NIGHT 18-06 are adjacent, not overlapping: only the A1 rule refuses them.
+    assert.deepEqual((await dutyRows(plans.kalender)).filter((row) => ['2026-12-09', '2026-12-10'].includes(row.date)).map((row) => [row.date, row.kind]),
+      [['2026-12-09', 'TAG'], ['2026-12-10', 'NACHT']]);
+  });
+
+  await step('A1-I4c adding the person to the other shift of the same date through the editor → 409; duty unchanged; lease kept', async () => {
+    assert.equal((await submitDuty(page, { date: '2026-12-09', kind: 'NIGHT' })).status, 201, 'an unstaffed NIGHT is allowed');
+    const before = await dutyRows(plans.kalender);
+    const panel = await openEditor(page, 'Mi., 9. Dezember: Tagdienst, 1 Person; Nachtdienst, ohne Besetzung', 'Dienste am Mi., 09.12.2026',
+      'Nachtdienst', 'Nachtdienst am Mi., 09.12.2026 bearbeiten');
+    await panel.getByRole('checkbox', { name: /^Synthetic Delta / }).check();
+    const { status, code } = await saveEditor(page, panel);
+    assert.deepEqual([status, code], [409, 'EMPLOYEE_DAILY_SHIFT_CONFLICT']);
+    await assertRefusal(panel, 'Tag- und Nachtdienst am selben Tag', 'Es wurde nichts geändert.');
+    await panel.getByText('Für Sie reserviert').waitFor();
+    assert.deepEqual(await dutyRows(plans.kalender), before);
+    await closePanel(page, panel);
+  });
+
+  await step('A1-I5a First Publish on the configured project: one bodyless POST, 200, one audit, one COMPLETED reservation = SHA-256(browser key)', async () => {
+    await openPlan(page, plans.kalender);
+    const dialog = await openDialog(page);
+    assert.equal(await dialog.locator('dt', { hasText: 'Dienste' }).locator('xpath=following-sibling::dd').innerText(), '5 (davon 1 ohne Besetzung)');
+    await dialog.getByRole('button', { name: 'Jetzt veröffentlichen', exact: true }).dblclick();
+    await page.getByText(SUCCESS).waitFor();
+    const sent = publishesFor(plans.kalender);
+    assert.equal(sent.length, 2, 'the refused I1c command and exactly one new one');
+    const request = sent[1];
+    assert.notEqual(request.key, sent[0].key, 'a new decision has a new key');
+    assert.deepEqual([request.bodyBytes, request.contentType, request.csrf, request.origin, request.expectedVersion, request.status, request.replayed],
+      [0, null, true, true, null, 200, 'false']);
+    const row = await planOf(projectIds.kalender);
+    assert.deepEqual([row.status, row.published_by_account_id], ['PUBLISHED', ids.admin]);
+    assert.equal((await publishAudit(plans.kalender)).length, 1);
+    const completed = (await reservations(plans.kalender)).filter((record) => record.state === 'COMPLETED');
+    assert.equal(completed.length, 1);
+    assert.ok(completed[0].key_hash.equals(sha256(request.key)));
+    report.kalenderPublishedAt = row.published_at.toISOString();
+  });
+
+  await step('A1-I5c CR-03 after publication: an allowed edit applies directly; an edit onto a closed weekday is refused; no second publish', async () => {
+    let panel = await openEditor(page, 'Di., 8. Dezember: Tagdienst, 1 Person; kein Nachtdienst', 'Dienste am Di., 08.12.2026',
+      'Tagdienst', 'Tagdienst am Di., 08.12.2026 bearbeiten');
+    await panel.getByRole('checkbox', { name: /^Synthetic Echo / }).check();
+    assert.equal((await saveEditor(page, panel)).status, 200);
+    await page.getByText(/wurden gespeichert\. Der Plan ist veröffentlicht: Die Änderung gilt sofort, ohne erneutes Veröffentlichen\./).waitFor();
+    panel = await openEditor(page, 'Di., 8. Dezember: Tagdienst, 2 Personen; kein Nachtdienst', 'Dienste am Di., 08.12.2026',
+      'Tagdienst', 'Tagdienst am Di., 08.12.2026 bearbeiten');
+    await panel.getByLabel('Datum').fill('2026-12-14');
+    const refused = await saveEditor(page, panel);
+    assert.deepEqual([refused.status, refused.code], [409, 'PROJECT_CLOSED_WEEKDAY']);
+    await assertRefusal(panel, 'Kein Betriebstag', 'Es wurde nichts geändert.');
+    await closePanel(page, panel);
+    const row = await planOf(projectIds.kalender);
+    assert.deepEqual([row.status, row.published_at.toISOString()], ['PUBLISHED', report.kalenderPublishedAt]);
+    assert.equal(publishesFor(plans.kalender).length, 2, 'no second publish');
+    assert.equal((await publishAudit(plans.kalender)).length, 1);
+  });
+
+  await step('A1-I6c a completed publication replays with the same key after a later calendar version and project deactivation; no second audit', async () => {
+    const key = publishesFor(plans.sued)[0].key;
+    const january = await readCalendar(page, projectIds.sued, '2027-01-01');
+    const later = await patchCalendar(page, 'sued', january, { weekdays: [1], month: '2027-01-01' });
+    assert.deepEqual([later.status, later.body.outcome], [200, 'APPLIED']);
+    await other.goto(`${origin}/projekte/${projectIds.sued}`);
+    await other.getByRole('button', { name: 'Projekt auf inaktiv setzen …', exact: true }).click();
+    await other.getByRole('button', { name: 'Auf inaktiv setzen', exact: true }).click();
+    await other.getByText('Das Projekt ist jetzt inaktiv.').waitFor();
+    const replay = await adminApi(page, 'POST', `/api/v1/monthly-plans/${plans.sued}/publish`, null, { 'Idempotency-Key': key });
+    assert.deepEqual([replay.status, replay.replayed, replay.body?.status, replay.body?.id], [200, 'true', 'PUBLISHED', plans.sued]);
+    assert.equal(publishesFor(plans.sued).at(-1).bodyBytes, 0, 'bodyless replay');
+    assert.equal((await publishAudit(plans.sued)).length, 1);
+    assert.equal((await reservations(plans.sued)).length, 1);
+  });
+
+  await step('A1-I6d the same key for another plan: 409 IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST; nothing published', async () => {
+    const key = publishesFor(plans.sued)[0].key;
+    const reuse = await adminApi(page, 'POST', `/api/v1/monthly-plans/${plans.werft}/publish`, null, { 'Idempotency-Key': key });
+    assert.deepEqual([reuse.status, reuse.code], [409, 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST']);
+    assert.equal((await planOf(projectIds.werft)).status, 'UNPUBLISHED');
+    assert.equal((await publishAudit(plans.werft)).length, 0);
+  });
+
+  await step('A1-I8 isolation and authorization: a foreign calendar is concealed (404) for read and write; an EMPLOYEE gets 403', async () => {
+    const body = { effectiveFromMonth: `${MONTH}-01`, expectedExactVersion: null, expectedEffective: null,
+      expectedNextEffectiveFromMonth: null, operatingWeekdays: POLICY, bootstrap: false };
+    const read = await adminApi(page, 'GET', `${calendarPath(ids.foreignProject)}?effectiveForMonth=${MONTH}-01`);
+    const write = await adminApi(page, 'PATCH', calendarPath(ids.foreignProject), body);
+    assert.deepEqual([read.status, write.status], [404, 404]);
+    const employeeContext = await browser.newContext(contextOptions);
+    try {
+      const employee = await login(employeeContext, '/', email('employee', ids.deltaAccount));
+      const denied = await adminApi(employee, 'GET', `${calendarPath(projectIds.kalender)}?effectiveForMonth=${MONTH}-01`);
+      const deniedWrite = await adminApi(employee, 'PATCH', calendarPath(projectIds.kalender), body);
+      assert.deepEqual([denied.status, deniedWrite.status], [403, 403]);
+    } finally { await employeeContext.close(); }
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM project_operating_calendars WHERE company_id = $1', [ids.foreignCompany])).rows[0].n, 0);
+    assert.equal(JSON.stringify((await pool.query('SELECT id, status, published_at FROM monthly_plans WHERE company_id = $1', [ids.foreignCompany])).rows), foreignBefore);
+  });
+
+  await step('A1-T totals: one calendar audit per APPLIED write, none for refusals or NO_OP; every calendar row from an API write; publications', async () => {
+    const applied = calendarWrites.filter((write) => write.outcome === 'APPLIED');
+    assert.equal((await calendarAudits()).length, applied.length);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM project_operating_calendars WHERE company_id = $1', [ids.company])).rows[0].n,
+      applied.length, 'each APPLIED write created one row; nothing else wrote calendars');
+    for (const key of ['hafen', 'nord', 'sued', 'west', 'ost', 'mitte', 'kalender']) {
+      assert.equal((await planOf(projectIds[key])).status, 'PUBLISHED', key);
+      assert.equal((await publishAudit(plans[key])).length, 1, key);
+      assert.equal((await reservations(plans[key])).filter((row) => row.state === 'COMPLETED').length, 1, key);
+    }
+    for (const key of ['kai', 'werft']) assert.equal((await planOf(projectIds[key])).status, 'UNPUBLISHED', key);
+    report.calendarWrites = calendarWrites;
+    assert.deepEqual(report.pageErrors, []);
+    assert.equal(report.consoleCategories.other ?? 0, 0, 'no application console errors');
+  });
   await otherContext.close();
 } catch (error) {
   // Assertion and locator messages contain no raw headers, keys, tokens or passwords.
@@ -680,7 +1071,7 @@ try {
       for (const companyId of [ids.company, ids.foreignCompany]) {
         for (const table of ['sessions', 'account_tokens', 'audit_event', 'idempotency_records', 'edit_leases', 'plan_assignments', 'duties',
           'monthly_plans', 'availability_batch_commands', 'employee_availability_days', 'shift_configurations', 'project_assignments',
-          'employees', 'projects', 'accounts']) {
+          'project_operating_calendars', 'employees', 'projects', 'accounts']) {
           await client.query(`DELETE FROM ${table} WHERE company_id=$1`, [companyId]);
         }
         await client.query('DELETE FROM companies WHERE id=$1', [companyId]);
