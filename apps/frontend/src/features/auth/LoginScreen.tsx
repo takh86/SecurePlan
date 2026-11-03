@@ -56,7 +56,7 @@ export function LoginScreen({
   const inFlight = useRef(false);
   const validationEpoch = useRef(0);
   const rechecking = useRef(false);
-  const pendingRecheck = useRef(false);
+  const pendingRecheck = useRef<(() => boolean) | null>(null);
   // The session the UI belongs to right now; lets a late response for an
   // earlier session be recognised as stale.
   const currentAuth = useRef<AuthenticatedContext | null>(null);
@@ -121,17 +121,27 @@ export function LoginScreen({
 
   // Hides protected content until GET /me confirms the session again. Used after
   // a back/forward-cache restore and after a new login in another tab.
-  // Single-flight: shares the login/logout guard, so overlapping checks cannot
-  // race and an obsolete response cannot override a newer outcome.
-  const recheckSession = useCallback((isCurrent: () => boolean, discard = false) => {
+  // One /me runs at a time. Lifecycle duplicates share it; session changes
+  // invalidate its result and queue a fresh check before private UI can return.
+  const recheckSession = useCallback(function recheckSession(
+    isCurrent: () => boolean,
+    discard = false,
+    sessionChanged = false,
+  ): void {
     const preserveEmployeeLocation = auth?.identity.role === 'EMPLOYEE';
+    // A new cookie/session signal supersedes even an already-running /me check.
+    if (sessionChanged) validationEpoch.current += 1;
     // Invalidate synchronously even when an existing check/login/logout is busy.
     if (discard) memory.clear(); else memory.suspend();
     currentAuth.current = null;
     flushSync(() => setState('checking'));
     delete document.documentElement.dataset.privateSessionHidden;
-    if (rechecking.current) return;
-    if (inFlight.current) { pendingRecheck.current = true; return; }
+    if (inFlight.current) {
+      // Lifecycle duplicates share the current check. A session change must get
+      // a fresh authoritative response after it; retain the latest live caller.
+      if (sessionChanged || !rechecking.current) pendingRecheck.current = isCurrent;
+      return;
+    }
     inFlight.current = true;
     rechecking.current = true;
     const epoch = ++validationEpoch.current;
@@ -150,9 +160,18 @@ export function LoginScreen({
         if (!preserveEmployeeLocation) onSignedOut?.();
         if (unauthorized) broadcast('signed-out');
       },
-    ).finally(() => { inFlight.current = false; rechecking.current = false; });
+    ).finally(() => {
+      inFlight.current = false;
+      rechecking.current = false;
+      const pending = pendingRecheck.current;
+      pendingRecheck.current = null;
+      if (pending?.()) recheckSession(pending);
+    });
   }, [auth, memory, onSignedOut, setAuth]);
-  const requestSessionRevalidation = useCallback(() => recheckSession(() => true, true), [recheckSession]);
+  const requestSessionRevalidation = useCallback(
+    () => recheckSession(() => true, true, true),
+    [recheckSession],
+  );
 
   useEffect(() => {
     if (!auth) return;
@@ -190,6 +209,7 @@ export function LoginScreen({
   const onSessionSignal = useEffectEvent((signal: SessionSignal, isCurrent: () => boolean) => {
     if (currentAuth.current === null && !auth) return;
     if (signal === 'signed-out') {
+      pendingRecheck.current = null;
       // The shared session is gone: hide protected content at once, without a request.
       memory.clear();
       setAuth(null);
@@ -202,7 +222,7 @@ export function LoginScreen({
     }
     // The browser cookie now belongs to a newer session, so this tab's identity
     // and CSRF token are stale: confirm the session like a restore does.
-    recheckSession(isCurrent);
+    recheckSession(isCurrent, false, true);
   });
 
   useEffect(() => {
@@ -234,7 +254,9 @@ export function LoginScreen({
       setState('logged-out');
     } finally {
       inFlight.current = false;
-      if (pendingRecheck.current) { pendingRecheck.current = false; recheckSession(() => true); }
+      const pending = pendingRecheck.current;
+      pendingRecheck.current = null;
+      if (pending?.()) recheckSession(pending);
     }
   }
 
@@ -267,7 +289,9 @@ export function LoginScreen({
       }
     } finally {
       inFlight.current = false;
-      if (pendingRecheck.current) { pendingRecheck.current = false; recheckSession(() => true); }
+      const pending = pendingRecheck.current;
+      pendingRecheck.current = null;
+      if (pending?.()) recheckSession(pending);
     }
   }
 
