@@ -141,6 +141,7 @@ describe('SP-11 — planning schema signature, real PostgreSQL', () => {
       { schema: 'public', name: 'edit_leases', kind: 'r' },
       { schema: 'public', name: 'monthly_plans', kind: 'r' },
       { schema: 'public', name: 'plan_assignments', kind: 'r' },
+      { schema: 'public', name: 'project_operating_calendars', kind: 'r' },
     ]);
     await withClient(async (client) => {
       expect(await readPlanningSchema(client)).toMatchObject({ state: 'COMPLETE' });
@@ -318,6 +319,7 @@ describe('SP-11 — ABSENT schema and committed versus uncommitted DDL across se
       await sessionB.query('BEGIN');
       await sessionB.query(migration('0011_planning_foundation.sql'));
       await sessionB.query(migration('0012_duty_edit_leases.sql'));
+      await sessionB.query(migration('0014_project_operating_calendars.sql'));
       expect(await guardOutcomes(sessionA), 'uncommitted DDL is invisible').toEqual(ABSENT);
       await sessionB.query('COMMIT');
       expect(await guardOutcomes(sessionA), 'committed canonical schema, same open transaction').toEqual(OPEN);

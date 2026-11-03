@@ -4,8 +4,8 @@
  * Every planning dependency check and every planning write first reads the
  * catalog and classifies the planning schema as:
  * - COMPLETE: exactly public.monthly_plans, public.duties,
- *   public.plan_assignments and public.edit_leases exist as ordinary tables,
- *   with the columns, constraints and indexes of migrations 0011/0012 (compared by definition, index
+ *   public.plan_assignments, public.edit_leases and public.project_operating_calendars exist as ordinary tables,
+ *   with the columns, constraints and indexes of migrations 0011/0012/0014 (compared by definition, index
  *   names normalized away), and no other relation anywhere carries a planning
  *   name from the central classification (including temporary schemas).
  *   RLS, policies, user triggers/rules, inheritance/partitioning, unlogged
@@ -19,7 +19,7 @@
  * missing or altered table must never be read as "no dependency". The real
  * reason is logged server-side only.
  *
- * The definitions are PostgreSQL 17 deparse output of migrations 0011/0012. A later
+ * The definitions are PostgreSQL 17 deparse output of migrations 0011/0012/0014. A later
  * migration that changes these relations must update this signature in the
  * same change; until then the guards refuse to trust the altered schema.
  */
@@ -29,13 +29,23 @@ import { PLANNING_GUARD_TABLES } from '../workforce/planning-guard/planning-tabl
 
 type Queryable = Pick<PoolClient, 'query'>;
 
-export const PLANNING_RELATIONS = ['monthly_plans', 'duties', 'plan_assignments', 'edit_leases'] as const;
+export const PLANNING_RELATIONS = ['monthly_plans', 'duties', 'plan_assignments', 'edit_leases', 'project_operating_calendars'] as const;
 type PlanningRelation = (typeof PLANNING_RELATIONS)[number];
 
 export type PlanningSchemaState = 'ABSENT' | 'COMPLETE' | 'INVALID';
 
 /** `name type [NOT NULL] [DEFAULT expr]`, as rendered by format_type/pg_get_expr. */
 const EXPECTED_COLUMNS: Record<PlanningRelation, readonly string[]> = {
+  project_operating_calendars: [
+    'id uuid NOT NULL DEFAULT gen_random_uuid()',
+    'company_id uuid NOT NULL',
+    'project_id uuid NOT NULL',
+    'effective_from_month date NOT NULL',
+    'weekday_mask smallint NOT NULL',
+    'version bigint NOT NULL DEFAULT 1',
+    'created_at timestamp with time zone NOT NULL DEFAULT clock_timestamp()',
+    'updated_at timestamp with time zone NOT NULL DEFAULT clock_timestamp()',
+  ],
   edit_leases: [
     'id uuid NOT NULL DEFAULT gen_random_uuid()',
     'company_id uuid NOT NULL',
@@ -93,6 +103,16 @@ const EXPECTED_COLUMNS: Record<PlanningRelation, readonly string[]> = {
 
 /** `contype pg_get_constraintdef(oid)`; constraint names are deliberately ignored. */
 const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
+  project_operating_calendars: [
+    "c CHECK ((((effective_from_month >= '0001-01-01'::date) AND (effective_from_month <= '9999-12-01'::date)) AND (EXTRACT(day FROM effective_from_month) = (1)::numeric)))",
+    'c CHECK ((isfinite(created_at) AND isfinite(updated_at)))',
+    "c CHECK (((version >= 1) AND (version <= '9007199254740991'::bigint)))",
+    'c CHECK (((weekday_mask >= 1) AND (weekday_mask <= 127)))',
+    'f FOREIGN KEY (company_id, project_id) REFERENCES public.projects(company_id, id) ON DELETE RESTRICT',
+    'p PRIMARY KEY (id)',
+    'u UNIQUE (company_id, id)',
+    'u UNIQUE (company_id, project_id, effective_from_month)',
+  ],
   edit_leases: [
     'c CHECK ((isfinite(acquired_at) AND isfinite(expires_at) AND (expires_at > acquired_at) AND ((renewed_at IS NULL) OR (isfinite(renewed_at) AND (renewed_at >= acquired_at) AND (renewed_at < expires_at))) AND ((released_at IS NULL) OR (isfinite(released_at) AND (released_at >= acquired_at)))))',
     'c CHECK ((octet_length(token_hash) = 32))',
@@ -138,6 +158,7 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
 
 /** pg_get_indexdef of valid indexes that do not back a constraint, index name normalized to `?`. */
 const EXPECTED_INDEXES: Record<PlanningRelation, readonly string[]> = {
+  project_operating_calendars: [],
   edit_leases: ['CREATE INDEX ? ON public.edit_leases USING btree (expires_at)'],
   monthly_plans: [
     'CREATE INDEX ? ON public.monthly_plans USING btree (company_id, planning_month DESC, id)',
@@ -228,16 +249,16 @@ export function classifyPlanningSchema(catalog: CatalogRow): PlanningSchemaRepor
     const of = (rows: { relation: string; signature: string }[]) =>
       rows.filter((row) => row.relation === relation).map((row) => row.signature);
     if (!sameSet(of(catalog.columns), EXPECTED_COLUMNS[relation])) {
-      return { state: 'INVALID', reason: `columns of public.${relation} differ from migrations 0011/0012` };
+      return { state: 'INVALID', reason: `columns of public.${relation} differ from migrations 0011/0012/0014` };
     }
     if (!sameSet(of(catalog.constraints), EXPECTED_CONSTRAINTS[relation])) {
-      return { state: 'INVALID', reason: `constraints of public.${relation} differ from migrations 0011/0012` };
+      return { state: 'INVALID', reason: `constraints of public.${relation} differ from migrations 0011/0012/0014` };
     }
     if (!sameSet(of(catalog.indexes), EXPECTED_INDEXES[relation])) {
-      return { state: 'INVALID', reason: `indexes of public.${relation} differ from migrations 0011/0012` };
+      return { state: 'INVALID', reason: `indexes of public.${relation} differ from migrations 0011/0012/0014` };
     }
   }
-  return { state: 'COMPLETE', reason: 'planning schema matches migrations 0011/0012' };
+  return { state: 'COMPLETE', reason: 'planning schema matches migrations 0011/0012/0014' };
 }
 
 export async function readPlanningSchema(client: Queryable): Promise<PlanningSchemaReport> {
@@ -261,7 +282,7 @@ export async function assertPlanningSchemaComplete(client: Queryable): Promise<v
   if (report.state === 'COMPLETE') {
     // Protect against ACCESS EXCLUSIVE canonical DDL until the caller commits.
     // Re-read after any lock wait; do not authorize using a pre-wait snapshot.
-    await client.query('LOCK TABLE public.monthly_plans, public.duties, public.plan_assignments, public.edit_leases IN ACCESS SHARE MODE');
+    await client.query('LOCK TABLE public.monthly_plans, public.duties, public.plan_assignments, public.edit_leases, public.project_operating_calendars IN ACCESS SHARE MODE');
     report = await readPlanningSchema(client);
     if (report.state === 'COMPLETE') return;
   }

@@ -43,6 +43,10 @@ export async function insertShiftConfiguration(
   month: string,
   rules: readonly { kind: 'TAG' | 'NACHT'; start: string; end: string }[],
 ): Promise<void> {
+  // Explicit synthetic seven-day policy for the pre-A1 planning regression suite.
+  // This fixture choice is never a runtime/migration default. A1 missing-policy tests remove it explicitly.
+  await pool.query(`INSERT INTO project_operating_calendars (company_id, project_id, effective_from_month, weekday_mask)
+    VALUES ($1, $2, '0001-01-01', 127) ON CONFLICT (company_id, project_id, effective_from_month) DO NOTHING`, [companyId, projectId]);
   for (const rule of rules) {
     await pool.query(
       `INSERT INTO shift_configurations (company_id, project_id, effective_from_month, shift_kind, start_local, end_local)

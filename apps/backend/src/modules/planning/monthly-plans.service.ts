@@ -68,6 +68,8 @@ import { PLANNING_WRITER_TIMEOUTS } from './planning-locks.js';
 import { assertPlanningSchemaComplete } from './planning-schema.js';
 import { acquireDutyLease, assertDutyLease, editLeaseTtl, releaseDutyLease, renewDutyLease, type EditLeaseResponse } from './duty-edit-leases.js';
 import { PublishIdempotencyService } from './publish-idempotency.service.js';
+import { assertOperatingDay } from './operating-calendar-guard.js';
+import { assertSessionInTransaction } from '../../auth/session.service.js';
 
 const ADMIN_ONLY = ['COMPANY_ADMIN'] as const;
 const DEFAULT_PAGE_SIZE = 25;
@@ -245,7 +247,14 @@ export class MonthlyPlansService implements OnModuleInit {
       if (project.status !== 'ACTIVE') conflict('PROJECT_INACTIVE');
       // No staffing minimum. Check every live duty, including unstaffed ones;
       // validate existing saved UTC intervals without changing their provenance.
+      await assertSessionInTransaction(client, tenant);
+      // A missing calendar also blocks an empty plan's First Publish.
+      const calendar = await client.query(`SELECT 1 FROM public.project_operating_calendars
+        WHERE company_id = $1 AND project_id = $2 AND effective_from_month <= $3::date LIMIT 1`,
+      [tenant.companyId, plan.project_id, plan.month_start]);
+      if (calendar.rowCount !== 1) conflict('PROJECT_CALENDAR_MISSING');
       for (const duty of duties) {
+        await assertOperatingDay(client, tenant.companyId, plan.project_id, duty.duty_date);
         await this.effectiveRule(client, tenant, plan.project_id, plan.month_start, duty.shift_kind);
         const roster = new Set(members.filter((member) => member.duty_id === duty.id).map((member) => member.employee_id));
         await this.assertStaffing(client, tenant, employees.filter((employee) => roster.has(employee.id)), links,
@@ -307,6 +316,7 @@ export class MonthlyPlansService implements OnModuleInit {
       if (project.status !== 'ACTIVE') conflict('PROJECT_INACTIVE');
 
       // Deterministic 409 for the common case; the UNIQUE constraint decides races.
+      await assertSessionInTransaction(client, tenant);
       const existing = await client.query(
         'SELECT 1 FROM public.monthly_plans WHERE company_id = $1 AND project_id = $2 AND planning_month = $3::date',
         [tenant.companyId, dto.projectId, dto.monthStart],
@@ -402,11 +412,12 @@ export class MonthlyPlansService implements OnModuleInit {
    * -> 500 unusable planning schema -> 404 plan (unknown, foreign, ARCHIVED
    * project) -> 400 DUTY_DATE_OUTSIDE_PLAN_MONTH (structural, before any 409) ->
    * 404 submitted employee -> locks -> 409 PROJECT_INACTIVE -> 409
-   * DUTY_ALREADY_EXISTS -> 409 SHIFT_CONFIGURATION_MISSING -> D6 resolution ->
+   * DUTY_ALREADY_EXISTS -> 409 PROJECT_CALENDAR_MISSING / PROJECT_CLOSED_WEEKDAY
+   * -> 409 SHIFT_CONFIGURATION_MISSING -> D6 resolution ->
    * 409 DUTY_TIME_RANGE_INVALID -> staffing per employee in id order: 409
    * EMPLOYEE_INACTIVE -> EMPLOYEE_NOT_EMPLOYED_FOR_DAY ->
    * EMPLOYEE_NOT_ASSIGNED_TO_PROJECT_MONTH -> EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT ->
-   * EMPLOYEE_UNAVAILABLE -> DUTY_ASSIGNMENT_CONFLICT -> writes + audit.
+   * EMPLOYEE_UNAVAILABLE -> EMPLOYEE_DAILY_SHIFT_CONFLICT -> DUTY_ASSIGNMENT_CONFLICT -> writes + audit.
    * An unrecognised company zone is a sanitized 500. The plan's lifecycle state
    * is not checked: under CR-03 a PUBLISHED plan takes direct, revalidated
    * changes; this slice itself cannot publish.
@@ -478,6 +489,8 @@ export class MonthlyPlansService implements OnModuleInit {
       if (slot.rowCount !== 0) conflict('DUTY_ALREADY_EXISTS');
 
       // The WHOLE latest version <= plan month; a kind missing from it is not inherited.
+      await assertSessionInTransaction(client, tenant);
+      await assertOperatingDay(client, tenant.companyId, plan.project_id, dto.dutyDate);
       const configuration = await this.effectiveRule(client, tenant, plan.project_id, plan.month_start, kind);
 
       const zone = await this.companyZone(client, tenant);
@@ -582,6 +595,7 @@ export class MonthlyPlansService implements OnModuleInit {
         `SELECT 1 FROM public.duties WHERE company_id = $1 AND monthly_plan_id = $2 AND id = $3 AND removed_at IS NULL FOR UPDATE`,
         [tenant.companyId, plan.id, dutyId],
       ));
+      await assertSessionInTransaction(client, tenant);
       return work(client);
     });
   }
@@ -641,6 +655,7 @@ export class MonthlyPlansService implements OnModuleInit {
       [tenant.companyId, dutyId],
     )).rows;
     await assertDutyLease(client, tenant, dutyId, token);
+    await assertSessionInTransaction(client, tenant);
     if (toDutyVersion(duty.version) !== expectedVersion || JSON.stringify(discovery) !== JSON.stringify(duty)
       || memberSignature(discoveredMembers) !== memberSignature(members)) conflict('PLAN_CONCURRENT_MODIFICATION');
     return { plan, duty, members, roster, employees, links, project };
@@ -671,13 +686,21 @@ export class MonthlyPlansService implements OnModuleInit {
         [tenant.companyId, plan.id, day, kind, dutyId],
       );
       if (slot.rowCount !== 0) conflict('DUTY_ALREADY_EXISTS');
+      // Pure removals can correct unknown/closed legacy dates and dual staffing.
+      // Retained unchanged members are not new assignments; role/time changes are.
+      const changedEmployees = employees.filter((employee) => roster.has(employee.id)
+        && (timeChanged || !members.some((member) => member.employee_id === employee.id
+          && member.duty_function === roster.get(employee.id))));
+      if (timeChanged || changedEmployees.length > 0) {
+        await assertOperatingDay(client, tenant.companyId, plan.project_id, day);
+      }
       const configuration = await this.effectiveRule(client, tenant, plan.project_id, plan.month_start, kind);
       const zone = timeChanged ? await this.companyZone(client, tenant) : duty.time_zone;
       const interval = timeChanged ? resolveDutyInterval({ zone, dutyDate: day, startLocal: configuration.start_local, endLocal: configuration.end_local })
         : { startsAt: duty.starts_at, endsAt: duty.ends_at };
       if (interval === null) conflict('DUTY_TIME_RANGE_INVALID');
       await this.assertStaffing(client, tenant, employees.filter((employee) => roster.has(employee.id)), links,
-        plan.project_id, day, kind, interval, dutyId);
+        plan.project_id, day, kind, interval, dutyId, new Set(changedEmployees.map((employee) => employee.id)));
 
       let updated: DutyRow;
       try {
@@ -779,6 +802,9 @@ export class MonthlyPlansService implements OnModuleInit {
    * reads under the employee locks (absence writers and other staffing writers
    * hold conflicting employee locks). Overlap is half-open on UTC instants
    * across all live duties of either plan state; adjacency is allowed.
+   * Same-project/local-date exclusivity separately rejects the other kind even
+   * when its UTC interval is adjacent. Unchanged legacy members can remain
+   * during an unrelated corrective removal; new/moved/role-mutated work cannot.
    */
   private async assertStaffing(
     client: Queryable,
@@ -790,12 +816,21 @@ export class MonthlyPlansService implements OnModuleInit {
     kind: string,
     interval: { startsAt: string; endsAt: string },
     excludingDuty: string | null = null,
+    changedEmployeeIds?: ReadonlySet<string>,
   ): Promise<void> {
     if (employees.length === 0) return;
     const ids = employees.map((employee) => employee.id);
     const absent = new Set(
       (await this.availability.listUnavailableDays(client, tenant, ids, dutyDate, dutyDate)).map((fact) => fact.employeeId),
     );
+    const dual = new Set((await client.query<{ employee_id: string }>(
+      `SELECT DISTINCT pa.employee_id FROM public.plan_assignments pa
+       JOIN public.duties d ON d.company_id = pa.company_id AND d.id = pa.duty_id
+       WHERE pa.company_id = $1 AND pa.employee_id = ANY($2::uuid[]) AND pa.state = 'ACTIVE'
+       AND d.removed_at IS NULL AND d.project_id = $3 AND d.duty_date = $4::date AND d.shift_kind <> $5
+       AND ($6::uuid IS NULL OR d.id <> $6::uuid)`,
+      [tenant.companyId, ids, projectId, dutyDate, kind, excludingDuty],
+    )).rows.map((row) => row.employee_id));
     const overlapping = new Set((await client.query<{ employee_id: string }>(
       `SELECT DISTINCT pa.employee_id
        FROM public.plan_assignments AS pa
@@ -819,6 +854,7 @@ export class MonthlyPlansService implements OnModuleInit {
         conflict('EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT');
       }
       if (absent.has(employee.id)) conflict('EMPLOYEE_UNAVAILABLE');
+      if (dual.has(employee.id) && (changedEmployeeIds === undefined || changedEmployeeIds.has(employee.id))) conflict('EMPLOYEE_DAILY_SHIFT_CONFLICT');
       if (overlapping.has(employee.id)) conflict('DUTY_ASSIGNMENT_CONFLICT');
     }
   }

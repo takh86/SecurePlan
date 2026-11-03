@@ -169,6 +169,7 @@ describe('E-10 - every relation created by a migration is classified', () => {
 
   it('every planning name is listed in its singular and its plural form', () => {
     const pairs = [
+      ['project_operating_calendar', 'project_operating_calendars'],
       ['monthly_plan', 'monthly_plans'],
       ['duty', 'duties'],
       ['plan_assignment', 'plan_assignments'],

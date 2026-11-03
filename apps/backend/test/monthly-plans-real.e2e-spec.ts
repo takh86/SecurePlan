@@ -425,7 +425,7 @@ describe('SP-11 — duty creation (API-02..06, AUD-01..03)', () => {
     const unconfigured = await createSyntheticProject(db(), tenantA.companyId, 'SP11 Leer');
     const emptyPlan = await createPlan(unconfigured.projectId);
     const missing = await write(`${BASE}/${emptyPlan}/entries`, adminA, { dutyDate: '2027-03-10', shiftKind: 'DAY' });
-    expect([missing.status, missing.body.code]).toEqual([409, 'SHIFT_CONFIGURATION_MISSING']);
+    expect([missing.status, missing.body.code]).toEqual([409, 'PROJECT_CALENDAR_MISSING']);
   });
 
   it('precedence: structural 400 before any 409; PROJECT_INACTIVE before slot; config before time range (API-06)', async () => {

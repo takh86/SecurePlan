@@ -15,6 +15,7 @@ import { lockAccountsPrefix } from '../identity/account-prefix-lock.js';
 import { toMonthlyPlanResponse, type MonthlyPlanRow } from './monthly-plan.mapper.js';
 import type { MonthlyPlanResponse } from './monthly-plan.types.js';
 import { PLANNING_WRITER_TIMEOUTS } from './planning-locks.js';
+import { assertSessionInTransaction } from '../../auth/session.service.js';
 
 const OPERATION = 'INITIAL_PUBLISH';
 const digest = (value: string) => createHash('sha256').update(value).digest();
@@ -61,6 +62,7 @@ export class PublishIdempotencyService implements OnModuleInit {
     const enter = async (client: PoolClient) => {
       await client.query(PLANNING_WRITER_TIMEOUTS);
       await lockAccountsPrefix(client, tenant, ['COMPANY_ADMIN']);
+      await assertSessionInTransaction(client, tenant);
       return visible(client); // schema/tenant/project concealment before replay
     };
 
@@ -80,6 +82,7 @@ export class PublishIdempotencyService implements OnModuleInit {
           throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST' });
         }
         if (prior.state === 'COMPLETED' && prior.unexpired) {
+          await assertSessionInTransaction(client, tenant);
           if (prior.result_plan_id !== plan.id || plan.status !== 'PUBLISHED' || plan.published_at === null) {
             throw new Error('Inconsistent completed publish result');
           }

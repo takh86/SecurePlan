@@ -38,6 +38,8 @@ import { ProjectsController } from './modules/workforce/projects/projects.contro
 import { ProjectsService } from './modules/workforce/projects/projects.service.js';
 import { ShiftConfigurationsController } from './modules/workforce/shift-configurations/shift-configurations.controller.js';
 import { ShiftConfigurationsService } from './modules/workforce/shift-configurations/shift-configurations.service.js';
+import { OperatingCalendarController } from './modules/workforce/projects/operating-calendar.controller.js';
+import { OperatingCalendarService } from './modules/workforce/projects/operating-calendar.service.js';
 import { AvailabilityController } from './modules/workforce/availability/availability.controller.js';
 import { AvailabilityService } from './modules/workforce/availability/availability.service.js';
 import { MonthlyPlansController } from './modules/planning/monthly-plans.controller.js';
@@ -63,6 +65,7 @@ import { PublishIdempotencyService } from './modules/planning/publish-idempotenc
     ProjectsController,
     ProjectAssignmentsController,
     ShiftConfigurationsController,
+    OperatingCalendarController,
     AvailabilityController,
     MonthlyPlansController,
   ],
@@ -94,6 +97,7 @@ import { PublishIdempotencyService } from './modules/planning/publish-idempotenc
     ProjectAssignmentsService,
     // SP-08b: month-versioned project shift configuration (ADR-0003).
     ShiftConfigurationsService,
+    OperatingCalendarService,
     AvailabilityService,
     // SP-11 PR-1: monthly plans and duties (create/read slice, SP11A-R1 Rev3.1).
     MonthlyPlansService,

@@ -101,6 +101,8 @@ it('same raw key is independent for another actor and another tenant', async () 
   expect((await publish(key, f.admin2, other)).status).toBe(200);
   const foreignProject = await createSyntheticProject(pool, f.foreign.companyId);
   const foreignPlan = await insertPlan(pool, f.foreign.companyId, foreignProject.projectId, MUTATION_MONTH);
+  await pool.query(`INSERT INTO project_operating_calendars (company_id, project_id, effective_from_month, weekday_mask)
+    VALUES ($1, $2, $3, 127)`, [f.foreign.companyId, foreignProject.projectId, MUTATION_MONTH]);
   expect((await publish(key, f.foreignAdmin, foreignPlan)).status).toBe(200);
 });
 
@@ -112,11 +114,11 @@ it.each(['empty plan', 'unstaffed duty', 'removed history', 'past plan'])('allow
   expect((await publish()).status).toBe(200);
 });
 
-it('adjacent UTC duties are allowed and a live member never conflicts with itself', async () => {
+it('adjacent UTC duties on the same local project date reject dual DAY/NIGHT under P1', async () => {
   const night = await insertDuty(pool, { companyId: f.tenant.companyId, projectId: f.project.projectId, planId: f.planId,
     month: MUTATION_MONTH, dutyDate: MUTATION_DAY, kind: 'NACHT', startsAt: `${MUTATION_DAY}T17:00:00Z`, endsAt: '2027-01-21T05:00:00Z' });
   await insertMembership(pool, f.tenant.companyId, night, f.mira.employeeId);
-  expect((await publish()).status).toBe(200);
+  expect(result(await publish())).toEqual([409, 'EMPLOYEE_DAILY_SHIFT_CONFLICT']);
 });
 
 const invalid: [string, (fixture: DutyMutationFixture) => Promise<unknown>][] = [
@@ -131,7 +133,8 @@ const invalid: [string, (fixture: DutyMutationFixture) => Promise<unknown>][] = 
     (x) => pool.query('INSERT INTO employee_availability_days (company_id, employee_id, day, status) VALUES ($1, $2, $3, $4)', [x.tenant.companyId, x.mira.employeeId, MUTATION_DAY, status])]),
   ['DUTY_ASSIGNMENT_CONFLICT', async (x) => {
     const id = await insertDuty(pool, { companyId: x.tenant.companyId, projectId: x.project.projectId, planId: x.planId,
-      month: MUTATION_MONTH, dutyDate: MUTATION_DAY, kind: 'NACHT', startsAt: `${MUTATION_DAY}T16:00:00Z`, endsAt: '2027-01-21T05:00:00Z' });
+      // A different local date isolates UTC overlap from same-date exclusivity.
+      month: MUTATION_MONTH, dutyDate: '2027-01-19', kind: 'NACHT', startsAt: '2027-01-19T17:00:00Z', endsAt: '2027-01-20T06:00:00Z' });
     await insertMembership(pool, x.tenant.companyId, id, x.mira.employeeId);
   }],
 ];
