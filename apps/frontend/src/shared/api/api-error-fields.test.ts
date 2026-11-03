@@ -97,11 +97,24 @@ describe('SP-07 — field errors and employee codes', () => {
         expect((await parseApiError(problem(status, { code }))).code, `${code} ${status}`).toBeNull();
       }
     }
-    // The calendar-write codes are not consumed by any screen yet and stay untrusted.
-    for (const code of ['PROJECT_CALENDAR_INVALID', 'PROJECT_CALENDAR_CONCURRENT_MODIFICATION', 'PROJECT_CALENDAR_DEPENDENCY_CONFLICT']) {
+  });
+
+  it('F-A1-2: trusts the calendar-write codes only with their catalogued status', async () => {
+    for (const code of ['PROJECT_CALENDAR_INVALID', 'PROJECT_CALENDAR_CONCURRENT_MODIFICATION', 'PROJECT_CALENDAR_DEPENDENCY_CONFLICT'] as const) {
       const status = code === 'PROJECT_CALENDAR_INVALID' ? 400 : 409;
-      expect((await parseApiError(problem(status, { code }))).code, code).toBeNull();
+      expect((await parseApiError(problem(status, { code }))).code, code).toBe(code);
+      for (const other of [400, 404, 409, 500].filter((value) => value !== status)) {
+        expect((await parseApiError(problem(other, { code }))).code, `${code} ${other}`).toBeNull();
+      }
     }
+  });
+
+  it('F-A1-2: keeps only safe field pointers of PROJECT_CALENDAR_INVALID, never server text', async () => {
+    const error = await parseApiError(problem(400, {
+      code: 'PROJECT_CALENDAR_INVALID',
+      errors: [{ pointer: '#/effectiveFromMonth', code: 'INVALID_FORMAT', detail: '<b>server text</b>' }, { pointer: 'x', code: 'REQUIRED' }],
+    }));
+    expect(error.fieldErrors).toEqual([{ pointer: '#/effectiveFromMonth', code: 'INVALID_FORMAT' }]);
   });
 
   it('has German texts for every SP-07 code', () => {

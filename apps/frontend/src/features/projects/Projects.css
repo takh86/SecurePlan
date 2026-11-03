@@ -178,3 +178,181 @@
   font-weight: 600;
   cursor: pointer;
 }
+
+/* F-A1-2 operating calendar ("Betriebstage"). State is always text, never colour alone. */
+.operating-calendar__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.operating-calendar__week,
+.operating-calendar__choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.operating-calendar__day {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  padding: 8px 6px;
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius-small);
+  font-size: 14px;
+  text-align: center;
+}
+
+.operating-calendar__day--open {
+  border-color: var(--sp-tone-success-fg);
+  background: var(--sp-tone-success-bg);
+  color: var(--sp-tone-success-fg);
+}
+
+.operating-calendar__day--closed {
+  background: var(--sp-tone-neutral-bg);
+  color: var(--sp-tone-neutral-fg);
+}
+
+.operating-calendar__short {
+  color: inherit;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.operating-calendar__form h3 {
+  margin: 0;
+  color: var(--sp-color-ink);
+  font-size: 18px;
+}
+
+.operating-calendar__form h3:focus {
+  outline: none;
+}
+
+.operating-calendar__form > p {
+  margin: 0;
+}
+
+.operating-calendar__notice {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--sp-tone-info-fg);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-tone-info-bg);
+  color: var(--sp-tone-info-fg);
+}
+
+.operating-calendar__notice p,
+.operating-calendar__notice ul {
+  margin: 0;
+}
+
+.operating-calendar__notice ul {
+  padding-left: 1.25rem;
+}
+
+/* Bootstrap and first-version warnings are never mistaken for routine information. */
+.operating-calendar__notice--warning {
+  border-color: var(--sp-tone-attention-fg);
+  background: var(--sp-tone-attention-bg);
+  color: var(--sp-tone-attention-fg);
+}
+
+.operating-calendar__label {
+  color: var(--sp-color-muted);
+}
+
+.operating-calendar__days {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--sp-color-border);
+  border-radius: var(--sp-radius-small);
+}
+
+.operating-calendar__days legend {
+  padding: 0 4px;
+  color: var(--sp-color-ink);
+  font-weight: 650;
+}
+
+.operating-calendar__choice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-color-surface);
+  color: var(--sp-color-ink);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.operating-calendar__choice:has(input:checked) {
+  border-color: var(--sp-color-brand);
+  background: var(--sp-tone-info-bg);
+}
+
+.operating-calendar__choice:has(input:focus-visible) {
+  outline: 3px solid var(--sp-color-focus);
+  outline-offset: 2px;
+}
+
+.operating-calendar__choice input,
+.operating-calendar__confirm input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  flex: none;
+}
+
+.operating-calendar__choice input[aria-invalid='true'],
+.operating-calendar__confirm input[aria-invalid='true'] {
+  outline: 2px solid var(--sp-color-danger);
+  outline-offset: 2px;
+}
+
+.operating-calendar__closing {
+  padding: 12px 16px;
+  border: 1px solid var(--sp-tone-attention-fg);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-tone-attention-bg);
+  color: var(--sp-tone-attention-fg);
+}
+
+.operating-calendar__confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--sp-color-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.operating-calendar__confirm input {
+  margin-top: 2px;
+}
+
+.operating-calendar__reloaded {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--sp-tone-info-fg);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-tone-info-bg);
+  color: var(--sp-tone-info-fg);
+}

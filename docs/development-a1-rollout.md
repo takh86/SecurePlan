@@ -6,6 +6,11 @@ seeds nothing: existing projects reject new assignments and First Publish until
 explicitly configured. Existing entries remain readable. This runbook does not
 authorize writes to any existing database, staging or production.
 
+Since F-A1-2 the same GET/PATCH flow, including the one-time bootstrap, is also
+available to COMPANY_ADMIN in the project page section „Betriebstage“
+([review](reviews/sp90-calendar-ui.md)). It uses this contract unchanged and
+changes none of the rollout prerequisites below; the API path remains valid.
+
 ## Reproduce on a disposable database
 
 Prerequisites: Node 24, `npm ci`, Docker with `postgres:17`, repository root in

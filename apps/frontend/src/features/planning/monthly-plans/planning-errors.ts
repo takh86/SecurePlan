@@ -10,8 +10,8 @@ import { ApiError } from '../../../shared/api/api-error';
 export type ErrorText = { title: string; description: string };
 
 const NOTHING_SAVED = 'Es wurde nichts gespeichert.';
-/** A1 ships no calendar admin page; the texts must not send the admin to a page that does not exist. */
-const NO_CALENDAR_PAGE = 'Eine Seite zum Festlegen der Betriebstage gibt es in dieser Ausbaustufe noch nicht.';
+/** F-A1-2: where an administrator sets the operating days (project detail page, section "Betriebstage"). */
+const NO_CALENDAR_PAGE = 'Betriebstage legen Sie unter „Projekte“ im jeweiligen Projekt im Abschnitt „Betriebstage“ für den Monat fest.';
 
 const CREATE_PLAN: Partial<Record<string, ErrorText>> = {
   MONTHLY_PLAN_ALREADY_EXISTS: {

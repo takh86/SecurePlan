@@ -15,10 +15,15 @@ import type { ProjectNotice } from './ProjectCreatePage';
 import { ProjectNameForm } from './ProjectNameForm';
 import { PROJECT_STATUS, type Project } from './project-types';
 import type { ProjectsApi } from './projects-api';
+import type { OperatingCalendarApi } from './operating-calendar-api';
+import { OperatingCalendarSection } from './OperatingCalendarSection';
 import type { ShiftConfigurationApi } from './shift-configuration-api';
 import { ShiftConfigurationSection, type ShiftEditState } from './ShiftConfigurationSection';
 
-export type ProjectDetailApis = AssignmentApis & { shiftConfigurations: ShiftConfigurationApi };
+export type ProjectDetailApis = AssignmentApis & {
+  shiftConfigurations: ShiftConfigurationApi;
+  operatingCalendars: OperatingCalendarApi;
+};
 
 type DetailProps = {
   projectId: string;
@@ -52,23 +57,24 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
   const project = updated ?? (state.status === 'ready' ? state.data : null);
   const noticeRef = useRef<HTMLParagraphElement>(null);
   const [focusNotice, setFocusNotice] = useState<object | null>(null);
+  const [calendarEdit, setCalendarEdit] = useState<EditState>('clean');
   const [shiftEdit, setShiftEdit] = useState<ShiftEditState>('clean');
   const [assignmentEdit, setAssignmentEdit] = useState<EditState>('clean');
 
   /**
    * The page's only navigation blocker (a data router supports one at a time).
    * Any SPA navigation away from the current URL (links, sidebar, Back/Forward,
-   * programmatic, REPLACE included) waits for a decision while shift times or
-   * an assignment correction are unsaved or a save is unconfirmed. Only the
-   * session boundary's marked REPLACE to `/` after sign-out or session loss
-   * passes (UX exception, not an authorization mechanism).
+   * programmatic, REPLACE included) waits for a decision while operating days,
+   * shift times or an assignment correction are unsaved or a save is
+   * unconfirmed. Only the session boundary's marked REPLACE to `/` after
+   * sign-out or session loss passes (UX exception, not an authorization mechanism).
    */
   const shouldBlock = useCallback<BlockerFunction>(
     ({ currentLocation, nextLocation, historyAction }) =>
-      (shiftEdit !== 'clean' || assignmentEdit !== 'clean') &&
+      (calendarEdit !== 'clean' || shiftEdit !== 'clean' || assignmentEdit !== 'clean') &&
       !isSessionRedirectNavigation(historyAction, nextLocation) &&
       (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search),
-    [shiftEdit, assignmentEdit],
+    [calendarEdit, shiftEdit, assignmentEdit],
   );
   const blocker = useBlocker(shouldBlock);
 
@@ -93,7 +99,7 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
         {blocker.state === 'blocked' && (
           <UnsavedChangesPrompt
             monthLabel={formatMonthLabel(requestedMonth)}
-            edits={{ shifts: shiftEdit, assignment: assignmentEdit }}
+            edits={{ calendar: calendarEdit, shifts: shiftEdit, assignment: assignmentEdit }}
             onLeave={() => blocker.proceed()}
             onStay={() => blocker.reset()}
           />
@@ -109,6 +115,14 @@ export function ProjectDetailPage({ projectId, monthParam, basePath, apis, clock
             <MonthSection
               month={requestedMonth}
               monthPath={(month) => `${basePath}/${encodeURIComponent(project.id)}/${month}`}
+            />
+            <OperatingCalendarSection
+              key={`calendar-${requestedMonth}`}
+              project={project}
+              month={requestedMonth}
+              api={apis.operatingCalendars}
+              clock={clock}
+              onEditStateChange={setCalendarEdit}
             />
             <ShiftConfigurationSection
               key={requestedMonth}
@@ -310,7 +324,7 @@ type MonthSectionProps = {
 };
 
 /**
- * UX A09 month navigation, shared by "Schichtzeiten" and "Mitarbeiterzuordnung".
+ * UX A09 month navigation, shared by "Betriebstage", "Schichtzeiten" and "Mitarbeiterzuordnung".
  * The month bar stays mounted across month steps, so keyboard focus stays on the link.
  */
 function MonthSection({ month, monthPath }: MonthSectionProps) {
@@ -320,7 +334,7 @@ function MonthSection({ month, monthPath }: MonthSectionProps) {
   return (
     <section className="employees-card" aria-labelledby="project-month-title">
       <h2 id="project-month-title">Monat</h2>
-      <p className="employees-card__hint">Schichtzeiten und Mitarbeiterzuordnung gelten für den gewählten Monat.</p>
+      <p className="employees-card__hint">Betriebstage, Schichtzeiten und Mitarbeiterzuordnung gelten für den gewählten Monat.</p>
       <div className="assignments__monthbar">
         <h3 aria-live="polite">{monthLabel}</h3>
         <Link
@@ -342,8 +356,9 @@ function MonthSection({ month, monthPath }: MonthSectionProps) {
   );
 }
 
-/** Edit states of the two forms on this page that can hold unsaved input. */
-type PendingEdits = { shifts: ShiftEditState; assignment: EditState };
+/** Edit states of the forms on this page that can hold unsaved input, in page order. */
+type PendingEdits = { calendar: EditState; shifts: ShiftEditState; assignment: EditState };
+const AREAS = ['calendar', 'shifts', 'assignment'] as const;
 
 type UnsavedChangesPromptProps = {
   monthLabel: string;
@@ -353,14 +368,30 @@ type UnsavedChangesPromptProps = {
 };
 
 const SAVING_TEXT: Record<keyof PendingEdits, (monthLabel: string) => string> = {
+  calendar: (monthLabel) => `Die Betriebstage ab ${monthLabel} werden gerade gespeichert.`,
   shifts: (monthLabel) => `Die Schichtzeiten ab ${monthLabel} werden gerade gespeichert.`,
   assignment: (monthLabel) => `Die Korrektur einer Zuordnung im ${monthLabel} wird gerade gespeichert.`,
 };
 const DIRTY_TEXT: Record<keyof PendingEdits, (monthLabel: string) => string> = {
+  calendar: (monthLabel) => `Die Auswahl der Betriebstage ab ${monthLabel} ist noch nicht gespeichert.`,
   shifts: (monthLabel) => `Die Änderungen an den Schichtzeiten ab ${monthLabel} sind noch nicht gespeichert.`,
   assignment: (monthLabel) => `Die Korrektur einer Zuordnung im ${monthLabel} ist noch nicht gespeichert.`,
 };
-const CHECK_AFTERWARDS: Record<keyof PendingEdits, string> = { shifts: 'die Schichtzeiten', assignment: 'die Zuordnungen' };
+const CHECK_AFTERWARDS: Record<keyof PendingEdits, string> = {
+  calendar: 'die Betriebstage',
+  shifts: 'die Schichtzeiten',
+  assignment: 'die Zuordnungen',
+};
+const DIRTY_TITLE: Record<keyof PendingEdits, string> = {
+  calendar: 'Ungespeicherte Betriebstage',
+  shifts: 'Ungespeicherte Schichtzeiten',
+  assignment: 'Ungespeicherte Zuordnungskorrektur',
+};
+const CLEAN_TITLE: Record<keyof PendingEdits, string> = {
+  calendar: 'Keine ungespeicherten Betriebstage mehr',
+  shifts: 'Keine ungespeicherten Schichtzeiten mehr',
+  assignment: 'Keine ungespeicherte Zuordnungskorrektur mehr',
+};
 
 /** `involved`: the forms that held changes while the prompt was open. */
 function promptText(edits: PendingEdits, involved: (keyof PendingEdits)[], monthLabel: string) {
@@ -382,18 +413,14 @@ function promptText(edits: PendingEdits, involved: (keyof PendingEdits)[], month
   }
   if (dirty.length > 0) {
     return {
-      title: dirty.length > 1
-        ? 'Ungespeicherte Änderungen'
-        : dirty[0] === 'shifts' ? 'Ungespeicherte Schichtzeiten' : 'Ungespeicherte Zuordnungskorrektur',
+      title: dirty.length > 1 ? 'Ungespeicherte Änderungen' : DIRTY_TITLE[dirty[0]],
       text: [...dirty.map((area) => DIRTY_TEXT[area](monthLabel)), 'Wenn Sie die Ansicht wechseln, werden sie verworfen.'].join(' '),
       leave: 'Änderungen verwerfen und wechseln',
       stay: 'Weiter bearbeiten',
     };
   }
   return {
-    title: involved.length > 1
-      ? 'Keine ungespeicherten Änderungen mehr'
-      : involved[0] === 'assignment' ? 'Keine ungespeicherte Zuordnungskorrektur mehr' : 'Keine ungespeicherten Schichtzeiten mehr',
+    title: involved.length === 1 ? CLEAN_TITLE[involved[0]] : 'Keine ungespeicherten Änderungen mehr',
     text: 'Es gibt keine ungespeicherten Änderungen mehr. Sie können die Ansicht jetzt wechseln.',
     leave: 'Jetzt wechseln',
     stay: 'Hier bleiben',
@@ -402,6 +429,7 @@ function promptText(edits: PendingEdits, involved: (keyof PendingEdits)[], month
 
 /** First control of the form that still holds changes, for "stay" when the trigger is gone. */
 const FORM_FOCUS: Record<keyof PendingEdits, string> = {
+  calendar: '.operating-calendar__form input',
   shifts: '.shift-config__form input',
   assignment: '.assignment-correction select',
 };
@@ -418,8 +446,8 @@ function UnsavedChangesPrompt({ monthLabel, edits, onLeave, onStay }: UnsavedCha
   const [deciding, setDeciding] = useState(false);
   const returnFocus = useRef<HTMLElement | null>(null);
   // Remembered from the held navigation on: a save that completes meanwhile still names its form.
-  const [heldWith] = useState(() => ({ shifts: edits.shifts !== 'clean', assignment: edits.assignment !== 'clean' }));
-  const involved = (['shifts', 'assignment'] as const).filter((area) => heldWith[area] || edits[area] !== 'clean');
+  const [heldWith] = useState(() => new Set(AREAS.filter((area) => edits[area] !== 'clean')));
+  const involved = AREAS.filter((area) => heldWith.has(area) || edits[area] !== 'clean');
   const copy = promptText(edits, involved, monthLabel);
 
   useEffect(() => {
