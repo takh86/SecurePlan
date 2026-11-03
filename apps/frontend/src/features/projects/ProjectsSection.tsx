@@ -7,6 +7,7 @@ import type { SessionApi } from '../auth/session-api';
 import { createEmployeesApi } from '../employees/employees-api';
 // Shared admin list/form/card styles (introduced with SP-07).
 import '../employees/Employees.css';
+import { createOperatingCalendarApi } from './operating-calendar-api';
 import { createProjectAssignmentsApi } from './project-assignments-api';
 import { ProjectCreatePage } from './ProjectCreatePage';
 import { ProjectDetailPage, type ProjectDetailApis } from './ProjectDetailPage';
@@ -19,8 +20,8 @@ type SectionProps = { route: AppRoute; api: SessionApi; clock?: Clock };
 
 /**
  * SP-08/SP-08b/SP-09 admin area `/projekte`: list, create (`/neu`) and detail
- * with the month-scoped shift configuration and assignment (`/:id` = current
- * month, `/:id/:month` with YYYY-MM).
+ * with the month-scoped operating days (F-A1-2), shift configuration and
+ * assignment (`/:id` = current month, `/:id/:month` with YYYY-MM).
  * Only real API data; the server enforces COMPANY_ADMIN and tenant scope.
  */
 export function ProjectsSection({ route, api, clock = systemClock }: SectionProps) {
@@ -30,6 +31,7 @@ export function ProjectsSection({ route, api, clock = systemClock }: SectionProp
       employees: createEmployeesApi(api),
       assignments: createProjectAssignmentsApi(api),
       shiftConfigurations: createShiftConfigurationApi(api),
+      operatingCalendars: createOperatingCalendarApi(api),
     }),
     [api],
   );

@@ -62,5 +62,7 @@ bootstrap records explicit compatibility acceptance, not proof of an old policy.
 The [development runbook](../development-a1-rollout.md) provides the explicit
 manual admin path and disposable legacy migration/demo rehearsal. Its inventory
 also reports projects without duties and missing historical plan months. No
-existing environment rollout, development-data cleanup or frontend integration
-has been performed. See the A1 PR for executed verification and limitations.
+existing environment rollout or development-data cleanup has been performed.
+See the A1 PR for executed verification and limitations. The F-A1-2 admin UI
+(project page, „Betriebstage“) uses this contract unchanged; see its
+[review](../reviews/sp90-calendar-ui.md).

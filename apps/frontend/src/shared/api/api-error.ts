@@ -70,11 +70,15 @@ export type KnownErrorCode =
   // SP-13 First Publish (approved backend catalogue); German text lives in the planning feature.
   | 'MONTHLY_PLAN_ALREADY_PUBLISHED'
   // A1 operating calendar guards of the planning writers and First Publish (merged backend
-  // catalogue, #92). German texts live in the planning feature. The calendar-write codes
-  // (PROJECT_CALENDAR_INVALID/_CONCURRENT_MODIFICATION/_DEPENDENCY_CONFLICT) wait for a calendar UI.
+  // catalogue, #92). German texts live in the planning feature.
   | 'PROJECT_CALENDAR_MISSING'
   | 'PROJECT_CLOSED_WEEKDAY'
-  | 'EMPLOYEE_DAILY_SHIFT_CONFLICT';
+  | 'EMPLOYEE_DAILY_SHIFT_CONFLICT'
+  // F-A1-2 calendar administration (merged backend catalogue, #92). German texts live in the
+  // projects feature, because they depend on normal vs. bootstrap writes.
+  | 'PROJECT_CALENDAR_INVALID'
+  | 'PROJECT_CALENDAR_CONCURRENT_MODIFICATION'
+  | 'PROJECT_CALENDAR_DEPENDENCY_CONFLICT';
 
 export type ApiErrorKind = 'http' | 'network' | 'invalid-response';
 
@@ -155,6 +159,9 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   PROJECT_CALENDAR_MISSING: 409,
   PROJECT_CLOSED_WEEKDAY: 409,
   EMPLOYEE_DAILY_SHIFT_CONFLICT: 409,
+  PROJECT_CALENDAR_INVALID: 400,
+  PROJECT_CALENDAR_CONCURRENT_MODIFICATION: 409,
+  PROJECT_CALENDAR_DEPENDENCY_CONFLICT: 409,
 };
 
 const POINTER_PATTERN = /^#(?:\/(?:[A-Za-z0-9_-]|~[01])+)+$/;
@@ -244,7 +251,9 @@ export async function parseApiError(response: Response): Promise<ApiError> {
     safeCorrelationId(response.headers.get('x-correlation-id')) ??
     safeCorrelationId(details?.correlationId);
 
-  const fieldErrors = code === 'VALIDATION_FAILED' ? safeFieldErrors(details?.errors) : [];
+  // The calendar endpoints answer validation failures as PROJECT_CALENDAR_INVALID with the same safe pointers.
+  const fieldErrors = code === 'VALIDATION_FAILED' || code === 'PROJECT_CALENDAR_INVALID'
+    ? safeFieldErrors(details?.errors) : [];
   const conflict = code === 'EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_PROJECT_ASSIGNMENTS'
     ? safeEmploymentPeriodConflict(details) : undefined;
   return new ApiError('http', response.status, code, correlationId, fieldErrors, conflict);

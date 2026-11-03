@@ -56,11 +56,25 @@ export function shiftVersion(month: string, shifts: [ShiftKind, string, string][
   };
 }
 
+/** One stored operating-calendar version (A1): `month` is `YYYY-MM-01`, weekdays ISO 1-7. */
+export type CalendarVersion = { projectId: string; month: string; id: string; version: number; weekdays: number[] };
+
+/** Synthetic example version; the weekday set is an explicit example, never a default. */
+export function calendarVersion(month: string, weekdays: number[], version = 1, projectId = PROJECT_ID): CalendarVersion {
+  const suffix = `${month.slice(0, 4)}${month.slice(5, 7)}`;
+  return { projectId, month, id: `9a000000-0000-4000-8000-${suffix}${String(version).padStart(6, '0')}`, version, weekdays };
+}
+
+/** A live saved duty start date of a project (dependency and bootstrap rules only). */
+export type DutyDate = { projectId: string; date: string };
+
 type CompanyState = {
   projects: Project[];
   employees: Employee[];
   assignments: ProjectAssignment[];
   shiftVersions: ShiftVersion[];
+  calendarVersions: CalendarVersion[];
+  dutyDates: DutyDate[];
 };
 
 const KIND_ORDER: ShiftKind[] = ['DAY', 'NIGHT'];
@@ -87,12 +101,75 @@ export function fakeCompany(initial: Partial<CompanyState> & { currentMonthStart
     employees: initial.employees ?? [employee()],
     assignments: initial.assignments ?? [],
     shiftVersions: initial.shiftVersions ?? [],
+    calendarVersions: initial.calendarVersions ?? [],
+    dutyDates: initial.dutyDates ?? [],
   };
   const currentMonthStart = initial.currentMonthStart ?? '2026-12-01';
   let failNext: ((request: RecordedRequest) => unknown) | null = null;
   let nextId = 1;
   // Synthetic example versions (#73): opaque, strictly increasing per write.
   let nextVersion = 1793260800000001;
+
+  /** A1 calendar contract (docs/api/project-operating-calendar.md), same precedence as the service. */
+  function calendarRead(projectId: string, target: string) {
+    const versions = state.calendarVersions.filter((item) => item.projectId === projectId).sort((a, b) => a.month.localeCompare(b.month));
+    const effective = versions.filter((item) => item.month <= target).at(-1);
+    const exact = effective?.month === target ? effective : undefined;
+    const next = versions.find((item) => item.month > target)?.month ?? null;
+    return {
+      effective, exact, next,
+      response: {
+        projectId, effectiveForMonth: target, state: effective ? 'CONFIGURED' : 'MISSING',
+        effective: effective
+          ? { id: effective.id, effectiveFromMonth: effective.month, operatingWeekdays: [...effective.weekdays].sort(), version: effective.version }
+          : null,
+        exactVersion: exact ? { id: exact.id, version: exact.version } : null,
+        nextEffectiveFromMonth: next,
+      },
+    };
+  }
+
+  function calendarAnswer(projectId: string, request: RecordedRequest, params: URLSearchParams) {
+    const invalidMonth = (field: string) => httpError(400, 'PROJECT_CALENDAR_INVALID', [{ pointer: `#/${field}`, code: 'INVALID_FORMAT' }]);
+    const target = state.projects.find((item) => item.id === projectId);
+    if (request.method === 'GET') {
+      const month = params.get('effectiveForMonth') ?? '';
+      if (!/^\d{4}-\d{2}-01$/.test(month)) throw invalidMonth('effectiveForMonth');
+      if (!target) throw httpError(404, 'RESOURCE_NOT_FOUND');
+      return calendarRead(projectId, month).response;
+    }
+    if (request.method !== 'PATCH') throw new Error(`Unexpected request ${request.method} ${request.path}`);
+    type Ref = { id: string; version: number } | null;
+    const body = request.body as {
+      effectiveFromMonth: string; expectedExactVersion: Ref; expectedEffective: Ref;
+      expectedNextEffectiveFromMonth: string | null; operatingWeekdays: number[]; bootstrap: boolean;
+    };
+    if (!/^\d{4}-\d{2}-01$/.test(body.effectiveFromMonth)) throw invalidMonth('effectiveFromMonth');
+    if (!target) throw httpError(404, 'RESOURCE_NOT_FOUND');
+    const current = calendarRead(projectId, body.effectiveFromMonth);
+    const matches = (actual: CalendarVersion | undefined, expected: Ref) =>
+      actual === undefined ? expected === null : expected !== null && expected.id === actual.id && expected.version === actual.version;
+    if (!matches(current.exact, body.expectedExactVersion) || !matches(current.effective, body.expectedEffective)
+      || current.next !== body.expectedNextEffectiveFromMonth) throw httpError(409, 'PROJECT_CALENDAR_CONCURRENT_MODIFICATION');
+    const duties = state.dutyDates.filter((item) => item.projectId === projectId);
+    const first = duties.map((item) => `${item.date.slice(0, 7)}-01`).sort()[0];
+    const configured = state.calendarVersions.some((item) => item.projectId === projectId);
+    if (body.bootstrap ? configured || body.effectiveFromMonth !== (first ?? currentMonthStart) : body.effectiveFromMonth < currentMonthStart) {
+      throw invalidMonth('effectiveFromMonth');
+    }
+    const weekdays = [...body.operatingWeekdays].sort();
+    if (current.exact && [...current.exact.weekdays].sort().join() === weekdays.join()) return { ...current.response, outcome: 'NO_OP' };
+    if (target.status !== 'ACTIVE') throw httpError(409, 'PROJECT_INACTIVE');
+    const isoDay = (date: string) => ((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+    const closes = duties.some((item) => item.date >= body.effectiveFromMonth && (current.next === null || item.date < current.next)
+      && !weekdays.includes(isoDay(item.date)) && (!current.effective || current.effective.weekdays.includes(isoDay(item.date))));
+    if (closes) throw httpError(409, 'PROJECT_CALENDAR_DEPENDENCY_CONFLICT');
+    const written = current.exact
+      ? { ...current.exact, weekdays, version: current.exact.version + 1 }
+      : calendarVersion(body.effectiveFromMonth, weekdays, 1, projectId);
+    state.calendarVersions = [...state.calendarVersions.filter((item) => item !== current.exact), written];
+    return { ...calendarRead(projectId, body.effectiveFromMonth).response, outcome: 'APPLIED' };
+  }
 
   const handler: Handler = (request) => {
     if (failNext) {
@@ -106,6 +183,9 @@ export function fakeCompany(initial: Partial<CompanyState> & { currentMonthStart
     const params = new URLSearchParams(search);
     const projectMatch = /^\/api\/v1\/projects\/([^/]+)$/.exec(pathname);
     const shiftMatch = /^\/api\/v1\/projects\/([^/]+)\/shift-configuration$/.exec(pathname);
+    const calendarMatch = /^\/api\/v1\/projects\/([^/]+)\/operating-calendar$/.exec(pathname);
+
+    if (calendarMatch) return calendarAnswer(decodeURIComponent(calendarMatch[1]), request, params);
 
     if (shiftMatch) {
       const projectId = decodeURIComponent(shiftMatch[1]);

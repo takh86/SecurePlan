@@ -123,10 +123,11 @@ describe('A1 (#90) — operating calendar and one-shift-per-day texts', () => {
     }
   });
 
-  it('a missing calendar never sends the admin to a page that does not exist (A1 ships no calendar UI)', () => {
+  it('a missing calendar points the admin to the project page section that sets operating days (F-A1-2)', () => {
     for (const write of ['create-duty', 'update-duty', 'publish-plan'] as const) {
-      expect(planningErrorText(http(409, 'PROJECT_CALENDAR_MISSING'), write)!.description, write)
-        .toContain('Eine Seite zum Festlegen der Betriebstage gibt es in dieser Ausbaustufe noch nicht.');
+      const description = planningErrorText(http(409, 'PROJECT_CALENDAR_MISSING'), write)!.description;
+      expect(description, write).toContain('Betriebstage legen Sie unter „Projekte“ im jeweiligen Projekt im Abschnitt „Betriebstage“ für den Monat fest.');
+      expect(description, write).not.toContain('gibt es in dieser Ausbaustufe noch nicht');
     }
     expect(planningErrorText(http(409, 'PROJECT_CALENDAR_MISSING'), 'publish-plan')!.description).toContain('auch ein Plan ohne Dienste');
   });
