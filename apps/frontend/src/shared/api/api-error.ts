@@ -78,7 +78,10 @@ export type KnownErrorCode =
   // projects feature, because they depend on normal vs. bootstrap writes.
   | 'PROJECT_CALENDAR_INVALID'
   | 'PROJECT_CALENDAR_CONCURRENT_MODIFICATION'
-  | 'PROJECT_CALENDAR_DEPENDENCY_CONFLICT';
+  | 'PROJECT_CALENDAR_DEPENDENCY_CONFLICT'
+  // A2 employee-month Save (adopted contract A2-GATE-1, backend #95).
+  // Its German texts live in the planning feature.
+  | 'EMPLOYEE_MONTH_SAVE_CONFLICT';
 
 export type ApiErrorKind = 'http' | 'network' | 'invalid-response';
 
@@ -162,6 +165,7 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   PROJECT_CALENDAR_INVALID: 400,
   PROJECT_CALENDAR_CONCURRENT_MODIFICATION: 409,
   PROJECT_CALENDAR_DEPENDENCY_CONFLICT: 409,
+  EMPLOYEE_MONTH_SAVE_CONFLICT: 409,
 };
 
 const POINTER_PATTERN = /^#(?:\/(?:[A-Za-z0-9_-]|~[01])+)+$/;
@@ -212,6 +216,8 @@ export class ApiError extends Error {
   /** Only for 400 VALIDATION_FAILED: which fields failed, as safe subcodes. */
   readonly fieldErrors: readonly FieldError[];
   readonly employmentPeriodConflict: EmploymentPeriodConflict | undefined;
+  /** Only for the A2 employee-month Save refusals: the allowlisted atomic-conflict extension. */
+  readonly employeeMonthConflict: EmployeeMonthConflict | undefined;
 
   constructor(
     kind: ApiErrorKind,
@@ -220,6 +226,7 @@ export class ApiError extends Error {
     correlationId: string | null,
     fieldErrors: readonly FieldError[] = [],
     employmentPeriodConflict?: EmploymentPeriodConflict,
+    employeeMonthConflict?: EmployeeMonthConflict,
   ) {
     super('API request failed');
     this.name = 'ApiError';
@@ -229,6 +236,7 @@ export class ApiError extends Error {
     this.correlationId = correlationId;
     this.fieldErrors = fieldErrors;
     this.employmentPeriodConflict = employmentPeriodConflict;
+    this.employeeMonthConflict = employeeMonthConflict;
   }
 }
 
@@ -256,7 +264,80 @@ export async function parseApiError(response: Response): Promise<ApiError> {
     ? safeFieldErrors(details?.errors) : [];
   const conflict = code === 'EMPLOYMENT_PERIOD_EXCLUDES_FUTURE_PROJECT_ASSIGNMENTS'
     ? safeEmploymentPeriodConflict(details) : undefined;
-  return new ApiError('http', response.status, code, correlationId, fieldErrors, conflict);
+  const monthConflict = code === 'EMPLOYEE_MONTH_SAVE_CONFLICT' || code === 'PLAN_CONCURRENT_MODIFICATION'
+    ? safeEmployeeMonthConflict(details, code) : undefined;
+  return new ApiError('http', response.status, code, correlationId, fieldErrors, conflict, monthConflict);
+}
+
+/** A2-GATE-1 OpenAPI `AtomicConflict.stage`: the stages never mix in one refusal. */
+export type EmployeeMonthConflictStage = 'LEASE' | 'PRECONDITION' | 'VALIDATION';
+
+/** The frozen A2 reason enum; nothing else (no free text, holder, other person or medical fact). */
+export const EMPLOYEE_MONTH_CONFLICT_REASONS = [
+  'PLAN_CONCURRENT_MODIFICATION',
+  'ACTIVE_DUTY_EDIT',
+  'PRESERVED_ROSTER_CONFLICT',
+  'PROJECT_INACTIVE',
+  'PROJECT_CALENDAR_MISSING',
+  'PROJECT_CLOSED_WEEKDAY',
+  'SHIFT_CONFIGURATION_MISSING',
+  'DUTY_TIME_RANGE_INVALID',
+  'EMPLOYEE_INACTIVE',
+  'EMPLOYEE_NOT_EMPLOYED_FOR_DAY',
+  'EMPLOYEE_NOT_ASSIGNED_TO_PROJECT_MONTH',
+  'EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT',
+  'EMPLOYEE_UNAVAILABLE',
+  'EMPLOYEE_DAILY_SHIFT_CONFLICT',
+  'DUTY_ASSIGNMENT_CONFLICT',
+] as const;
+export type EmployeeMonthConflictReason = (typeof EMPLOYEE_MONTH_CONFLICT_REASONS)[number];
+
+export type EmployeeMonthConflict = Readonly<{
+  stage: EmployeeMonthConflictStage;
+  /** At most one entry per date and shift, sorted by date, DAY before NIGHT; may be empty. */
+  conflicts: readonly Readonly<{ date: string; shiftKind: 'DAY' | 'NIGHT'; reason: EmployeeMonthConflictReason }>[];
+}>;
+
+function reasonFitsStage(stage: EmployeeMonthConflictStage, reason: EmployeeMonthConflictReason): boolean {
+  if (stage === 'PRECONDITION') return reason === 'PLAN_CONCURRENT_MODIFICATION';
+  if (stage === 'LEASE') return reason === 'ACTIVE_DUTY_EDIT';
+  return reason !== 'PLAN_CONCURRENT_MODIFICATION' && reason !== 'ACTIVE_DUTY_EDIT';
+}
+
+function isCivilDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^(?!0000)\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(2000, month - 1, day));
+  date.setUTCFullYear(year);
+  return date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+/**
+ * The A2 extension `{atomic: true, stage, conflicts}` of a 409 problem. Rejected as a unit when
+ * malformed (the refusal itself still counts; only the dated hints are dropped). PRECONDITION
+ * belongs to PLAN_CONCURRENT_MODIFICATION, LEASE and VALIDATION to EMPLOYEE_MONTH_SAVE_CONFLICT.
+ */
+function safeEmployeeMonthConflict(value: unknown, code: KnownErrorCode): EmployeeMonthConflict | undefined {
+  if (!isRecord(value) || value.atomic !== true) return undefined;
+  const stage = value.stage;
+  if (stage !== 'LEASE' && stage !== 'PRECONDITION' && stage !== 'VALIDATION') return undefined;
+  if ((stage === 'PRECONDITION') !== (code === 'PLAN_CONCURRENT_MODIFICATION')) return undefined;
+  const { conflicts } = value;
+  if (!Array.isArray(conflicts) || conflicts.length > 62) return undefined;
+  const result: { date: string; shiftKind: 'DAY' | 'NIGHT'; reason: EmployeeMonthConflictReason }[] = [];
+  let previous = '';
+  for (const item of conflicts) {
+    if (!isRecord(item) || !isCivilDate(item.date) || (item.shiftKind !== 'DAY' && item.shiftKind !== 'NIGHT')) return undefined;
+    const reason = item.reason;
+    if (typeof reason !== 'string' || !(EMPLOYEE_MONTH_CONFLICT_REASONS as readonly string[]).includes(reason)) return undefined;
+    if (!reasonFitsStage(stage, reason as EmployeeMonthConflictReason)) return undefined;
+    // Sorted by date, DAY before NIGHT, unique per slot.
+    const key = `${item.date}/${item.shiftKind === 'DAY' ? 0 : 1}`;
+    if (key <= previous) return undefined;
+    previous = key;
+    result.push({ date: item.date, shiftKind: item.shiftKind, reason: reason as EmployeeMonthConflictReason });
+  }
+  return { stage, conflicts: result };
 }
 
 export type EmploymentPeriodConflict = Readonly<{

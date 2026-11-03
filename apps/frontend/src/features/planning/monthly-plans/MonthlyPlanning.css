@@ -537,3 +537,404 @@
     padding: 16px;
   }
 }
+
+/* Issue #88 employee-month planner (preview): one person, every day of the month. */
+
+.planning-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0 0 16px;
+  padding: 8px 12px 12px;
+  border: 1px solid var(--sp-color-border);
+  border-radius: var(--sp-radius-small);
+}
+
+.planning-views legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.planning-views label,
+.month-planner__roles label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.planning-views input,
+.month-planner__roles input {
+  width: 20px;
+  height: 20px;
+}
+
+.planning-day__month {
+  justify-self: start;
+}
+
+.month-planner {
+  display: grid;
+  gap: 16px;
+}
+
+.month-planner p,
+.month-planner h4 {
+  margin: 0;
+}
+
+/* Shares the look of the app's preview notice; the planner grid sets its own spacing. */
+.month-planner__preview {
+  margin: 0;
+}
+
+.month-planner__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* xl: day details and changes beside the month; below, they follow it. */
+@media (min-width: 1280px) {
+  .month-planner__layout {
+    grid-template-columns: minmax(0, 44rem) minmax(20rem, 1fr);
+  }
+
+  .month-planner__side {
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+  }
+}
+
+.month-planner__side {
+  display: grid;
+  gap: 16px;
+}
+
+.month-planner__day,
+.month-planner__changes {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius);
+  background: var(--sp-color-surface);
+}
+
+.month-planner__others {
+  color: var(--sp-color-muted);
+  font-size: 14px;
+}
+
+.month-planner__roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 20px;
+  margin: 0;
+  padding: 0 8px 4px;
+  border: 1px solid var(--sp-color-border);
+  border-radius: var(--sp-radius-small);
+}
+
+.month-planner__change-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.month-planner__change--conflict {
+  padding: 4px 8px;
+  border-left: 4px solid var(--sp-tone-attention-fg);
+  background: var(--sp-tone-attention-bg);
+}
+
+.month-planner__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sp-color-brand);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.month-planner__small {
+  min-height: 36px;
+  padding: 4px 10px;
+  font-size: 14px;
+}
+
+/* The single save action stays reachable at the bottom while scrolling the month. */
+.month-planner__savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius);
+  background: var(--sp-color-surface);
+  box-shadow: 0 -4px 12px rgb(0 0 0 / 8%);
+}
+
+.month-planner__count {
+  flex: 1 1 12rem;
+  font-weight: 600;
+}
+
+.month-planner__save-note {
+  flex-basis: 100%;
+  color: var(--sp-color-muted);
+  font-size: 14px;
+}
+
+.month-planner__savebar .employees-button--primary[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.month-planner__main {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Paint-mode toolbar: the native radios keep keyboard and screen-reader behaviour; the labels are the targets. */
+.month-planner__modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px 12px;
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius);
+  background: var(--sp-color-surface);
+}
+
+.month-planner__modes legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.month-planner__mode {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 6rem;
+  min-height: 44px;
+  padding: 6px 14px;
+  border: 2px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-color-surface);
+  color: var(--sp-color-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.month-planner__mode input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Selected mode: filled and ticked, so the state does not rely on colour alone. */
+.month-planner__mode:has(input:checked) {
+  border-color: var(--sp-color-brand);
+  background: var(--sp-color-brand);
+  color: #ffffff;
+}
+
+.month-planner__mode:has(input:checked)::before {
+  content: '✓';
+}
+
+.month-planner__mode:has(input:focus-visible) {
+  outline: 3px solid var(--sp-color-focus);
+  outline-offset: 2px;
+}
+
+.month-planner__mode-hint {
+  flex-basis: 100%;
+  color: var(--sp-color-muted);
+  font-size: 14px;
+}
+
+.month-planner__summary {
+  font-weight: 600;
+}
+
+.month-planner__fixes {
+  display: grid;
+  gap: 6px;
+  padding: 12px 16px;
+  border: 2px solid var(--sp-tone-attention-fg);
+  border-radius: var(--sp-radius);
+  background: var(--sp-tone-attention-bg);
+  color: var(--sp-tone-attention-fg);
+}
+
+.month-planner__fixes ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+/* Month calendar, Monday first; each date is one paint target. Text and marks, not colour alone, carry state and change. */
+.month-calendar {
+  width: 100%;
+  max-width: 48rem;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 4px;
+  font-size: 14px;
+}
+
+.month-calendar th {
+  padding: 4px 0;
+  color: var(--sp-color-muted);
+  font-weight: 600;
+  text-align: center;
+}
+
+.month-calendar td {
+  padding: 0;
+  vertical-align: top;
+}
+
+.month-calendar__day {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 2px;
+  width: 100%;
+  min-height: 64px;
+  padding: 4px 6px;
+  border: 2px solid var(--sp-color-border);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-color-surface);
+  color: var(--sp-color-muted);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.month-calendar__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 2px;
+}
+
+.month-calendar__num {
+  color: var(--sp-color-text);
+  font-weight: 600;
+}
+
+.month-calendar__mark {
+  font-weight: 700;
+}
+
+.month-calendar__state {
+  align-self: center;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.month-calendar__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  min-height: 1.1em;
+  font-size: 12px;
+}
+
+.month-calendar__day--day {
+  border-color: var(--sp-tone-info-fg);
+  background: var(--sp-tone-info-bg);
+  color: var(--sp-tone-info-fg);
+}
+
+.month-calendar__day--night {
+  border-color: var(--sp-color-ink);
+  background: var(--sp-tone-neutral-bg);
+  color: var(--sp-color-ink);
+}
+
+.month-calendar__day--changed {
+  border-style: dashed;
+  border-color: var(--sp-color-brand);
+  box-shadow: inset 0 0 0 1px var(--sp-color-brand);
+}
+
+.month-calendar__day--closed {
+  background: var(--sp-color-canvas);
+}
+
+.month-calendar__day--restricted {
+  border-style: dotted;
+  cursor: not-allowed;
+}
+
+.month-calendar__day--both,
+.month-calendar__day--problem {
+  border-color: var(--sp-tone-attention-fg);
+  background: var(--sp-tone-attention-bg);
+  color: var(--sp-tone-attention-fg);
+}
+
+.month-calendar__day:focus-visible {
+  outline: 3px solid var(--sp-color-focus);
+  outline-offset: 1px;
+}
+
+.month-calendar__warn {
+  font-weight: 700;
+}
+
+@media (max-width: 719px) {
+  .month-calendar {
+    border-spacing: 2px;
+    font-size: 13px;
+  }
+
+  .month-calendar__day {
+    min-height: 56px;
+    padding: 2px 1px;
+  }
+
+  /* Whole words only: "Nacht" fits a phone-width cell at this size. */
+  .month-calendar__state {
+    font-size: 12px;
+    overflow-wrap: normal;
+  }
+
+  .month-calendar__flags {
+    font-size: 11px;
+  }
+
+  .month-planner__mode {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .month-planner__savebar {
+    gap: 6px 8px;
+    padding: 8px 12px;
+  }
+
+  .month-planner__save-note {
+    font-size: 13px;
+  }
+}
