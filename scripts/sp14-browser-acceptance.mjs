@@ -254,9 +254,9 @@ try {
 
   await step('B4 actual foreground and bfcache revalidation conceal revoked employee DOM',async()=>{
     const debugPort=await freePort();
-    nativeDriver=await chromium.launch({channel:'chrome',headless:false,chromiumSandbox:true,ignoreDefaultArgs:['--disable-back-forward-cache','--disable-backgrounding-occluded-windows','--disable-renderer-backgrounding','--disable-background-timer-throttling'],args:['--window-position=-10000,-10000',`--remote-debugging-port=${debugPort}`]});
+    nativeDriver=await chromium.launch({channel:'chrome',headless:false,chromiumSandbox:true,ignoreDefaultArgs:['--disable-back-forward-cache','--disable-backgrounding-occluded-windows','--disable-renderer-backgrounding','--disable-background-timer-throttling'],args:['--window-position=-10000,-10000','--disable-features=CalculateNativeWinOcclusion',`--remote-debugging-port=${debugPort}`]});
     nativeBrowser=await chromium.connectOverCDP(`http://127.0.0.1:${debugPort}`,{noDefaults:true});
-    const c=nativeBrowser.contexts()[0];const p=await c.newPage();activePage=p;
+    const c=nativeBrowser.contexts()[0];const p=await c.newPage();activePage=p;await p.bringToFront();
     await p.addInitScript(()=>{window.addEventListener('pageshow',event=>{if(event.persisted)window.__sp14Persisted=true;});});
     await p.goto(`${origin}/browser-away`);assert.equal((await api(p,'POST','/auth/login',{email:email(ids.employeeAccount),password},{},false)).status,200);
     await p.goto(`${origin}/mein-monatsplan/2026-12`);await p.locator('.duty-card').nth(2).waitFor({state:'attached'});

@@ -158,6 +158,7 @@ export function LoginScreen({
     let mounted = true;
     function onPageShow(event: PageTransitionEvent) {
       if (event.persisted) recheckSession(() => mounted);
+      else if (document.visibilityState === 'hidden') conceal();
       else delete document.documentElement.dataset.privateSessionHidden;
     }
     function conceal() {
@@ -174,6 +175,7 @@ export function LoginScreen({
     window.addEventListener('pagehide', conceal);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pageshow', onPageShow);
+    if (document.visibilityState === 'hidden') conceal();
     return () => {
       mounted = false;
       window.removeEventListener('pageshow', onPageShow);

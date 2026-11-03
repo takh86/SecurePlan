@@ -16,7 +16,7 @@ function View(session: AuthenticatedSession) {
 function mount(openChannel?: Parameters<typeof LoginScreen>[0]['openChannel']) {
   return render(<MemoryRouter initialEntries={['/mein-monatsplan/2026-12']}><LoginScreen authenticatedView={View} openChannel={openChannel} /></MemoryRouter>);
 }
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); delete document.documentElement.dataset.privateSessionHidden; });
 it('R1 current real transport401 unmounts private schedule at the session boundary', async () => {
   let expire = false;
   vi.stubGlobal('fetch', vi.fn(async (path: string) => expire ? new Response('{}', { status: 401 }) : json(path === '/api/v1/me' ? employeeIdentity : personalPlan())));
@@ -55,4 +55,12 @@ it.each([200,401])('C2 same-principal new generation ignores old response status
   await screen.findByText('Projekt: Synthetic Nord');
   await act(async()=>old(status===401?new Response('{}',{status:401}):json({items:[]})));
   expect(screen.getByText('Projekt: Synthetic Nord')).toBeTruthy();expect(screen.queryByRole('heading',{name:'Anmelden'})).toBeNull();
+});
+
+it('R7 authenticating in an already hidden document conceals immediately and revalidates on foreground',async()=>{
+  const visibility=vi.spyOn(document,'visibilityState','get').mockReturnValue('hidden');
+  const fetcher=vi.fn(async(path:string)=>json(path==='/api/v1/me'?employeeIdentity:personalPlan()));vi.stubGlobal('fetch',fetcher);
+  mount();await waitFor(()=>expect(document.documentElement.dataset.privateSessionHidden).toBe('true'));
+  visibility.mockReturnValue('visible');act(()=>document.dispatchEvent(new Event('visibilitychange')));
+  await screen.findByText('Projekt: Synthetic Nord');expect(document.documentElement.dataset.privateSessionHidden).toBeUndefined();
 });

@@ -14,9 +14,9 @@ Evidence uses synthetic data only, Node 24.21.0 and a separately verified memory
 | --- | --- |
 | Lint; backend typecheck; backend/frontend build | PASS |
 | Backend unit suite | PASS ? 423 tests, 38 files |
-| Frontend suite | PASS ? 1,121 tests, 67 files |
+| Frontend suite | PASS ? 1,122 tests, 67 files |
 | Full backend HTTP/PostgreSQL suite | PASS ? 1,493 tests before the additional race cases; final suite recorded in PR |
-| Expanded SP-14 real HTTP/PostgreSQL regressions | PASS ? 77 cases before the case-insensitive cache regression; final count recorded in PR |
+| Expanded SP-14 real HTTP/PostgreSQL regressions | PASS ? 78 cases, including case-insensitive cache handling |
 | Repository script tests | PASS ? 34 tests in Node 24, sharing only the disposable PostgreSQL container network |
 | Public-content check | PASS ? limited automated scan, plus diff review |
 | Real installed Chrome | Admin Save/First Publish, employee reload/refresh, CR-03, mobile390px, browser zones, malformed responses, principal changes, cross-tab logout and expiry verified; final native lifecycle result recorded in PR |
