@@ -184,7 +184,7 @@ describe('F-A1-2 normal month-effective writes', () => {
     });
   });
 
-  it('keyboard only: Tab reaches the weekdays Monday first, Space toggles, Enter submits', async () => {
+  it('keyboard only: Tab reaches the weekdays Monday first, Space toggles, Enter on the save button submits', async () => {
     const server = fakeCompany();
     renderProjects(PATH, server.handler);
     const user = userEvent.setup();
@@ -196,6 +196,9 @@ describe('F-A1-2 normal month-effective writes', () => {
     expect(document.activeElement).toBe(box('Mittwoch'));
     await user.keyboard(' ');
     expect(checked()).toEqual(['Mittwoch']);
+    // Donnerstag … Sonntag, then the save button (the alert container is not in the tab order).
+    for (let step = 0; step < 5; step += 1) await user.tab();
+    expect(document.activeElement).toBe(saveButton());
     await user.keyboard('{Enter}');
     expect(await screen.findByText('Die Betriebstage ab Dezember 2026 wurden gespeichert (Version 1).')).toBeTruthy();
     expect(server.state.calendarVersions[0].weekdays).toEqual([3]);
