@@ -104,6 +104,12 @@ function safeDetail(status: number, code: string): string {
   if (code === 'VALIDATION_FAILED' || code === 'UNKNOWN_FIELD') return 'One or more fields are invalid.';
   if (status === 404) return 'The requested resource was not found.';
   if (code === 'PLAN_CONCURRENT_MODIFICATION') return 'The plan has changed. Reload the current state and try again.';
+  if (code === 'PROJECT_CALENDAR_CONCURRENT_MODIFICATION') return 'The calendar has changed. Reload the current state and review the change again.';
+  if (code === 'PROJECT_CALENDAR_DEPENDENCY_CONFLICT') return 'The change would close a saved duty date. Correct or remove the duty explicitly, or choose a later effective month.';
+  if (code === 'PROJECT_CALENDAR_MISSING') return 'Explicitly configure the project operating calendar before scheduling or publishing.';
+  if (code === 'PROJECT_CLOSED_WEEKDAY') return 'The project does not operate on this duty start date.';
+  if (code === 'EMPLOYEE_DAILY_SHIFT_CONFLICT') return 'An employee is already assigned to the other shift on this project duty date.';
+  if (code === 'PROJECT_CALENDAR_INVALID') return 'One or more calendar fields are invalid.';
   if (code === EMPLOYMENT_PERIOD_CONFLICT) return 'The changed employment period would no longer cover existing future monthly project assignments. Review and correct or remove the conflicting assignments first.';
   // SP-11 C1: static details only; no duty IDs, counts, names or resolved instants.
   if (code === 'PROJECT_HAS_FUTURE_DUTIES') return 'The project has scheduled duties that require explicit resolution.';
@@ -117,7 +123,7 @@ function safeDetail(status: number, code: string): string {
 
 /** Never forward caller-provided validation descriptions or rejected values. */
 function safeValidationErrors(exception: unknown, code: string): Array<{pointer: string; code: string; detail: string}> | undefined {
-  if (code !== 'VALIDATION_FAILED' || !(exception instanceof HttpException)) return undefined;
+  if (!['VALIDATION_FAILED', 'PROJECT_CALENDAR_INVALID'].includes(code) || !(exception instanceof HttpException)) return undefined;
   const payload = exception.getResponse();
   if (!isRecord(payload) || !Array.isArray(payload.errors)) return undefined;
   const entries = payload.errors
@@ -140,6 +146,8 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     const request = http.getRequest<CorrelatedRequest>();
     const response = http.getResponse<Response>();
     let { status, code } = resolveError(exception);
+    const calendarPath = /^\/api\/v1\/projects\/[^/]+\/operating-calendar(?:\/|$)/i.test(request.path);
+    if (calendarPath && code === 'VALIDATION_FAILED') code = 'PROJECT_CALENDAR_INVALID';
     const conflict = code === EMPLOYMENT_PERIOD_CONFLICT && exception instanceof HttpException
       ? safeEmploymentPeriodConflict(exception.getResponse()) : undefined;
     if (code === EMPLOYMENT_PERIOD_CONFLICT && conflict === undefined) {
@@ -155,6 +163,9 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       response.setHeader('Cache-Control', 'no-store');
     }
     if (conflict !== undefined) response.setHeader('Cache-Control', 'no-store');
+    if (calendarPath) {
+      response.setHeader('Cache-Control', 'no-store');
+    }
 
     const problemDetails = {
       type: problemType(code),

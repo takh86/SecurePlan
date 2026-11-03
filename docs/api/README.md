@@ -1,5 +1,8 @@
 # API Design – öffentliche Übersicht
 
+A1 implementation amendment (2026-11-03): [project operating calendar](project-operating-calendar.md).
+Product approval, implemented backend behavior and independent acceptance remain distinct.
+
 Stand: 29.10.2026, Implementierungsbaseline `7107781`. Die interne Designbaseline hat Phase 8.11 erreicht; spätere freigegebene Amendments werden kontrolliert nachgeführt. Produkt-API-Design und implementierte Endpunkte werden getrennt ausgewiesen.
 
 Öffentliche Einstiegspunkte: [Resource-Analyse](phase-8-1-resource-analysis-draft.md) und [bereinigte Designzusammenfassung](phase-8-2-rest-endpoint-design.md). Historische Dokumente beschreiben ihren jeweiligen damaligen Stand.
