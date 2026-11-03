@@ -118,7 +118,7 @@ Behaviour that is preserved or intentionally changed:
   calendar) is not offered, and a pending one that a newer calendar closes blocks the save.
   A wanted shift without a duty now reads "Dienst wird beim Speichern angelegt" (P2 settled).
 
-## 4. Evidence (executed on this branch)
+## 4. Evidence (executed on this branch, rebased onto `fc7ec3b`, Node 24.21.0, Windows)
 
 | Check | Result |
 |---|---|
@@ -126,7 +126,7 @@ Behaviour that is preserved or intentionally changed:
 | `npm run typecheck` (backend) | exit 0 |
 | `npm run build` | exit 0 (existing bundle-size advisory only) |
 | `npm run test --workspace=frontend` | 63 files / 1045 tests PASS |
-| `npm test` (backend unit, unchanged code) | 36 files / 385 tests PASS |
+| `npm test` (backend unit; no backend change here, main includes #95) | 37 files / 411 tests PASS |
 | `npm run check:public` | PASS |
 | New suites | `employee-month-api.test.ts`, `employee-month-save.test.ts`, `api-error-employee-month.test.ts`, `EmployeeMonthPlanner.a2.test.tsx`, `MonthlyPlanPage.employee-month-a2.test.tsx`; #91 suites adapted |
 
