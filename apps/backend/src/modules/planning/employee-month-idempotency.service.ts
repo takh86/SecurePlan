@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -26,6 +25,7 @@ import { PLANNING_WRITER_TIMEOUTS } from './planning-locks.js';
 import { assertPlanningSchemaComplete } from './planning-schema.js';
 import { publishIdempotencySettings } from './publish-idempotency.service.js';
 import { assertEmployeeMonthReceiptSchema } from './employee-month-receipt-schema.js';
+import { reserveCommand } from './command-reservation.js';
 
 const OP = 'EMPLOYEE_MONTH_SAVE';
 const digest = (s: string) => createHash('sha256').update(s).digest();
@@ -106,70 +106,40 @@ export class EmployeeMonthIdempotencyService {
         'hex',
       );
     const { retention, stale } = publishIdempotencySettings();
-    const reserved = await this.database.withTransaction<
-      { claim: Claim } | { result: SaveResult; replayed: true }
-    >(async (c) => {
+    const reserved = await this.database.withTransaction(async (c) => {
       const plan = await this.enter(c, t, planId, employeeId);
-      await reservationLock(c, s.lockId);
-      const prior = (
-        await c.query<RecordRow>(
-          `SELECT *, expires_at>clock_timestamp() AS unexpired,
-        claimed_at<=clock_timestamp()-$5::int*interval '1 second' AS stale FROM public.idempotency_records
-        WHERE company_id=$1 AND actor_account_id=$2 AND operation=$3 AND key_hash=$4 FOR UPDATE`,
-          [...s.values, stale],
-        )
-      ).rows[0];
-      if (prior?.unexpired && !prior.request_hash.equals(requestHash))
-        throw new ConflictException({
-          code: 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST',
-        });
-      if (prior?.unexpired && prior.state === 'COMPLETED') {
-        await this.currentProject(c, t, plan.project_id, planId, employeeId);
-        if (
-          prior.context_plan_id !== planId ||
-          prior.context_employee_id !== employeeId ||
-          prior.result_schema_version !== 2
-        )
-          throw new Error('Invalid receipt context');
-        return {
-          result: decodeSaveResult(prior.result_json, planId, employeeId),
-          replayed: true,
-        };
-      }
-      if (prior?.state === 'IN_PROGRESS' && !prior.stale)
-        throw new ConflictException({
-          code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
-        });
-      // Full context-FK prefix, BEFORE insertion/reset. No implicit late E lock.
-      await c.query(
-        'SELECT id FROM public.employees WHERE company_id=$1 AND id=$2 FOR NO KEY UPDATE',
-        [t.companyId, employeeId],
-      );
-      await this.currentProject(c, t, plan.project_id, planId, employeeId);
-      await c.query(
-        'SELECT id FROM public.monthly_plans WHERE company_id=$1 AND id=$2 FOR KEY SHARE',
-        [t.companyId, planId],
-      );
-      await assertSessionInTransaction(c, t);
-      if (prior) {
-        const r = await c.query<Claim>(
-          `WITH moment AS (SELECT clock_timestamp() AS at)
-          UPDATE public.idempotency_records SET attempt_id=gen_random_uuid(),state='IN_PROGRESS',request_hash=$3,
-          context_plan_id=$4,context_employee_id=$5,result_plan_id=NULL,result_json=NULL,result_schema_version=NULL,
-          completed_at=NULL,claimed_at=at,expires_at=at+$6::int*interval '1 second' FROM moment
-          WHERE company_id=$1 AND id=$2 RETURNING id,attempt_id`,
-          [t.companyId, prior.id, requestHash, planId, employeeId, retention],
-        );
-        return { claim: r.rows[0] };
-      }
-      const r = await c.query<Claim>(
-        `WITH moment AS (SELECT clock_timestamp() AS at)
-        INSERT INTO public.idempotency_records(company_id,actor_account_id,operation,key_hash,request_hash,
-          context_plan_id,context_employee_id,created_at,claimed_at,expires_at)
-        SELECT $1,$2,$3,$4,$5,$6,$7,at,at,at+$8::int*interval '1 second' FROM moment RETURNING id,attempt_id`,
-        [...s.values, requestHash, planId, employeeId, retention],
-      );
-      return { claim: r.rows[0] };
+      return reserveCommand(c, {
+        tenant: t,
+        operation: OP,
+        keyHash: s.keyHash,
+        requestHash,
+        lockId: s.lockId,
+        retention,
+        stale,
+        context: { planId, employeeId },
+        beforeWrite: async () => {
+          await c.query(
+            'SELECT id FROM public.employees WHERE company_id=$1 AND id=$2 FOR NO KEY UPDATE',
+            [t.companyId, employeeId],
+          );
+          await this.currentProject(c, t, plan.project_id, planId, employeeId);
+          await c.query(
+            'SELECT id FROM public.monthly_plans WHERE company_id=$1 AND id=$2 FOR KEY SHARE',
+            [t.companyId, planId],
+          );
+          await assertSessionInTransaction(c, t);
+        },
+        replay: async (prior) => {
+          await this.currentProject(c, t, plan.project_id, planId, employeeId);
+          if (
+            prior.context_plan_id !== planId ||
+            prior.context_employee_id !== employeeId ||
+            prior.result_schema_version !== 2
+          )
+            throw new Error('Invalid receipt context');
+          return decodeSaveResult(prior.result_json, planId, employeeId);
+        },
+      });
     });
     if ('result' in reserved) return reserved;
     const claim = reserved.claim;
