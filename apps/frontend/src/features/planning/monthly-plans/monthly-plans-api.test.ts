@@ -175,3 +175,96 @@ describe('SP-11 PR-2 — monthly plan requests', () => {
     })).rejects.toSatisfy(invalidResponse);
   });
 });
+
+describe('SP-12 — single duty, edits, removal and edit leases (ADR-0006)', () => {
+  const TOKEN = 'T'.repeat(42) + '_';
+  const DUTY_URL = `/api/v1/monthly-plans/${PLAN}/entries/${DUTY}`;
+  const LEASE_URL = `${DUTY_URL}/edit-lease`;
+  const leaseJson = (overrides: Record<string, unknown> = {}) => ({ leaseToken: TOKEN, expiresAt: '2026-12-03T08:02:00.123456Z', ...overrides });
+
+  it('reads one duty of the plan and rejects an answer for another duty', async () => {
+    const { api, requests } = fakeSessionApi(() => dutyJson());
+    expect((await createMonthlyPlansApi(api).getDuty(PLAN, DUTY)).id).toBe(DUTY);
+    expect(requests).toEqual([{ path: DUTY_URL, method: 'GET', body: undefined }]);
+    const { api: other } = fakeSessionApi(() => dutyJson({ id: 'd2222222-2222-4222-8222-222222222222' }));
+    await expect(createMonthlyPlansApi(other).getDuty(PLAN, DUTY)).rejects.toSatisfy(invalidResponse);
+  });
+
+  it('PATCH sends only the changed fields, Expected-Version and the lease token as headers', async () => {
+    const answer = dutyJson({ version: 2, assignments: [{ id: MEMBER, employeeId: EMPLOYEE, dutyRole: 'EMPLOYEE', source: 'NORMAL' }] });
+    const { api, requests } = fakeSessionApi(() => answer);
+    await createMonthlyPlansApi(api).updateDuty(PLAN, DUTY, {
+      assignments: [{ employeeId: EMPLOYEE, dutyRole: 'EMPLOYEE', extra: true } as never],
+    }, 1, TOKEN);
+    expect(requests).toEqual([{
+      path: DUTY_URL,
+      method: 'PATCH',
+      body: { assignments: [{ employeeId: EMPLOYEE, dutyRole: 'EMPLOYEE' }] },
+      expectedVersion: 1,
+      editLeaseToken: TOKEN,
+    }]);
+    // The token travels only as a header: never in the path or body.
+    expect(JSON.stringify(requests[0].body)).not.toContain(TOKEN);
+    expect(requests[0].path).not.toContain(TOKEN);
+  });
+
+  // The requested move: 4 Dec, night duty (synthetic instants).
+  const moved = { dutyDate: '2026-12-04', shiftKind: 'NIGHT', startsAt: '2026-12-04T17:00:00Z', endsAt: '2026-12-05T05:00:00Z', version: 3 };
+
+  it('accepts the requested move at a newer version', async () => {
+    const { api } = fakeSessionApi(() => dutyJson(moved));
+    const saved = await createMonthlyPlansApi(api).updateDuty(PLAN, DUTY, { dutyDate: '2026-12-04', shiftKind: 'NIGHT' }, 2, TOKEN);
+    expect([saved.dutyDate, saved.shiftKind, saved.version]).toEqual(['2026-12-04', 'NIGHT', 3]);
+  });
+
+  it.each([
+    ['another duty', dutyJson({ ...moved, id: 'd2222222-2222-4222-8222-222222222222' })],
+    ['an older version', dutyJson({ ...moved, version: 1 })],
+    ['another date than requested', dutyJson({ ...moved, dutyDate: '2026-12-05', startsAt: '2026-12-05T17:00:00Z', endsAt: '2026-12-06T05:00:00Z' })],
+    ['another kind than requested', dutyJson({ ...moved, shiftKind: 'DAY', startsAt: '2026-12-04T05:00:00Z', endsAt: '2026-12-04T17:00:00Z' })],
+  ])('rejects a PATCH answer with %s', async (_label, answer) => {
+    const { api } = fakeSessionApi(() => answer);
+    await expect(createMonthlyPlansApi(api).updateDuty(PLAN, DUTY, { dutyDate: '2026-12-04', shiftKind: 'NIGHT' }, 2, TOKEN))
+      .rejects.toSatisfy(invalidResponse);
+  });
+
+  it('DELETE of a duty carries Expected-Version and the token; no body', async () => {
+    const { api, requests } = fakeSessionApi(() => undefined);
+    await createMonthlyPlansApi(api).removeDuty(PLAN, DUTY, 7, TOKEN);
+    expect(requests).toEqual([{ path: DUTY_URL, method: 'DELETE', body: undefined, expectedVersion: 7, editLeaseToken: TOKEN }]);
+  });
+
+  it('acquire/renew/release use the lease sub-resource; renew and release send the token, acquire none', async () => {
+    const { api, requests } = fakeSessionApi((request) => (request.method === 'DELETE' ? undefined : leaseJson()));
+    const plans = createMonthlyPlansApi(api);
+    expect(await plans.acquireLease(PLAN, DUTY)).toEqual(leaseJson());
+    expect(await plans.renewLease(PLAN, DUTY, TOKEN)).toEqual(leaseJson());
+    await plans.releaseLease(PLAN, DUTY, TOKEN, { keepalive: true });
+    expect(requests).toEqual([
+      { path: LEASE_URL, method: 'POST', body: undefined },
+      { path: LEASE_URL, method: 'PUT', body: undefined, editLeaseToken: TOKEN },
+      { path: LEASE_URL, method: 'DELETE', body: undefined, editLeaseToken: TOKEN, keepalive: true },
+    ]);
+  });
+
+  it.each([
+    ['a short token', leaseJson({ leaseToken: 'abc' })],
+    ['a token with padding', leaseJson({ leaseToken: `${'T'.repeat(42)}=` })],
+    ['a missing expiry', leaseJson({ expiresAt: undefined })],
+    ['a local-time expiry', leaseJson({ expiresAt: '2026-12-03T09:02:00+01:00' })],
+    ['an impossible expiry', leaseJson({ expiresAt: '2026-13-03T08:02:00Z' })],
+  ])('rejects a lease grant with %s', async (_label, answer) => {
+    const { api } = fakeSessionApi(() => answer);
+    await expect(createMonthlyPlansApi(api).acquireLease(PLAN, DUTY)).rejects.toSatisfy(invalidResponse);
+  });
+
+  it('a renewal must extend the same token (rotation would be a contract defect)', async () => {
+    const { api } = fakeSessionApi(() => leaseJson({ leaseToken: 'U'.repeat(43) }));
+    await expect(createMonthlyPlansApi(api).renewLease(PLAN, DUTY, TOKEN)).rejects.toSatisfy(invalidResponse);
+  });
+
+  it('keeps only the two documented lease fields', async () => {
+    const { api } = fakeSessionApi(() => leaseJson({ ownerAccountId: EMPLOYEE, tokenHash: 'x' }));
+    expect(await createMonthlyPlansApi(api).acquireLease(PLAN, DUTY)).toEqual(leaseJson());
+  });
+});

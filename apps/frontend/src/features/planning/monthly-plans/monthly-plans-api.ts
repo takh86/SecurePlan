@@ -1,9 +1,11 @@
 /**
- * SP-11 PR-1 monthly-plan API client: exactly the five routes the backend
- * provides (list/create/read plans, list/create duties). No publish, edit,
- * removal or lease call exists. Tenant, role, status, instants and versions are
- * never sent: the server derives them. Responses are shape-checked, so a
- * malformed payload never reaches the UI.
+ * Monthly-plan API client: exactly the routes the backend provides. SP-11:
+ * list/create/read plans, list/create duties. SP-12 (ADR-0006): read one duty,
+ * edit it (PATCH) and remove it (DELETE) under `Expected-Version` and an edit
+ * lease, and acquire/renew/release that lease. No publish call exists (SP-13).
+ * Tenant, role, status and instants are never sent: the server derives them.
+ * Responses are shape-checked, so a malformed payload never reaches the UI.
+ * Writes are never retried here; lease tokens travel only as a header.
  */
 import { ApiError } from '../../../shared/api/api-error';
 import { MAX_PAGE_SIZE, loadAllPages } from '../../../shared/data/load-all-pages';
@@ -16,8 +18,10 @@ import type {
   CreateDutyInput,
   Duty,
   DutyAssignment,
+  EditLeaseGrant,
   MonthlyPlan,
   MonthlyPlanPage,
+  UpdateDutyInput,
 } from './monthly-plan-types';
 
 const BASE = '/api/v1/monthly-plans';
@@ -32,6 +36,21 @@ export interface MonthlyPlansApi {
   listDuties(planId: string, signal?: AbortSignal): Promise<Duty[]>;
   /** Creates one duty with its initial members; never retried automatically. */
   createDuty(planId: string, input: CreateDutyInput): Promise<Duty>;
+  /** SP-12: the current state of one live duty of this plan. */
+  getDuty(planId: string, dutyId: string, signal?: AbortSignal): Promise<Duty>;
+  /**
+   * SP-12: applies `changes` only if the duty still has `expectedVersion` and the
+   * caller holds the duty's edit lease. Never retried automatically.
+   */
+  updateDuty(planId: string, dutyId: string, changes: UpdateDutyInput, expectedVersion: number, leaseToken: string): Promise<Duty>;
+  /** SP-12: removes the duty (and releases its lease) under the same preconditions. Never retried. */
+  removeDuty(planId: string, dutyId: string, expectedVersion: number, leaseToken: string): Promise<void>;
+  /** ADR-0006: acquires (or, for the same account, rotates) the duty's edit lease. */
+  acquireLease(planId: string, dutyId: string): Promise<EditLeaseGrant>;
+  /** ADR-0006: extends a live lease held with `leaseToken`; the token itself does not change. */
+  renewLease(planId: string, dutyId: string, leaseToken: string): Promise<EditLeaseGrant>;
+  /** ADR-0006: releases the lease; `keepalive` lets the request outlive a closing page. */
+  releaseLease(planId: string, dutyId: string, leaseToken: string, options?: { keepalive?: boolean }): Promise<void>;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -39,6 +58,9 @@ const MONTH_START = /^(?!0000)\d{4}-(?:0[1-9]|1[0-2])-01$/;
 const DATE = /^(?!0000)\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/;
 // The server renders instants itself: UTC, second precision, `Z` suffix.
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+// ADR-0006: lease expiry keeps PostgreSQL microseconds.
+const LEASE_EXPIRY = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
+const LEASE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -176,6 +198,32 @@ function planPath(planId: string): string {
   return `${BASE}/${encodeURIComponent(planId)}`;
 }
 
+function dutyPath(planId: string, dutyId: string): string {
+  return `${planPath(planId)}/entries/${encodeURIComponent(dutyId)}`;
+}
+
+/** Lease grant: canonical token and a parseable expiry; nothing else is kept. */
+export function toLeaseGrant(value: unknown): EditLeaseGrant {
+  if (
+    !isRecord(value) ||
+    typeof value.leaseToken !== 'string' ||
+    !LEASE_TOKEN.test(value.leaseToken) ||
+    typeof value.expiresAt !== 'string' ||
+    !LEASE_EXPIRY.test(value.expiresAt) ||
+    !Number.isFinite(Date.parse(value.expiresAt))
+  ) {
+    invalid();
+  }
+  return { leaseToken: value.leaseToken as string, expiresAt: value.expiresAt as string };
+}
+
+/** True when `duty` has exactly the members (and roles) of `roster`. */
+function hasRoster(duty: Duty, roster: readonly { employeeId: string; dutyRole: string }[]): boolean {
+  const requested = new Map(roster.map((member) => [member.employeeId.toLowerCase(), member.dutyRole]));
+  return duty.assignments.length === requested.size
+    && duty.assignments.every((member) => requested.get(member.employeeId.toLowerCase()) === member.dutyRole);
+}
+
 export function createMonthlyPlansApi(api: SessionApi): MonthlyPlansApi {
   return {
     async listMonth(month, signal) {
@@ -219,16 +267,57 @@ export function createMonthlyPlansApi(api: SessionApi): MonthlyPlansApi {
       };
       const duty = toDuty(await api.request<unknown>(`${planPath(planId)}/entries`, { method: 'POST', body }));
       // The answer must be the requested duty with exactly the requested members and roles.
-      const requested = new Map(body.assignments.map((member) => [member.employeeId.toLowerCase(), member.dutyRole]));
+      if (duty.dutyDate !== body.dutyDate || duty.shiftKind !== body.shiftKind || !hasRoster(duty, body.assignments)) {
+        invalid();
+      }
+      return duty;
+    },
+    async getDuty(planId, dutyId, signal) {
+      const duty = toDuty(await api.request<unknown>(dutyPath(planId, dutyId), { signal }));
+      if (!sameId(duty.id, dutyId)) invalid();
+      return duty;
+    },
+    async updateDuty(planId, dutyId, changes, expectedVersion, leaseToken) {
+      // Only the documented, changed fields; the roster is sent complete.
+      const body: UpdateDutyInput = {};
+      if (changes.dutyDate !== undefined) body.dutyDate = changes.dutyDate;
+      if (changes.shiftKind !== undefined) body.shiftKind = changes.shiftKind;
+      if (changes.assignments !== undefined) {
+        body.assignments = changes.assignments.map(({ employeeId, dutyRole }) => ({ employeeId, dutyRole }));
+      }
+      const duty = toDuty(await api.request<unknown>(dutyPath(planId, dutyId), {
+        method: 'PATCH', body, expectedVersion, editLeaseToken: leaseToken,
+      }));
+      // The answer is this duty, at least at the confirmed version, carrying exactly the requested changes.
       if (
-        duty.dutyDate !== body.dutyDate ||
-        duty.shiftKind !== body.shiftKind ||
-        duty.assignments.length !== requested.size ||
-        duty.assignments.some((member) => requested.get(member.employeeId.toLowerCase()) !== member.dutyRole)
+        !sameId(duty.id, dutyId) ||
+        duty.version < expectedVersion ||
+        (body.dutyDate !== undefined && duty.dutyDate !== body.dutyDate) ||
+        (body.shiftKind !== undefined && duty.shiftKind !== body.shiftKind) ||
+        (body.assignments !== undefined && !hasRoster(duty, body.assignments))
       ) {
         invalid();
       }
       return duty;
+    },
+    async removeDuty(planId, dutyId, expectedVersion, leaseToken) {
+      await api.request<unknown>(dutyPath(planId, dutyId), { method: 'DELETE', expectedVersion, editLeaseToken: leaseToken });
+    },
+    async acquireLease(planId, dutyId) {
+      return toLeaseGrant(await api.request<unknown>(`${dutyPath(planId, dutyId)}/edit-lease`, { method: 'POST' }));
+    },
+    async renewLease(planId, dutyId, leaseToken) {
+      const grant = toLeaseGrant(await api.request<unknown>(`${dutyPath(planId, dutyId)}/edit-lease`, {
+        method: 'PUT', editLeaseToken: leaseToken,
+      }));
+      // A renewal extends the same lease; a different token would be a contract defect.
+      if (grant.leaseToken !== leaseToken) invalid();
+      return grant;
+    },
+    async releaseLease(planId, dutyId, leaseToken, options = {}) {
+      await api.request<unknown>(`${dutyPath(planId, dutyId)}/edit-lease`, {
+        method: 'DELETE', editLeaseToken: leaseToken, keepalive: options.keepalive,
+      });
     },
   };
 }

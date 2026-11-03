@@ -7,8 +7,19 @@ import { ApiError, type FieldError, type KnownErrorCode } from '../../shared/api
 import type { SessionApi, SessionRequest } from '../auth/session-api';
 import type { Employee, EmployeePage } from './employee-types';
 
-/** `expectedVersion` is recorded only when sent (#73 Expected-Version header). */
-export type RecordedRequest = { path: string; method: string; body: unknown; expectedVersion?: number; idempotencyKey?: string };
+/**
+ * Optional headers are recorded only when sent: `expectedVersion` (#73),
+ * `idempotencyKey` (SP-10), `editLeaseToken` and `keepalive` (SP-12 leases).
+ */
+export type RecordedRequest = {
+  path: string;
+  method: string;
+  body: unknown;
+  expectedVersion?: number;
+  idempotencyKey?: string;
+  editLeaseToken?: string;
+  keepalive?: boolean;
+};
 export type Handler = (request: RecordedRequest) => unknown;
 
 export function fakeSessionApi(handler: Handler) {
@@ -18,6 +29,8 @@ export function fakeSessionApi(handler: Handler) {
       const recorded: RecordedRequest = { path, method: options.method ?? 'GET', body: options.body };
       if (options.expectedVersion !== undefined) recorded.expectedVersion = options.expectedVersion;
       if (options.idempotencyKey !== undefined) recorded.idempotencyKey = options.idempotencyKey;
+      if (options.editLeaseToken !== undefined) recorded.editLeaseToken = options.editLeaseToken;
+      if (options.keepalive) recorded.keepalive = true;
       requests.push(recorded);
       return (await handler(recorded)) as T;
     },

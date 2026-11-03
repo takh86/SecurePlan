@@ -125,3 +125,338 @@
     grid-template-columns: minmax(0, 7rem) minmax(0, 1fr);
   }
 }
+
+/* SP-12 UX A10: employee-by-day matrix with focus panel (Phase 5.6 WF-DEC-01, 5.7 §7.3). */
+
+.planning-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 24px;
+  margin-bottom: 12px;
+}
+
+.planning-toolbar .employees__search {
+  min-width: min(100%, 16rem);
+}
+
+.planning-toolbar__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.planning-toolbar__toggle input {
+  width: 20px;
+  height: 20px;
+}
+
+.planning-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* xl: the panel sits beside the matrix; below, it follows the matrix (drawer-like). */
+@media (min-width: 1280px) {
+  .planning-workspace--with-panel {
+    grid-template-columns: minmax(0, 1fr) minmax(22rem, 26rem);
+  }
+
+  .planning-workspace--with-panel .planning-panel {
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+  }
+}
+
+/* The matrix never reflows to cards: it scrolls horizontally inside its own frame. */
+.planning-matrix__wrap {
+  max-height: 70vh;
+  overflow: auto;
+  border: 1px solid var(--sp-color-border);
+  border-radius: var(--sp-radius);
+  background: var(--sp-color-surface);
+}
+
+.planning-matrix {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+}
+
+.planning-matrix__title {
+  margin: 0 0 8px;
+  color: var(--sp-color-ink);
+  font-weight: 650;
+}
+
+.planning-matrix th,
+.planning-matrix td {
+  padding: 0;
+  border-right: 1px solid var(--sp-color-border);
+  border-bottom: 1px solid var(--sp-color-border);
+  background: var(--sp-color-surface);
+  text-align: center;
+}
+
+/* Sticky header row and person column keep the context while scrolling. */
+.planning-matrix thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 6px 2px;
+  color: var(--sp-color-muted);
+  font-weight: 600;
+}
+
+.planning-matrix tbody th,
+.planning-matrix__corner {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 11rem;
+  max-width: 14rem;
+  padding: 6px 10px;
+  text-align: start;
+}
+
+.planning-matrix thead .planning-matrix__corner {
+  z-index: 3;
+}
+
+.planning-matrix__weekday,
+.planning-matrix__day {
+  display: block;
+  line-height: 1.2;
+}
+
+.planning-matrix__day {
+  color: var(--sp-color-ink);
+}
+
+.planning-matrix th.planning-matrix__weekend,
+.planning-matrix td.planning-matrix__weekend {
+  background: var(--sp-color-canvas);
+}
+
+.planning-matrix__person {
+  font-weight: 400;
+}
+
+.planning-matrix__name {
+  display: block;
+  color: var(--sp-color-ink);
+  font-weight: 600;
+}
+
+.planning-matrix__code,
+.planning-matrix__flag {
+  color: var(--sp-color-muted);
+  font-size: 13px;
+}
+
+.planning-matrix__flag::before {
+  content: ' · ';
+}
+
+.planning-matrix__duties th,
+.planning-matrix__duties td {
+  border-bottom: 2px solid var(--sp-color-border-strong);
+}
+
+/* 44 px touch targets (5.7); text, not color, carries the state. */
+.planning-matrix__cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  min-height: 44px;
+  padding: 2px;
+  border: 2px solid transparent;
+  background: transparent;
+  color: var(--sp-color-text);
+  font: inherit;
+  line-height: 1.15;
+  cursor: pointer;
+}
+
+.planning-matrix__cell--free {
+  color: var(--sp-color-muted);
+}
+
+.planning-matrix__cell--day,
+.planning-matrix__cell--night,
+.planning-matrix__cell--day-night {
+  font-weight: 600;
+}
+
+.planning-matrix__cell--day {
+  background: var(--sp-tone-info-bg);
+  color: var(--sp-tone-info-fg);
+}
+
+.planning-matrix__cell--night,
+.planning-matrix__cell--day-night {
+  background: var(--sp-tone-neutral-bg);
+  color: var(--sp-tone-neutral-fg);
+}
+
+.planning-matrix__cell--conflict {
+  border-color: var(--sp-tone-attention-fg);
+  background: var(--sp-tone-attention-bg);
+  color: var(--sp-tone-attention-fg);
+}
+
+.planning-matrix__cell--editing {
+  outline: 2px dashed var(--sp-color-brand);
+  outline-offset: -4px;
+}
+
+.planning-matrix__cell:hover {
+  border-color: var(--sp-color-border-strong);
+}
+
+.planning-matrix__cell:focus-visible {
+  outline: 3px solid var(--sp-color-focus);
+  outline-offset: -3px;
+}
+
+.planning-matrix td[aria-selected='true'] .planning-matrix__cell {
+  border-color: var(--sp-color-brand);
+  box-shadow: inset 0 0 0 1px var(--sp-color-brand);
+}
+
+.planning-matrix__mark {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.planning-matrix__mark--hint {
+  font-size: 13px;
+}
+
+.planning-matrix__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.planning-panel {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius);
+  background: var(--sp-color-surface);
+}
+
+.planning-panel h3 {
+  margin: 0;
+  color: var(--sp-color-ink);
+  font-size: 18px;
+}
+
+.planning-panel h4 {
+  margin: 8px 0 4px;
+  font-size: 16px;
+}
+
+.planning-day,
+.planning-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.planning-day__slots {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planning-day__slot {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--sp-color-border);
+  border-radius: var(--sp-radius-small);
+}
+
+.planning-day__slot p,
+.planning-day__hint,
+.planning-editor p {
+  margin: 0;
+}
+
+.planning-day__slot .employees-button {
+  justify-self: start;
+}
+
+.planning-editor__effect,
+.planning-lease p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.planning-lease__problem,
+.planning-editor__problem {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--sp-tone-attention-fg);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-tone-attention-bg);
+}
+
+.planning-lease__problem .employees-button,
+.planning-editor__problem .employees-button {
+  justify-self: start;
+}
+
+.planning-editor__problem ul,
+.planning-editor__pending ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.planning-editor__info {
+  color: var(--sp-tone-success-fg);
+}
+
+.planning-roster__item--focus {
+  padding: 6px 8px;
+  border-left: 4px solid var(--sp-color-brand);
+  background: var(--sp-tone-info-bg);
+}
+
+.planning-roster__note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--sp-color-muted);
+  font-size: 14px;
+}
+
+/* The panel is narrow even on wide screens: roster rows stack there. */
+.planning-panel .planning-roster__item {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+@media (max-width: 719px) {
+  .planning-matrix tbody th,
+  .planning-matrix__corner {
+    min-width: 8rem;
+    max-width: 9rem;
+  }
+}
