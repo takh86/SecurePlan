@@ -2,6 +2,7 @@
 import { randomBytes } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
 import pg from 'pg';
 import { openLocalTestPool } from './synthetic-tenants.js';
 
@@ -21,11 +22,21 @@ export async function isolatedPlanningDatabase(beforeMigration?: (pool: pg.Pool,
       // PostgreSQL reports 57P01 to their clients, which becomes an unhandled
       // error in Vitest even when individual assertions have passed.
       await pool.end();
-      const sessions = await admin.query<{ count: string }>(
-        'SELECT count(*)::text AS count FROM pg_stat_activity WHERE datname = $1',
-        [name],
-      );
-      if (Number(sessions.rows[0].count) !== 0) {
+      // pool.end() resolves after closing local sockets; the server may still
+      // report those backends while processing their disconnect. Observe fresh
+      // snapshots for a bounded grace period, never terminate a connection.
+      const deadline = Date.now() + 2000;
+      let remaining: number;
+      do {
+        const sessions = await admin.query<{ count: string }>(
+          'SELECT count(*)::text AS count FROM pg_stat_activity WHERE datname = $1',
+          [name],
+        );
+        remaining = Number(sessions.rows[0].count);
+        if (remaining === 0) break;
+        await delay(20);
+      } while (Date.now() < deadline);
+      if (remaining !== 0) {
         throw new Error('Isolated planning database still has active connections after pool shutdown');
       }
       // Normal DROP is intentionally strict: unexpected clients must be

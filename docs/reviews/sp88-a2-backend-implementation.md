@@ -109,6 +109,12 @@ CHECK changed the unsupported-operation constraint name; and the static route
 inventory needed all three new routes. These were corrected and rerun, not
 counted as initial passes. First-head CI and full local E2E each exposed the
 inventory mismatch (1413/1414); the final ledger supersedes that intermediate run.
+One later PR run passed all 1414 assertions but exposed a teardown race:
+`pool.end()` can resolve before the server removes disconnected backends from
+`pg_stat_activity`. The isolated database helper now observes fresh snapshots
+for up to two seconds before its existing strict refusal. It never terminates
+connections or force-drops a database. An unchanged frontend focus assertion
+also failed in an earlier PR run; the full local and push runs passed it.
 
 ## Outstanding acceptance gates
 
