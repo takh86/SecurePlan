@@ -1,6 +1,6 @@
 /**
  * SP-11 foundation plus owner-approved SP-12 duty edits/removal and leases.
- * COMPANY_ADMIN only. First publish and replacement remain separate slices;
+ * COMPANY_ADMIN only. SP-13 adds initial publication; replacement is separate.
  * CR-03 allows authorized, revalidated mutation of current PUBLISHED plans.
  *
  * Tenant rules (SP-06): companyId, accountId and role come only from the
@@ -67,6 +67,7 @@ import type {
 import { PLANNING_WRITER_TIMEOUTS } from './planning-locks.js';
 import { assertPlanningSchemaComplete } from './planning-schema.js';
 import { acquireDutyLease, assertDutyLease, editLeaseTtl, releaseDutyLease, renewDutyLease, type EditLeaseResponse } from './duty-edit-leases.js';
+import { PublishIdempotencyService } from './publish-idempotency.service.js';
 
 const ADMIN_ONLY = ['COMPANY_ADMIN'] as const;
 const DEFAULT_PAGE_SIZE = 25;
@@ -128,6 +129,7 @@ export class MonthlyPlansService implements OnModuleInit {
     private readonly database: DatabaseService,
     private readonly audit: BusinessAuditService,
     private readonly availability: AvailabilityService,
+    private readonly publishIdempotency: PublishIdempotencyService,
   ) {}
 
   /** T6: the application does not start if the resolver misses an approved D6 golden. */
@@ -183,6 +185,104 @@ export class MonthlyPlansService implements OnModuleInit {
       await assertPlanningSchemaComplete(client);
       return toMonthlyPlanResponse(await this.visiblePlan(client, tenant, planId));
     });
+  }
+
+  /**
+   * First publication only. The idempotency component rechecks the actor and
+   * visibility in both its short claim and business transactions. It owns I
+   * before this callback takes E/P/M/L/D/A2; audit and completion share this
+   * transaction. CR-03 duty mutations keep their existing direct-write path.
+   */
+  publish(tenant: TenantContext, planId: string, key: string, correlationId: string) {
+    return this.publishIdempotency.execute(tenant, planId, key, async (client) => {
+      await assertPlanningSchemaComplete(client);
+      return this.visiblePlan(client, tenant, planId);
+    }, async (client) => {
+      const discovery = await this.visiblePlan(client, tenant, planId);
+      const discoveredDuties = (await client.query<DutySnapshot>(
+        `SELECT ${snapshotColumns('d')} FROM public.duties AS d
+         WHERE d.company_id = $1 AND d.monthly_plan_id = $2 AND d.removed_at IS NULL ORDER BY d.id`,
+        [tenant.companyId, planId],
+      )).rows;
+      const discoveredMembers = await this.activeMembers(client, tenant, discoveredDuties.map((duty) => duty.id));
+      const employeeIds = [...new Set(discoveredMembers.map((member) => member.employee_id))].sort();
+      const employees = employeeIds.length === 0 ? [] : (await client.query<LockedEmployee>(
+        `SELECT id, status, shift_eligibility, to_char(employment_start, 'YYYY-MM-DD') AS employment_start,
+                to_char(employment_end, 'YYYY-MM-DD') AS employment_end
+         FROM employees WHERE company_id = $1 AND id = ANY($2::uuid[]) ORDER BY id FOR NO KEY UPDATE`,
+        [tenant.companyId, employeeIds],
+      )).rows;
+      if (employees.length !== employeeIds.length) throw new NotFoundException({ code: 'RESOURCE_NOT_FOUND' });
+      const project = requireRow(await client.query<{ status: string }>(
+        `SELECT status FROM projects WHERE company_id = $1 AND id = $2 AND status IN ('ACTIVE', 'INACTIVE') FOR SHARE`,
+        [tenant.companyId, discovery.project_id],
+      ));
+      const links = employeeIds.length === 0 ? [] : (await client.query<{ employee_id: string; project_id: string }>(
+        `SELECT employee_id, project_id FROM project_assignments
+         WHERE company_id = $1 AND employee_id = ANY($2::uuid[]) AND planning_month = $3::date ORDER BY id FOR SHARE`,
+        [tenant.companyId, employeeIds, discovery.month_start],
+      )).rows;
+      // Take UPDATE at L immediately. Never upgrade SHARE or acquire a late E.
+      const plan = requireRow(await client.query<MonthlyPlanRow>(
+        `SELECT ${monthlyPlanColumns('mp')} FROM public.monthly_plans AS mp
+         WHERE mp.company_id = $1 AND mp.id = $2 FOR UPDATE`, [tenant.companyId, planId],
+      ));
+      if (plan.status === 'PUBLISHED') conflict('MONTHLY_PLAN_ALREADY_PUBLISHED');
+      if (plan.status !== 'UNPUBLISHED') throw new Error('Unexpected publish lifecycle');
+      if (plan.project_id !== discovery.project_id || plan.month_start !== discovery.month_start) conflict('PLAN_CONCURRENT_MODIFICATION');
+      const duties = (await client.query<DutySnapshot>(
+        `SELECT ${snapshotColumns('d')} FROM public.duties AS d
+         WHERE d.company_id = $1 AND d.monthly_plan_id = $2 AND d.removed_at IS NULL ORDER BY d.id FOR UPDATE`,
+        [tenant.companyId, planId],
+      )).rows;
+      const members = duties.length === 0 ? [] : (await client.query<MembershipRow>(
+        `SELECT ${MEMBERSHIP_COLUMNS} FROM public.plan_assignments AS pa
+         WHERE pa.company_id = $1 AND pa.duty_id = ANY($2::uuid[]) AND pa.state = 'ACTIVE' ORDER BY pa.id FOR UPDATE`,
+        [tenant.companyId, duties.map((duty) => duty.id)],
+      )).rows;
+      if (JSON.stringify(discoveredDuties) !== JSON.stringify(duties)
+        || memberSignature(discoveredMembers) !== memberSignature(members)) conflict('PLAN_CONCURRENT_MODIFICATION');
+      if (project.status !== 'ACTIVE') conflict('PROJECT_INACTIVE');
+      // No staffing minimum. Check every live duty, including unstaffed ones;
+      // validate existing saved UTC intervals without changing their provenance.
+      for (const duty of duties) {
+        await this.effectiveRule(client, tenant, plan.project_id, plan.month_start, duty.shift_kind);
+        const roster = new Set(members.filter((member) => member.duty_id === duty.id).map((member) => member.employee_id));
+        await this.assertStaffing(client, tenant, employees.filter((employee) => roster.has(employee.id)), links,
+          plan.project_id, duty.duty_date, duty.shift_kind, { startsAt: duty.starts_at, endsAt: duty.ends_at }, duty.id);
+      }
+      const published = await client.query<MonthlyPlanRow>(
+        `UPDATE public.monthly_plans AS mp SET status = 'PUBLISHED', published_at = clock_timestamp(),
+           published_by_account_id = $3, updated_at = clock_timestamp()
+         WHERE mp.company_id = $1 AND mp.id = $2 AND mp.status = 'UNPUBLISHED'
+         RETURNING ${monthlyPlanColumns('mp')}`, [tenant.companyId, planId, tenant.accountId],
+      );
+      if (published.rowCount !== 1) conflict('MONTHLY_PLAN_ALREADY_PUBLISHED');
+      const result = toMonthlyPlanResponse(published.rows[0]);
+      await this.audit.recordBusinessAction(client, {
+        companyId: tenant.companyId, actorAccountId: tenant.accountId, action: 'MONTHLY_PLAN_PUBLISHED',
+        resourceType: 'MONTHLY_PLAN', resourceId: planId,
+        oldValues: { status: 'UNPUBLISHED', publishedAt: null },
+        newValues: { status: 'PUBLISHED', publishedAt: result.publishedAt }, correlationId,
+      });
+      return result;
+    });
+  }
+
+  /** Whole latest configuration version, shared by create, edit and publish. */
+  private async effectiveRule(client: Queryable, tenant: TenantContext, projectId: string, month: string, kind: string) {
+    const rule = await client.query<{ effective_from_month: string; start_local: string; end_local: string }>(
+      `SELECT to_char(sc.effective_from_month, 'YYYY-MM-DD') AS effective_from_month,
+              left(sc.start_local::text, 5) AS start_local, left(sc.end_local::text, 5) AS end_local
+       FROM shift_configurations AS sc
+       WHERE sc.company_id = $1 AND sc.project_id = $2 AND sc.shift_kind = $4
+         AND sc.effective_from_month = (
+           SELECT max(v.effective_from_month) FROM shift_configurations AS v
+           WHERE v.company_id = $1 AND v.project_id = $2 AND v.effective_from_month <= $3::date)`,
+      [tenant.companyId, projectId, month, kind],
+    );
+    if (rule.rowCount !== 1) conflict('SHIFT_CONFIGURATION_MISSING');
+    return rule.rows[0];
   }
 
   /**
@@ -378,18 +478,7 @@ export class MonthlyPlansService implements OnModuleInit {
       if (slot.rowCount !== 0) conflict('DUTY_ALREADY_EXISTS');
 
       // The WHOLE latest version <= plan month; a kind missing from it is not inherited.
-      const rule = await client.query<{ effective_from_month: string; start_local: string; end_local: string }>(
-        `SELECT to_char(sc.effective_from_month, 'YYYY-MM-DD') AS effective_from_month,
-                left(sc.start_local::text, 5) AS start_local, left(sc.end_local::text, 5) AS end_local
-         FROM shift_configurations AS sc
-         WHERE sc.company_id = $1 AND sc.project_id = $2 AND sc.shift_kind = $4
-           AND sc.effective_from_month = (
-             SELECT max(v.effective_from_month) FROM shift_configurations AS v
-             WHERE v.company_id = $1 AND v.project_id = $2 AND v.effective_from_month <= $3::date)`,
-        [tenant.companyId, plan.project_id, plan.month_start, kind],
-      );
-      if (rule.rowCount !== 1) conflict('SHIFT_CONFIGURATION_MISSING');
-      const configuration = rule.rows[0];
+      const configuration = await this.effectiveRule(client, tenant, plan.project_id, plan.month_start, kind);
 
       const zone = await this.companyZone(client, tenant);
       const interval = resolveDutyInterval({
@@ -582,16 +671,7 @@ export class MonthlyPlansService implements OnModuleInit {
         [tenant.companyId, plan.id, day, kind, dutyId],
       );
       if (slot.rowCount !== 0) conflict('DUTY_ALREADY_EXISTS');
-      const rule = await client.query<{ effective_from_month: string; start_local: string; end_local: string }>(
-        `SELECT to_char(sc.effective_from_month, 'YYYY-MM-DD') AS effective_from_month,
-                left(sc.start_local::text, 5) AS start_local, left(sc.end_local::text, 5) AS end_local
-         FROM shift_configurations AS sc WHERE sc.company_id = $1 AND sc.project_id = $2 AND sc.shift_kind = $4
-           AND sc.effective_from_month = (SELECT max(v.effective_from_month) FROM shift_configurations AS v
-             WHERE v.company_id = $1 AND v.project_id = $2 AND v.effective_from_month <= $3::date)`,
-        [tenant.companyId, plan.project_id, plan.month_start, kind],
-      );
-      if (rule.rowCount !== 1) conflict('SHIFT_CONFIGURATION_MISSING');
-      const configuration = rule.rows[0];
+      const configuration = await this.effectiveRule(client, tenant, plan.project_id, plan.month_start, kind);
       const zone = timeChanged ? await this.companyZone(client, tenant) : duty.time_zone;
       const interval = timeChanged ? resolveDutyInterval({ zone, dutyDate: day, startLocal: configuration.start_local, endLocal: configuration.end_local })
         : { startsAt: duty.starts_at, endsAt: duty.ends_at };

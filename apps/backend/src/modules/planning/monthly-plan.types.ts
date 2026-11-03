@@ -20,7 +20,7 @@ export type MonthlyPlanResponse = {
   /** First day of the planning month, YYYY-MM-01. */
   monthStart: string;
   status: MonthlyPlanStatus;
-  /** Set once by the first publication (not available in this slice). */
+  /** Set once by the first publication. */
   publishedAt: string | null;
 };
 

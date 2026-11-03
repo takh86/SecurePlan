@@ -42,6 +42,7 @@ import { AvailabilityController } from './modules/workforce/availability/availab
 import { AvailabilityService } from './modules/workforce/availability/availability.service.js';
 import { MonthlyPlansController } from './modules/planning/monthly-plans.controller.js';
 import { MonthlyPlansService } from './modules/planning/monthly-plans.service.js';
+import { PublishIdempotencyService } from './modules/planning/publish-idempotency.service.js';
 
 @Module({
   imports: [
@@ -96,6 +97,7 @@ import { MonthlyPlansService } from './modules/planning/monthly-plans.service.js
     AvailabilityService,
     // SP-11 PR-1: monthly plans and duties (create/read slice, SP11A-R1 Rev3.1).
     MonthlyPlansService,
+    PublishIdempotencyService,
     // Business "current month" rules read the time here (company time zone, never UTC).
     { provide: WALL_CLOCK, useValue: systemWallClock },
   ],
