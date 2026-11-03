@@ -24,6 +24,7 @@ type ViewState = 'checking' | 'logged-out' | 'submitting' | 'authenticated' | 'l
 export type AuthenticatedSession = {
   identity: IdentityContext;
   api: SessionApi;
+  requestSessionRevalidation: () => void;
   logout: () => void;
   logoutPending: boolean;
   logoutError: Error | null;
@@ -53,6 +54,9 @@ export function LoginScreen({
   const [sessionMemory, setSessionMemory] = useState<SessionMemory | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const inFlight = useRef(false);
+  const validationEpoch = useRef(0);
+  const rechecking = useRef(false);
+  const pendingRecheck = useRef(false);
   // The session the UI belongs to right now; lets a late response for an
   // earlier session be recognised as stale.
   const currentAuth = useRef<AuthenticatedContext | null>(null);
@@ -72,6 +76,7 @@ export function LoginScreen({
   // across logout or re-login) is ignored: it must neither end the current
   // session nor touch the login form.
   const setAuth = useCallback(function adoptSession(next: AuthenticatedContext | null) {
+    validationEpoch.current += 1;
     memory.suspend();
     setSessionMemory(next ? memory.activate(next.identity) : null);
     currentAuth.current = next;
@@ -114,66 +119,82 @@ export function LoginScreen({
     return () => { mounted = false; };
   }, [setAuth]);
 
-  // Stable across re-renders: a parent re-render (e.g. a location change) must not
-  // restart the effects below and orphan a pending session check.
-  const signedOut = useEffectEvent(() => onSignedOut?.());
-
   // Hides protected content until GET /me confirms the session again. Used after
   // a back/forward-cache restore and after a new login in another tab.
   // Single-flight: shares the login/logout guard, so overlapping checks cannot
   // race and an obsolete response cannot override a newer outcome.
-  const recheckSession = useEffectEvent((isCurrent: () => boolean) => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    memory.suspend();
+  const recheckSession = useCallback((isCurrent: () => boolean, discard = false) => {
+    // Invalidate synchronously even when an existing check/login/logout is busy.
+    if (discard) memory.clear(); else memory.suspend();
     currentAuth.current = null;
     flushSync(() => setState('checking'));
+    delete document.documentElement.dataset.privateSessionHidden;
+    if (rechecking.current) return;
+    if (inFlight.current) { pendingRecheck.current = true; return; }
+    inFlight.current = true;
+    rechecking.current = true;
+    const epoch = ++validationEpoch.current;
     void currentSession().then(
       (restored) => {
-        if (!isCurrent()) return;
+        if (!isCurrent() || epoch !== validationEpoch.current) return;
         setAuth(restored);
         setState('authenticated');
       },
       (cause: unknown) => {
-        if (!isCurrent()) return;
+        if (!isCurrent() || epoch !== validationEpoch.current) return;
         const unauthorized = cause instanceof ApiError && cause.status === 401;
-        if (!unauthorized) {
-          setError(cause instanceof Error ? cause : new Error('Session check failed'));
-        }
+        if (!unauthorized) setError(cause instanceof Error ? cause : new Error('Session check failed'));
         setAuth(null);
         setState('logged-out');
-        signedOut();
+        onSignedOut?.();
         if (unauthorized) broadcast('signed-out');
       },
-    ).finally(() => {
-      inFlight.current = false;
-    });
-  });
+    ).finally(() => { inFlight.current = false; rechecking.current = false; });
+  }, [memory, onSignedOut, setAuth]);
+  const requestSessionRevalidation = useCallback(() => recheckSession(() => true, true), [recheckSession]);
 
   useEffect(() => {
     if (!auth) return;
     let mounted = true;
     function onPageShow(event: PageTransitionEvent) {
       if (event.persisted) recheckSession(() => mounted);
+      else delete document.documentElement.dataset.privateSessionHidden;
     }
+    function conceal() {
+      if (auth?.identity.role !== 'EMPLOYEE') return;
+      document.documentElement.dataset.privateSessionHidden = 'true';
+      memory.suspend();
+      currentAuth.current = null;
+    }
+    function onVisibility() {
+      if (auth?.identity.role !== 'EMPLOYEE') return;
+      if (document.visibilityState === 'hidden') conceal();
+      else recheckSession(() => mounted);
+    }
+    window.addEventListener('pagehide', conceal);
+    document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pageshow', onPageShow);
     return () => {
       mounted = false;
       window.removeEventListener('pageshow', onPageShow);
+      window.removeEventListener('pagehide', conceal);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [auth]);
+  }, [auth, memory, recheckSession]);
 
   // Another tab changed the shared session. Only a tab that shows protected
   // content reacts; a login form stays as it is (no automatic sign-in).
   const onSessionSignal = useEffectEvent((signal: SessionSignal, isCurrent: () => boolean) => {
-    if (currentAuth.current === null || inFlight.current) return;
+    if (currentAuth.current === null && !auth) return;
     if (signal === 'signed-out') {
       // The shared session is gone: hide protected content at once, without a request.
+      memory.clear();
       setAuth(null);
+      delete document.documentElement.dataset.privateSessionHidden;
       setPassword('');
       setError(null);
       setState('logged-out');
-      signedOut();
+      onSignedOut?.();
       return;
     }
     // The browser cookie now belongs to a newer session, so this tab's identity
@@ -210,6 +231,7 @@ export function LoginScreen({
       setState('logged-out');
     } finally {
       inFlight.current = false;
+      if (pendingRecheck.current) { pendingRecheck.current = false; recheckSession(() => true); }
     }
   }
 
@@ -242,6 +264,7 @@ export function LoginScreen({
       }
     } finally {
       inFlight.current = false;
+      if (pendingRecheck.current) { pendingRecheck.current = false; recheckSession(() => true); }
     }
   }
 
@@ -251,6 +274,7 @@ export function LoginScreen({
         <AuthenticatedView
           identity={auth.identity}
           api={api}
+          requestSessionRevalidation={requestSessionRevalidation}
           logout={() => { void onLogout(); }}
           logoutPending={state === 'logging-out'}
           logoutError={error}

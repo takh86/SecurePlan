@@ -1,3 +1,5 @@
+import { SessionContextService } from '../src/modules/identity/session-context.service.js';
+import type { TenantContext } from '../src/auth/authorization/tenant-context.js';
 /**
  * SP-06 — global AccessControlGuard over real HTTP (mocked session/DB).
  * Proves execution order (Origin -> session -> CSRF -> role), single session
@@ -61,6 +63,8 @@ describe('SP-06 — AccessControlGuard order and default deny (HTTP)', () => {
     })
       .overrideProvider(DatabaseService)
       .useValue({ isReady: vi.fn().mockResolvedValue(true) })
+      .overrideProvider(SessionContextService)
+      .useValue({ read: async (tenant: TenantContext) => ({ accountId: tenant.accountId, companyId: tenant.companyId, role: tenant.role, email: 'synthetic@secureplan.invalid', companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01' }) })
       .overrideProvider(PASSWORD_DENYLIST)
       .useValue(new Set<string>())
       .overrideProvider(SessionService)

@@ -18,7 +18,7 @@ const ADMIN = {
 };
 
 type Responder = () => Response | Promise<Response>;
-const authorized: Responder = () => new Response(JSON.stringify(ADMIN), {
+const authorized: Responder = () => new Response(JSON.stringify({ ...ADMIN, companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01' }), {
   status: 200,
   headers: { 'content-type': 'application/json', 'x-csrf-token': CSRF },
 });

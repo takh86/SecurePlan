@@ -8,12 +8,12 @@ import { useSessionMemory } from './session-memory';
 import type { SessionApi } from './session-api';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-const principal = { accountId: 'actor-a', companyId: 'company-a', role: 'COMPANY_ADMIN', email: 'a@example.invalid' };
-const authenticated = (change: object = {}) => new Response(JSON.stringify({ ...principal, ...change }), { status: 200, headers: { 'x-csrf-token': 'c'.repeat(43) } });
+const principal = { accountId: '11111111-1111-4111-8111-111111111111', companyId: '22222222-2222-4222-8222-222222222222', role: 'COMPANY_ADMIN', email: 'a@example.invalid' };
+const authenticated = (change: object = {}) => new Response(JSON.stringify({ ...principal, ...change, companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01' }), { status: 200, headers: { 'x-csrf-token': 'c'.repeat(43) } });
 const revoked = () => new Response(JSON.stringify({ code: 'SESSION_REVOKED' }), { status: 401 });
 
 describe('login boundary draft capabilities', () => {
-  it.each([{}, { accountId: 'actor-b' }, { companyId: 'company-b' }, { role: 'EMPLOYEE' }])('hides data on 401, restores only the same principal, and disables stale APIs: %j', async (change) => {
+  it.each([{}, { accountId: '33333333-3333-4333-8333-333333333333' }, { companyId: '44444444-4444-4444-8444-444444444444' }, { role: 'EMPLOYEE' }])('hides data on 401, restores only the same principal, and disables stale APIs: %j', async (change) => {
     let oldApi: SessionApi | null = null;
     function Protected(session: AuthenticatedSession) {
       const memory = useSessionMemory();

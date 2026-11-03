@@ -22,7 +22,7 @@ export function AuthenticatedApp(session: AuthenticatedSession) {
           <Route
             key={route.id}
             path={routePattern(route)}
-            element={<RouteView route={route} role={role} api={session.api} />}
+            element={<RouteView route={route} role={role} api={session.api} identity={session.identity} requestSessionRevalidation={session.requestSessionRevalidation} />}
           />
         ))}
         <Route path="*" element={<NotFoundPage role={role} />} />
@@ -38,7 +38,7 @@ function routePattern(route: AppRoute): string {
 }
 
 // Role check is UX only; the server authorizes every API request on its own.
-function RouteView({ route, role, api }: { route: AppRoute; role: TenantRole; api: SessionApi }) {
+function RouteView({ route, role, api, identity, requestSessionRevalidation }: { route: AppRoute; role: TenantRole; api: SessionApi; identity: AuthenticatedSession['identity']; requestSessionRevalidation: () => void }) {
   if (route.role !== role) return <AccessDeniedPage role={role} />;
   if (route.availability === 'planned') return <PlannedFeaturePage route={route} />;
   switch (route.id) {
@@ -57,7 +57,7 @@ function RouteView({ route, role, api }: { route: AppRoute; role: TenantRole; ap
     case 'my-month-plan':
       return (
         <PageFrame title={route.title} lead={route.lead}>
-          <MyMonthPlanPage />
+          <MyMonthPlanPage api={api} identity={identity} requestSessionRevalidation={requestSessionRevalidation} />
         </PageFrame>
       );
     default:

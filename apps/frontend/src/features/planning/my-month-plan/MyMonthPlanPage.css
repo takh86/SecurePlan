@@ -4,10 +4,6 @@
   max-width: 720px;
 }
 
-.my-plan > .preview-notice {
-  margin: 0;
-}
-
 .my-plan__month {
   display: grid;
   gap: 16px;
@@ -110,3 +106,9 @@
     grid-template-areas: 'previous month next';
   }
 }
+
+.my-plan__controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.my-plan__controls label { display: grid; gap: 4px; }
+.my-plan__controls input, .my-plan__controls button { min-height: 44px; max-width: 100%; }
+.my-plan__step, .duty-card { min-width: 0; overflow-wrap: anywhere; }
+.my-plan__step:disabled { opacity: .6; }

@@ -78,7 +78,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     role: 'EMPLOYEE',
     title: 'Mein Monatsplan',
     lead: 'Ihre geplanten Dienste im ausgewählten Monat.',
-    availability: 'preview',
+    availability: 'available',
     acceptsMonth: true,
   },
   {

@@ -32,11 +32,11 @@ describe('F1 — route table', () => {
     ]);
   });
 
-  it('makes each landing route a preview of its own role; only employees, projects and monthly planning use the real API', () => {
+  it('marks employee monthly planning and the implemented admin areas as live', () => {
     for (const role of ['COMPANY_ADMIN', 'EMPLOYEE'] as const) {
       const landing = APP_ROUTES.find((route) => route.path === landingPathFor(role));
       expect(landing?.role).toBe(role);
-      expect(landing?.availability).toBe('preview');
+      expect(landing?.availability).toBe(role === 'EMPLOYEE' ? 'available' : 'preview');
     }
     const available = APP_ROUTES.filter((route) => route.availability === 'available');
     expect(available.map((route) => [route.id, route.role, route.nested])).toEqual([
@@ -44,6 +44,7 @@ describe('F1 — route table', () => {
       ['projects', 'COMPANY_ADMIN', true],
       // SP-11 PR-2: create/read slice of the monthly plan (admin only).
       ['monthly-planning', 'COMPANY_ADMIN', true],
+      ['my-month-plan', 'EMPLOYEE', undefined],
     ]);
     const planned = APP_ROUTES.filter((route) => route.availability === 'planned');
     expect(planned.map((route) => route.id)).toEqual([

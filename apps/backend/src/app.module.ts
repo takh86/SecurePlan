@@ -48,6 +48,9 @@ import { PublishIdempotencyService } from './modules/planning/publish-idempotenc
 import { EmployeeMonthController } from './modules/planning/employee-month.controller.js';
 import { EmployeeMonthService } from './modules/planning/employee-month.service.js';
 import { EmployeeMonthIdempotencyService } from './modules/planning/employee-month-idempotency.service.js';
+import { SessionContextService } from './modules/identity/session-context.service.js';
+import { MeMonthlyPlansController } from './modules/planning/me-monthly-plans.controller.js';
+import { MeMonthlyPlansReadService } from './modules/planning/me-monthly-plans-read.service.js';
 
 @Module({
   imports: [
@@ -72,12 +75,15 @@ import { EmployeeMonthIdempotencyService } from './modules/planning/employee-mon
     AvailabilityController,
     MonthlyPlansController,
     EmployeeMonthController,
+    MeMonthlyPlansController,
   ],
   providers: [
     AppService,
     DatabaseService,
     AuthService,
     SessionService,
+    SessionContextService,
+    MeMonthlyPlansReadService,
     // SP-06: the ONLY global guard; fixed Origin -> session -> CSRF -> role order.
     { provide: APP_GUARD, useClass: AccessControlGuard },
     LoginService,
