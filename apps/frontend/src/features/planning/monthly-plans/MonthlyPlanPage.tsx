@@ -20,12 +20,13 @@ import type { ProjectsApi } from '../../projects/projects-api';
 import type { ShiftConfigurationApi, ShiftKind } from '../../projects/shift-configuration-api';
 import { DutyCreateForm } from './DutyCreateForm';
 import { DutyEditor } from './DutyEditor';
+import { EmployeeMonthPlanner } from './EmployeeMonthPlanner';
 import { formatInstant } from './duty-time';
 import { NO_EMPLOYEE_PLAN_VIEW, PLAN_CREATED_STATE, PLAN_STATUS, type Duty, type MonthlyPlan } from './monthly-plan-types';
 import { sortDuties, type MonthlyPlansApi } from './monthly-plans-api';
 import { PlanningDayDetails } from './PlanningDayDetails';
 import { PlanningMatrix, type MatrixSelection } from './PlanningMatrix';
-import { UNKNOWN_PERSON, buildMatrixRows, dutiesOn, filterRows, matrixDays } from './planning-matrix';
+import { UNKNOWN_PERSON, buildMatrixRows, dutiesOn, filterRows, matrixDays, standaloneRow, type MatrixRow } from './planning-matrix';
 
 export type PlanPageApis = {
   plans: MonthlyPlansApi;
@@ -91,6 +92,15 @@ type PanelState =
   | { mode: 'edit'; dutyId: string; employeeId: string | null }
   | { mode: 'create'; date: DateOnly | null; kind: ShiftKind | null; employeeId: string | null };
 
+/**
+ * Which view of the duties is shown: the matrix of all persons (with the focus
+ * panel) or the employee-month planner for one person (#88, preview).
+ */
+type PlanView = { kind: 'matrix' } | { kind: 'person'; employeeId: string | null };
+
+/** What the unsaved-input prompt talks about. */
+type PromptMode = PanelState['mode'] | 'month' | null;
+
 function dutyLabel(duty: Pick<Duty, 'shiftKind' | 'dutyDate'>): string {
   return `${SHIFT_TYPE_LABELS[duty.shiftKind]} am ${formatDate(duty.dutyDate)}`;
 }
@@ -146,6 +156,11 @@ export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot 
   const [query, setQuery] = useState('');
   const [onlyConflicts, setOnlyConflicts] = useState(false);
   const searchId = useId();
+  const viewName = useId();
+  const [planView, setPlanView] = useState<PlanView>({ kind: 'matrix' });
+  /** A view or person switch held back by unsaved input. */
+  const [pendingView, setPendingView] = useState<PlanView | null>(null);
+  const [lastPerson, setLastPerson] = useState<string | null>(null);
 
   /**
    * The page's only navigation blocker. Any SPA navigation away (links,
@@ -293,6 +308,23 @@ export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot 
     announce('Der Dienst ist nicht mehr vorhanden. Die Dienste wurden neu geladen.');
   }
 
+  function showView(next: PlanView) {
+    setPendingView(null);
+    setPendingPanel(null);
+    setPanel(null);
+    setPlanView(next);
+    if (next.kind === 'person' && next.employeeId !== null) setLastPerson(next.employeeId);
+  }
+
+  /** Switches the view or the planned person; unsaved input is never dropped silently. */
+  function requestView(next: PlanView) {
+    if (editState !== 'clean') {
+      setPendingView(next);
+      return;
+    }
+    showView(next);
+  }
+
   function onPanelKeyDown(event: KeyboardEvent<HTMLElement>) {
     // A select handles Escape itself (closing its list).
     if (event.key === 'Escape' && !pendingPanel && !event.defaultPrevented && !(event.target instanceof HTMLSelectElement)) {
@@ -303,7 +335,7 @@ export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot 
 
   const selection: MatrixSelection | null = panel?.mode === 'day' ? { date: panel.date, employeeId: panel.employeeId } : null;
   const editingDutyId = panel?.mode === 'edit' ? panel.dutyId : null;
-  const panelMode = panel?.mode ?? null;
+  const promptMode: PromptMode = planView.kind === 'person' ? 'month' : panel?.mode ?? null;
 
   return (
     <PageFrame title={title} lead="Monatsplan">
@@ -311,7 +343,7 @@ export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot 
         <Link className="employees__back" to={month ? `${basePath}?month=${month}` : basePath}>Zurück zur Übersicht</Link>
         {blocker.state === 'blocked' && (
           <UnsavedPrompt
-            mode={panelMode}
+            mode={promptMode}
             editState={editState}
             onLeave={() => blocker.proceed()}
             onStay={() => blocker.reset()}
@@ -346,32 +378,29 @@ export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot 
                 <>
                   {duties.state.status === 'loading' && <LoadingState label="Dienste werden neu geladen …" />}
                   {duties.state.status === 'error' && <ErrorState error={duties.state.error} onRetry={reloadDuties} />}
-                  <div className="planning-toolbar">
-                    <div className="employees__search">
-                      <label htmlFor={searchId}>Person suchen</label>
-                      <input id={searchId} type="search" value={query} onChange={(event) => setQuery(event.target.value)} />
-                    </div>
-                    <label className="planning-toolbar__toggle">
-                      <input type="checkbox" checked={onlyConflicts} onChange={(event) => setOnlyConflicts(event.target.checked)} />
-                      Nur Personen mit Hinweisen
+                  <fieldset className="planning-views">
+                    <legend>Ansicht</legend>
+                    <label>
+                      <input type="radio" name={viewName} checked={planView.kind === 'matrix'} onChange={() => requestView({ kind: 'matrix' })} />
+                      Alle Personen
                     </label>
-                    {ready.project.status === 'ACTIVE' ? (
-                      <button
-                        type="button"
-                        className="employees-button employees-button--primary"
-                        onClick={(event) => requestPanel({ mode: 'create', date: null, kind: null, employeeId: null }, event.currentTarget)}
-                      >
-                        Dienst hinzufügen
-                      </button>
-                    ) : (
-                      <p className="employee-form__hint">
-                        Das Projekt ist inaktiv. Für inaktive Projekte können keine Dienste angelegt werden; die
-                        bestehenden Dienste bleiben sichtbar.
-                      </p>
-                    )}
-                  </div>
-                  {allDuties.length === 0 && (
-                    <EmptyState title="Noch keine Dienste" description={`Für ${formatMonthLabel(month)} sind in diesem Plan noch keine Dienste angelegt.`} />
+                    <label>
+                      <input
+                        type="radio"
+                        name={viewName}
+                        checked={planView.kind === 'person'}
+                        onChange={() => requestView({ kind: 'person', employeeId: lastPerson ?? rows[0]?.employeeId ?? null })}
+                      />
+                      Monat einer Person planen <StatusBadge tone="attention">Vorschau</StatusBadge>
+                    </label>
+                  </fieldset>
+                  {pendingView && (
+                    <UnsavedPrompt
+                      mode={promptMode}
+                      editState={editState}
+                      onLeave={() => showView(pendingView)}
+                      onStay={() => setPendingView(null)}
+                    />
                   )}
                   {!rows.some((row) => row.assigned) && (
                     <p className="employees-card__hint">
@@ -379,81 +408,134 @@ export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot 
                       <Link to={`${PROJECTS_PATH}/${encodeURIComponent(ready.project.id)}/${month}`}>Mitarbeitende im Projekt zuordnen</Link>
                     </p>
                   )}
-                  <ConflictSummary duties={allDuties} nameOf={nameOf} />
-                  <PlanningWorkspace
-                    month={month}
-                    rows={filterRows(rows, query, onlyConflicts)}
-                    totalRows={rows.length}
-                    duties={allDuties}
-                    selection={selection}
-                    editingDutyId={editingDutyId}
-                    onSelect={(next, trigger) => requestPanel({ mode: 'day', ...next }, trigger)}
-                    timeZone={timeZone}
-                    panel={panel && (
-                      <section className="planning-panel" aria-labelledby="planning-panel-title" onKeyDown={onPanelKeyDown}>
-                        <h3 id="planning-panel-title" ref={panelHeading} tabIndex={-1}>
-                          {panelTitle(panel, allDuties, rows, nameOf)}
-                        </h3>
-                        {pendingPanel && (
-                          <UnsavedPrompt
-                            mode={panel.mode}
-                            editState={editState}
-                            onLeave={() => showPanel(pendingPanel.next)}
-                            onStay={() => setPendingPanel(null)}
-                          />
-                        )}
-                        {panel.mode === 'day' ? (
-                          <PlanningDayDetails
-                            row={panel.employeeId ? rows.find((row) => row.key === panel.employeeId!.toLowerCase()) ?? null : null}
-                            date={panel.date}
-                            day={dutiesOn(allDuties, panel.date)}
-                            monthLabel={formatMonthLabel(month)}
-                            projectActive={ready.project.status === 'ACTIVE'}
-                            timeZone={timeZone}
-                            nameOf={nameOf}
-                            onEdit={(duty) => requestPanel({ mode: 'edit', dutyId: duty.id, employeeId: panel.employeeId })}
-                            onCreate={(kind) => requestPanel({ mode: 'create', date: panel.date, kind, employeeId: panel.employeeId })}
-                            onClose={() => requestPanel(null)}
-                          />
-                        ) : panel.mode === 'edit' ? (
-                          <EditPanel
-                            panel={panel}
-                            plan={plan}
-                            ready={ready}
-                            duties={allDuties}
-                            apis={apis}
-                            timeZone={timeZone}
-                            onFresh={onFresh}
-                            onPlanFresh={onPlanFresh}
-                            onSaved={saved}
-                            onRemoved={removed}
-                            onGone={gone}
-                            onClose={() => requestPanel(null)}
-                            onEditStateChange={setEditState}
-                          />
+                  {planView.kind === 'person' ? (
+                    <PersonMonthView
+                      rows={rows}
+                      employees={ready.employees}
+                      employeeId={planView.employeeId}
+                      onPerson={(employeeId) => requestView({ kind: 'person', employeeId })}
+                      planner={(person) => (
+                        <EmployeeMonthPlanner
+                          key={person.key}
+                          plan={plan}
+                          project={ready.project}
+                          month={month}
+                          person={person}
+                          duties={allDuties}
+                          nameOf={nameOf}
+                          onReload={reloadDuties}
+                          reloading={duties.state.status === 'loading'}
+                          onEditStateChange={setEditState}
+                        />
+                      )}
+                    />
+                  ) : (
+                    <>
+                      <div className="planning-toolbar">
+                        <div className="employees__search">
+                          <label htmlFor={searchId}>Person suchen</label>
+                          <input id={searchId} type="search" value={query} onChange={(event) => setQuery(event.target.value)} />
+                        </div>
+                        <label className="planning-toolbar__toggle">
+                          <input type="checkbox" checked={onlyConflicts} onChange={(event) => setOnlyConflicts(event.target.checked)} />
+                          Nur Personen mit Hinweisen
+                        </label>
+                        {ready.project.status === 'ACTIVE' ? (
+                          <button
+                            type="button"
+                            className="employees-button employees-button--primary"
+                            onClick={(event) => requestPanel({ mode: 'create', date: null, kind: null, employeeId: null }, event.currentTarget)}
+                          >
+                            Dienst hinzufügen
+                          </button>
                         ) : (
-                          <>
-                            <DutyCreateForm
-                              key={`${panel.date ?? ''}|${panel.kind ?? ''}|${panel.employeeId ?? ''}`}
-                              plan={plan}
-                              project={ready.project}
-                              employees={ready.employees}
-                              assignments={ready.assignments}
-                              existingDuties={allDuties}
-                              apis={apis}
-                              prefill={panel}
-                              onCreated={created}
-                              onReloadDuties={reloadDuties}
-                              onEditStateChange={setEditState}
-                            />
-                            <div className="employee-form__actions">
-                              <button type="button" className="employees-button" onClick={() => requestPanel(null)}>Schließen</button>
-                            </div>
-                          </>
+                          <p className="employee-form__hint">
+                            Das Projekt ist inaktiv. Für inaktive Projekte können keine Dienste angelegt werden; die
+                            bestehenden Dienste bleiben sichtbar.
+                          </p>
                         )}
-                      </section>
-                    )}
-                  />
+                      </div>
+                      {allDuties.length === 0 && (
+                        <EmptyState title="Noch keine Dienste" description={`Für ${formatMonthLabel(month)} sind in diesem Plan noch keine Dienste angelegt.`} />
+                      )}
+                      <ConflictSummary duties={allDuties} nameOf={nameOf} />
+                      <PlanningWorkspace
+                        month={month}
+                        rows={filterRows(rows, query, onlyConflicts)}
+                        totalRows={rows.length}
+                        duties={allDuties}
+                        selection={selection}
+                        editingDutyId={editingDutyId}
+                        onSelect={(next, trigger) => requestPanel({ mode: 'day', ...next }, trigger)}
+                        timeZone={timeZone}
+                        panel={panel && (
+                          <section className="planning-panel" aria-labelledby="planning-panel-title" onKeyDown={onPanelKeyDown}>
+                            <h3 id="planning-panel-title" ref={panelHeading} tabIndex={-1}>
+                              {panelTitle(panel, allDuties, rows, nameOf)}
+                            </h3>
+                            {pendingPanel && (
+                              <UnsavedPrompt
+                                mode={panel.mode}
+                                editState={editState}
+                                onLeave={() => showPanel(pendingPanel.next)}
+                                onStay={() => setPendingPanel(null)}
+                              />
+                            )}
+                            {panel.mode === 'day' ? (
+                              <PlanningDayDetails
+                                row={panel.employeeId ? rows.find((row) => row.key === panel.employeeId!.toLowerCase()) ?? null : null}
+                                date={panel.date}
+                                day={dutiesOn(allDuties, panel.date)}
+                                monthLabel={formatMonthLabel(month)}
+                                projectActive={ready.project.status === 'ACTIVE'}
+                                timeZone={timeZone}
+                                nameOf={nameOf}
+                                onEdit={(duty) => requestPanel({ mode: 'edit', dutyId: duty.id, employeeId: panel.employeeId })}
+                                onCreate={(kind) => requestPanel({ mode: 'create', date: panel.date, kind, employeeId: panel.employeeId })}
+                                onPlanMonth={panel.employeeId ? () => requestView({ kind: 'person', employeeId: panel.employeeId }) : undefined}
+                                onClose={() => requestPanel(null)}
+                              />
+                            ) : panel.mode === 'edit' ? (
+                              <EditPanel
+                                panel={panel}
+                                plan={plan}
+                                ready={ready}
+                                duties={allDuties}
+                                apis={apis}
+                                timeZone={timeZone}
+                                onFresh={onFresh}
+                                onPlanFresh={onPlanFresh}
+                                onSaved={saved}
+                                onRemoved={removed}
+                                onGone={gone}
+                                onClose={() => requestPanel(null)}
+                                onEditStateChange={setEditState}
+                              />
+                            ) : (
+                              <>
+                                <DutyCreateForm
+                                  key={`${panel.date ?? ''}|${panel.kind ?? ''}|${panel.employeeId ?? ''}`}
+                                  plan={plan}
+                                  project={ready.project}
+                                  employees={ready.employees}
+                                  assignments={ready.assignments}
+                                  existingDuties={allDuties}
+                                  apis={apis}
+                                  prefill={panel}
+                                  onCreated={created}
+                                  onReloadDuties={reloadDuties}
+                                  onEditStateChange={setEditState}
+                                />
+                                <div className="employee-form__actions">
+                                  <button type="button" className="employees-button" onClick={() => requestPanel(null)}>Schließen</button>
+                                </div>
+                              </>
+                            )}
+                          </section>
+                        )}
+                      />
+                    </>
+                  )}
                 </>
               )}
             </section>
@@ -571,6 +653,71 @@ function PlanningWorkspace({ month, rows, totalRows, duties, selection, editingD
   );
 }
 
+type PersonViewProps = {
+  rows: readonly MatrixRow[];
+  employees: readonly Employee[];
+  employeeId: string | null;
+  onPerson: (employeeId: string) => void;
+  planner: (person: MatrixRow) => ReactNode;
+};
+
+function personOption(row: MatrixRow): string {
+  const flags = [row.inactive ? 'deaktiviert' : null, !row.assigned && row.employee ? 'nicht zugeordnet' : null].filter(Boolean);
+  return `${row.name}${row.code ? ` (${row.code})` : ''}${flags.length > 0 ? ` – ${flags.join(', ')}` : ''}`;
+}
+
+/**
+ * #88 employee-month view: choose one person (or step to the previous or next
+ * one) and plan that person's month. Every switch goes through the page's
+ * unsaved-input guard.
+ */
+function PersonMonthView({ rows, employees, employeeId, onPerson, planner }: PersonViewProps) {
+  const selectId = useId();
+  const listed = employeeId !== null && rows.some((row) => row.key === employeeId.toLowerCase());
+  // The chosen person stays (with an unsaved draft) even when a newer read no longer lists them,
+  // e.g. a person shown only for memberships that another admin removed meanwhile.
+  const list = employeeId !== null && !listed ? [...rows, standaloneRow(employeeId, employees)] : rows;
+  const index = employeeId === null ? -1 : list.findIndex((row) => row.key === employeeId.toLowerCase());
+  const person = index >= 0 ? list[index] : null;
+  const previous = index > 0 ? list[index - 1] : null;
+  const next = index < 0 ? list[0] ?? null : list[index + 1] ?? null;
+  if (list.length === 0) {
+    return <p>In diesem Plan gibt es noch keine Person, deren Monat Sie planen können.</p>;
+  }
+  return (
+    <>
+      <div className="planning-toolbar">
+        <div className="employees__search">
+          <label htmlFor={selectId}>Person</label>
+          <select id={selectId} value={person?.employeeId ?? ''} onChange={(event) => onPerson(event.target.value)}>
+            {person === null && <option value="" disabled>Bitte wählen</option>}
+            {list.map((row) => <option key={row.key} value={row.employeeId}>{personOption(row)}</option>)}
+          </select>
+        </div>
+        <button
+          type="button"
+          className="employees-button"
+          disabled={previous === null}
+          aria-label={previous ? `Vorherige Person: ${previous.name}` : undefined}
+          onClick={() => previous && onPerson(previous.employeeId)}
+        >
+          Vorherige Person
+        </button>
+        <button
+          type="button"
+          className="employees-button"
+          disabled={next === null}
+          aria-label={next ? `Nächste Person: ${next.name}` : undefined}
+          onClick={() => next && onPerson(next.employeeId)}
+        >
+          Nächste Person
+        </button>
+      </div>
+      {person ? planner(person) : <p>Wählen Sie eine Person, um ihren Monat zu planen.</p>}
+    </>
+  );
+}
+
 type StatusProps = PublishSlotProps & {
   month: MonthKey;
   timeZone: string;
@@ -638,7 +785,7 @@ function ConflictSummary({ duties, nameOf }: { duties: readonly Duty[]; nameOf: 
   );
 }
 
-type PromptProps = { mode: PanelState['mode'] | null; editState: EditState; onLeave: () => void; onStay: () => void };
+type PromptProps = { mode: PromptMode; editState: EditState; onLeave: () => void; onStay: () => void };
 
 /**
  * Inline confirmation (no browser dialog) for a navigation or panel switch
@@ -668,7 +815,21 @@ function UnsavedPrompt({ mode, editState, onLeave, onStay }: PromptProps) {
   }, []);
 
   const editing = mode === 'edit';
-  const copy = editState === 'saving'
+  const copy = mode === 'month' && editState !== 'clean'
+    ? editState === 'saving'
+      ? {
+          title: 'Speichern läuft noch',
+          text: 'Der Monat wird gerade gespeichert. Ein Wechsel bricht das nicht ab: Die Änderungen können trotzdem gespeichert werden oder fehlschlagen, Sie sehen das Ergebnis aber nicht. Prüfen Sie den Monat danach.',
+          leave: 'Trotzdem wechseln',
+          stay: 'Hier bleiben',
+        }
+      : {
+          title: 'Ungespeicherte Monatsplanung',
+          text: 'Die Auswahl für diese Person ist noch nicht gespeichert. Wenn Sie wechseln, wird sie verworfen.',
+          leave: 'Auswahl verwerfen und wechseln',
+          stay: 'Weiter planen',
+        }
+    : editState === 'saving'
     ? {
         title: 'Speichern läuft noch',
         text: editing
@@ -705,7 +866,7 @@ function UnsavedPrompt({ mode, editState, onLeave, onStay }: PromptProps) {
     setDeciding(true);
     const target = returnFocus.current;
     if (stay && target?.isConnected) target.focus();
-    else if (stay) document.querySelector<HTMLElement>('.planning-panel input, .planning-panel select')?.focus();
+    else if (stay) document.querySelector<HTMLElement>('.planning-panel input, .planning-panel select, .month-calendar button[tabindex="0"]')?.focus();
     action();
   }
 
