@@ -19,7 +19,7 @@ branches are untouched; the employee-month save is not connected.
 | Transport | `session-api.ts`: explicit `noBody` option. A POST with it sends no body (not even `{}`) and no Content-Type, but keeps CSRF, same-origin credentials and `no-store`. POST/PATCH without it are unchanged (`{}` when `body` is omitted). A bodyless request that also carries a body is refused before sending |
 | API client | `publish(planId, idempotencyKey)`: bodyless POST, key syntax (8–128 visible ASCII) checked before sending, key only as the `Idempotency-Key` header, no Expected-Version or lease token. The answer must be this plan as PUBLISHED with `publishedAt`; anything else is an unreadable answer (outcome unknown) |
 | Trigger | "Monatsplan veröffentlichen …" in the plan status, only for UNPUBLISHED plans. Kept focusable with `aria-disabled` and a visible reason (`aria-describedby`) while the project is inactive, the focus panel holds unsaved input or a write is running, or the duties are not loaded |
-| Dialog | Native `<dialog>` opened with `showModal()` (page inert, top layer), `role="alertdialog"`, named by its heading and described by the intro. Names project and month; summarises duties, unstaffed duties and planned people; notes neutral unavailability hints (no reason); says the server re-validates everything, later duty changes apply directly (CR-03), the step cannot be undone and no notification is sent. An empty plan is allowed (no invented minimum). Initial focus on "Abbrechen" (least destructive) |
+| Dialog | Native `<dialog>` opened with `showModal()` (page inert, top layer), `role="alertdialog"`, named by its heading and described by the intro. Names project and month; summarises duties, unstaffed duties and planned people; notes neutral unavailability hints (no reason); says that the server publishes the state saved **at commit time** after re-validating everything, that a change another admin saves right after the pre-send check can still be published (**no guarantee that exactly the shown state is published**), that later duty changes apply directly (CR-03), that the step cannot be undone, that no notification is sent and that **employees cannot yet retrieve published plans** (SP-14). An empty plan is allowed (no invented minimum). Initial focus on "Abbrechen" (least destructive) |
 | Confirmation | Re-reads the duties; only if they still match what the admin saw (identity, version, date, kind, interval, members, roles, sources, availability hints) is ONE POST sent under a NEW UUID key. Otherwise nothing is sent and the duties are reloaded for a fresh decision |
 | Double submit | A synchronous guard plus `aria-disabled` while a request runs: double clicks, repeated Enter, clicks on "Abbrechen" and Escape do nothing until the answer |
 | Unknown outcome | No answer, an unreadable answer, a 5xx, a 429 or `409 IDEMPOTENCY_REQUEST_IN_PROGRESS` never count as success or failure. The plan is re-read; PUBLISHED settles it. Otherwise the dialog says the outcome is open (a still UNPUBLISHED read is explicitly not taken as a rollback) and offers "Erneut anfragen" with the SAME key (after Retry-After 1 s for the in-progress case) or "Vorgang verlassen und Stand laden" (the key is dropped; plan, project and duties are re-read) |
@@ -39,7 +39,84 @@ branches are untouched; the employee-month save is not connected.
   which the browser run does.
 - `scripts/sp13-publish-browser-acceptance.mjs`: new browser acceptance harness (below).
 
+## Review follow-up (commit `7ef1fae`)
+
+Follow-up to the independent review of `dcb7ac5` (PR #93, 2026-11-03). No backend, contract,
+transport, idempotency or dialog-flow change; the tested bodyless POST, CSRF, key handling,
+modal dialog and lost-response recovery are unchanged.
+
+- **No employee-visibility promise.** SP-14 employee plan reads are not implemented. The texts
+  inherited from #87 that said or implied that employees see a (published) plan are corrected:
+  plan status (both states), the duty editor's effect note, the duty delete confirmation and the
+  create-plan confirmation. One shared sentence, `NO_EMPLOYEE_PLAN_VIEW` in
+  `monthly-plan-types.ts` ("Mitarbeitende können veröffentlichte Monatspläne in dieser
+  Ausbaustufe noch nicht abrufen."), is shown in the PUBLISHED status and in the dialog; it is the
+  single place to change when SP-14 ships. The F1 employee page `Mein Monatsplan` is a labelled
+  synthetic preview ("Demodaten / UI-Vorschau") and is outside this slice; it is unchanged.
+- **Confirmation wording for the versionless contract** (see the next section): commit-time
+  state, no snapshot-level guarantee.
+- **Dialog transitions reviewed** (focus return, repeated Escape, double submission, state
+  changes). No code defect was confirmed; the following paths had no direct test and now have
+  one: repeated Escape on the confirmation (one cancel, focus on the trigger, Enter reopens) and on
+  an open outcome (exactly one reload); a second confirmation, "Abbrechen", Escape and a native
+  `cancel` during the pre-send check; a forced browser close while the request runs (the answer
+  still settles the result and takes focus; an unknown outcome shows the decision modally again,
+  focus on its heading); two clicks on "Erneut anfragen" within one tick (one same-key resend;
+  focus moves to the dialog title, not the page); a browser close on an open outcome (= leave);
+  a late plan read showing PUBLISHED while the confirmation is open (dialog closes, no POST,
+  focus on the notice); and two tests that pin the versionless race.
+- The browser harness asserts the new wording in P03 (dialog) and P04 (PUBLISHED status).
+
+## Versionless publish: the GET-to-POST race (documented gap)
+
+By contract (`sp13-initial-publish-contract.md`: "No Expected-Version or duty lease token is
+required by the publish API; there is no global plan version") the command carries nothing that
+binds it to the state the administrator reviewed. The server takes the plan lock, re-reads every
+live duty and member, re-validates every rule and publishes **the state it finds at commit time**.
+
+| Time | Admin A (publishing) | Admin B | Server |
+|---|---|---|---|
+| t0 | opens the dialog; summary = duties on screen | | |
+| t1 | confirms; client re-reads the duties, the signature matches t0 | | answers the GET |
+| t2 | | saves a duty change (valid under every rule) | commits B's change |
+| t3 | sends the bodyless POST with a new key | | claims the key, locks the plan, re-reads and re-validates **including B's change**, commits PUBLISHED |
+| t4 | sees "Der Monatsplan wurde veröffentlicht." while the matrix still shows t1 | | |
+
+- **Window:** from the server's read for the pre-send GET until the publish transaction takes the
+  plan lock: GET response transit, the client comparison, POST transit, key claim and prefix
+  locks. Usually short, but unbounded under network stalls.
+- **Guaranteed:** the published plan satisfies every server rule at commit (a change that breaks
+  a rule makes the whole publication fail, see the second race test); one publication per plan;
+  same-key replay instead of a second publication.
+- **Not guaranteed:** that the published state equals the reviewed one. The client cannot detect
+  t2 and claims nothing about it. The dialog says so ("Dass genau der angezeigte Stand
+  veröffentlicht wird, ist nicht garantiert."); no text claims snapshot-level confirmation.
+- **Not done:** no client retry or extra read can close the window, and the backend contract
+  was not changed. Closing it needs a product/contract decision. Either first publication means
+  "publish the latest server-valid state", and the current wording describes it, or it means
+  "publish exactly the reviewed snapshot". The second requires a server-enforced precondition,
+  e.g. a plan revision or duty-set fingerprint checked under the plan lock and included in the
+  idempotency fingerprint, with backend and real-PostgreSQL race tests.
+- **Pinned by tests:** `InitialPublish.test.tsx` → "versionless contract (documented gap, not
+  closed by the client)". A valid change injected between the pre-send read and the POST is
+  published although it was never shown, and the command carries no version, fingerprint or body.
+  An unseen change that breaks a rule publishes nothing and appears after the reload.
+
 ## Executed evidence (local, Windows, Node 24.21.0)
+
+### Review follow-up, code head `7ef1fae`
+
+| Gate | Result |
+|---|---|
+| `npm run lint` | passed (both workspaces; oxlint 0 warnings, 0 errors) |
+| `npm run typecheck`, `npm run build` | passed (frontend build type-checks test files; pre-existing Vite chunk-size notice) |
+| `npm run test --workspace=frontend` | **52 files / 804 tests passed** (794 at `dcb7ac5`; +10 focused dialog/race tests) |
+| `npm test` (backend unit, backend unchanged) | 35 files / 375 tests passed |
+| `npm run test:e2e`, script suite | not rerun locally: no backend, migration or script change since `dcb7ac5` (49 / 1249 there); covered by exact-head CI on the PR |
+| `npm run check:public`, `git diff --check`, `node --check` of the harness | passed |
+| Browser harness (below) | **15 / 15 groups passed on `7ef1fae`** (tracked tree clean, recorded by the harness), including the new wording checks in P03/P04. Fresh labelled tmpfs `postgres:17` on a loopback-only port, run ID `sp13-pr93-final-20261103093007`; receipt recorded and re-verified; 13 migrations applied, second run none, `verify-db.mjs` passed. Chrome 156.0.8078.80, Playwright 1.64.1. Console errors 11 in the same deliberate categories as below, `other` 0; no uncaught page errors; fixture cleanup PASS. The container was removed after its ID and label were re-checked |
+
+### Initial evidence, code head `afb596f` (evidence commit `dcb7ac5`)
 
 | Gate | Result |
 |---|---|
@@ -73,7 +150,10 @@ New and extended frontend tests (derived from the handoff's acceptance list):
   staffing refusal, eleven definitive refusals with/without reload and a new key afterwards,
   failed pre-send check, lost answer verified by GET, same-key resend after a lost request,
   replay after a lost answer plus failed check, 500 with reference ID, in-progress with the 1 s
-  delay, leaving an open outcome by button or Escape and a new key afterwards.
+  delay, leaving an open outcome by button or Escape and a new key afterwards;
+- review follow-up (`7ef1fae`): wording without employee-visibility promise (status, editor,
+  delete and create confirmations, dialog), commit-time/no-snapshot wording, and the transition
+  tests listed in "Review follow-up" above, including the two versionless-race tests.
 
 Mocked UI tests do not establish browser end-to-end completion; the browser run below does that
 for the listed cases only.
@@ -99,8 +179,8 @@ only observes, drops an answer after commit, refuses to forward (502) or fails o
 |---|---|
 | P01 | plan, a staffed day duty and an unstaffed night duty created through the UI; the action is offered with `aria-haspopup="dialog"` |
 | P02 | unsaved create-form input blocks the action with its reason; a click opens nothing; discarding unblocks; no request |
-| P03 | Enter opens a real modal dialog (`:modal`), focus on "Abbrechen", summary "2 (davon 1 ohne Besetzung)" / 2 people; the back link under the backdrop is not hit; six Tab presses never reach the page; Escape cancels, focus returns, nothing sent, plan UNPUBLISHED |
-| P04 | double click: exactly one POST, 0 body bytes, no Content-Type, UUIDv4 key, CSRF token, same Origin, no Expected-Version/lease token; 200, `Idempotency-Replayed: false`, `Cache-Control: no-store`; DB PUBLISHED by this admin, one `MONTHLY_PLAN_PUBLISHED` audit (old/new values), one COMPLETED reservation whose hash equals SHA-256 of the browser's key; outcome focused; no re-publish action; key not in the DOM |
+| P03 | Enter opens a real modal dialog (`:modal`), focus on "Abbrechen", summary "2 (davon 1 ohne Besetzung)" / 2 people; since `7ef1fae` also the commit-time/no-snapshot wording and "Mitarbeitende können veröffentlichte Monatspläne … noch nicht abrufen", no "Mitarbeitende sehen"; the back link under the backdrop is not hit; six Tab presses never reach the page; Escape cancels, focus returns, nothing sent, plan UNPUBLISHED |
+| P04 | double click: exactly one POST, 0 body bytes, no Content-Type, UUIDv4 key, CSRF token, same Origin, no Expected-Version/lease token; 200, `Idempotency-Replayed: false`, `Cache-Control: no-store`; DB PUBLISHED by this admin, one `MONTHLY_PLAN_PUBLISHED` audit (old/new values), one COMPLETED reservation whose hash equals SHA-256 of the browser's key; outcome focused; no re-publish action; key not in the DOM; since `7ef1fae` the PUBLISHED status states that employees cannot yet retrieve the plan |
 | P05 | CR-03: an editor change after publication applies directly; status and `published_at` unchanged; no second publish/audit |
 | P06 | answer truncated after commit: no automatic resend; the GET confirms PUBLISHED; one audit |
 | P07 | answer truncated after commit AND the check read fails (502): the outcome stays open, nothing claimed although the DB is PUBLISHED; "Erneut anfragen" sends the same key and gets 200 with `Idempotency-Replayed: true`; still one audit and one reservation |
@@ -122,8 +202,12 @@ evidence outside Git.
 
 ## NOT_RUN
 
-- GitHub CI on this branch — pending until the Draft PR's checks complete.
+- Exact-head GitHub CI is recorded on the PR, not here (`dcb7ac5`: push 41591138515 and
+  pull_request 41591338408 passed; CI has no browser job).
 - `scripts/activation-demo.test.mjs` — its guard accepts only the development DB (CI covers it).
+- **Combined A1 (#92) + #93 integration** — not run; see
+  [`sp13-a1-integration-plan.md`](sp13-a1-integration-plan.md). Nothing in this document is
+  evidence for the integrated code or the 0014 schema.
 - Screen readers (NVDA/JAWS/VoiceOver) — semantics checked through roles, names, focus and live
   regions in Chrome and jsdom only.
 - Browsers other than Chrome 156 (Firefox/Safari dialog and Escape behaviour), real mobile devices.
@@ -131,27 +215,27 @@ evidence outside Git.
   jsdom and by the backend concurrency suite), 401 session loss during a publish (jsdom only), a
   connection reset that Chrome may transparently re-send (truncation and gateway faults used
   instead), and Chrome's forced close after repeated close requests while a request runs (handled
-  in code via the dialog's `close` event, not exercised).
+  in code via the dialog's `close` event and jsdom-tested since `7ef1fae`; not exercised in Chrome).
 
 ## Integration dependencies and limitations
 
-- **#90 project calendar and exclusive-day guards are not implemented.** Publication currently
-  re-validates only the existing SP-11/SP-12 rules (project active, configuration, employee
-  active/employed/assigned/eligible/unavailable, overlap). The UI adds no client-side calendar or
-  exclusivity rule and must not be read as covering them. **The overall planning/publishing system
-  is not ready for staging** until the server-side #90 guards (and the #51 operational gates named
-  in #86) pass their own acceptance.
+- **#90 calendar and exclusive-day guards are not on `main`.** They are in Draft PR #92 (A1),
+  which is unmerged. On current `main`, publication re-validates only the existing SP-11/SP-12
+  rules (project active, configuration, employee active/employed/assigned/eligible/unavailable,
+  overlap). The UI adds no client-side calendar or exclusivity rule and must not be read as
+  covering them. **#93 must not be merged before the A1 integration gate**: it would expose a
+  working publish action on a server that does not enforce the approved #90 invariants. The gate
+  is to merge A1 with a controlled calendar setup, rebase #93 and run the combined browser check
+  of the integration plan. **The overall planning/publishing system is not ready for staging**
+  (the #51 operational gates named in #86 also remain).
 - PR #91's employee-month "Monat speichern" remains unconnected; its atomic save contract (#88)
   is not approved.
-- The pre-send duty check narrows, but cannot close, the window between that read and the POST:
-  by contract the publish API carries no plan version. The server still re-validates every rule,
-  so a published plan is always rule-valid, but a change another admin commits within that window
-  would be published without having been shown. A stricter guarantee needs a contract decision.
+- Versionless publish: the server publishes the state at commit time, not a guaranteed reviewed
+  snapshot (section above). This is a product/contract decision, not a frontend defect.
 - Leaving the page while a publish request is in flight does not cancel it; reopening the plan
   shows the server state. The page's navigation guard is not extended to publishing (the modal
   dialog makes in-app links inert; browser Back still works).
 - The client does not read `Idempotency-Replayed`; a replay is handled as the same logical 200.
-- No notification or delivery promise (per contract). The plan status text from #87 says that
-  employees see a published plan; personal plan reads (SP-14) are not implemented, so that
-  sentence describes intended behaviour. The dialog deliberately makes no visibility promise.
-  Recommended follow-up: align that status text once SP-14 is scoped.
+- No notification or delivery promise (per contract). Since `7ef1fae`, no screen of this slice
+  promises employee visibility. `NO_EMPLOYEE_PLAN_VIEW` says that employees cannot yet retrieve
+  published plans. Replace it when SP-14 personal plan reads ship.
