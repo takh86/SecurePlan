@@ -1,0 +1,996 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SecurePlan A2 Employee-Month Save",
+    "version": "A2-GATE-1",
+    "description": "Adopted 2026-11-03 per issue #88 comment 6600906336, PR #94 c066ff4. Backend implementation contract, not release certification. Existing A1 and INITIAL_PUBLISH contracts unchanged. See employee-month-save.md for precedence, canonical tuples, full-month/date constraints and recovery."
+  },
+  "security": [
+    {
+      "session": []
+    }
+  ],
+  "paths": {
+    "/api/v1/monthly-plans/{planId}/employee-months/{employeeId}": {
+      "parameters": [
+        {
+          "name": "planId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "employeeId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getEmployeeMonth",
+        "responses": {
+          "200": {
+            "description": "Committed result or consistent projection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmployeeMonthRead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "401": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "403": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "404": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "409": {
+            "description": "Atomic refusal or idempotency conflict; see adopted contract. Bounded AtomicConflict extension only for A2 conflicts."
+          },
+          "413": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "415": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "500": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          }
+        }
+      }
+    },
+    "/api/v1/monthly-plans/{planId}/employee-months/{employeeId}/save": {
+      "parameters": [
+        {
+          "name": "planId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "employeeId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "Idempotency-Key",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128,
+            "pattern": "^[!-~]+$"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "saveEmployeeMonth",
+        "description": "COMPANY_ADMIN; Origin and X-CSRF-Token required. Complete desired state, strict JSON <=100 KiB. Exactly every distinct date of plan month. All 2N slot preconditions. Same-key replay returns original immutable SaveResult. Idempotency-Replayed response header. No automatic retries.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveEmployeeMonth"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Committed result or consistent projection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "401": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "403": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "404": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "409": {
+            "description": "Atomic refusal or idempotency conflict; see adopted contract. Bounded AtomicConflict extension only for A2 conflicts."
+          },
+          "413": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "415": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "500": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          }
+        }
+      }
+    },
+    "/api/v1/monthly-plans/{planId}/employee-months/{employeeId}/save-result": {
+      "parameters": [
+        {
+          "name": "planId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "employeeId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "Idempotency-Key",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128,
+            "pattern": "^[!-~]+$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getEmployeeMonthSaveResult",
+        "description": "Outcome query only. Same actor/company/route; never executes, resets or claims. UNKNOWN requires explicit reconciliation; not proof of failure.",
+        "responses": {
+          "200": {
+            "description": "Committed result or consistent projection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultLookup"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "401": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "403": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "404": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "409": {
+            "description": "Atomic refusal or idempotency conflict; see adopted contract. Bounded AtomicConflict extension only for A2 conflicts."
+          },
+          "413": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "415": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          },
+          "500": {
+            "description": "Existing problem+json contract; no-store; no sensitive details."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-secureplan_session"
+      }
+    },
+    "schemas": {
+      "Token": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "PlanState": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "publishedAt"
+            ],
+            "properties": {
+              "status": {
+                "const": "UNPUBLISHED"
+              },
+              "publishedAt": {
+                "type": "null"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "publishedAt"
+            ],
+            "properties": {
+              "status": {
+                "const": "PUBLISHED"
+              },
+              "publishedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ]
+      },
+      "Plan": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "projectId",
+              "monthStart",
+              "status",
+              "publishedAt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "projectId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "monthStart": {
+                "type": "string",
+                "format": "date"
+              },
+              "status": {
+                "const": "UNPUBLISHED"
+              },
+              "publishedAt": {
+                "type": "null"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "projectId",
+              "monthStart",
+              "status",
+              "publishedAt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "projectId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "monthStart": {
+                "type": "string",
+                "format": "date"
+              },
+              "status": {
+                "const": "PUBLISHED"
+              },
+              "publishedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ]
+      },
+      "Desired": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "const": "OFF"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "role"
+            ],
+            "properties": {
+              "state": {
+                "enum": [
+                  "DAY",
+                  "NIGHT"
+                ]
+              },
+              "role": {
+                "enum": [
+                  "EMPLOYEE",
+                  "SHIFT_LEAD"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "SaveEmployeeMonth": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedPlan",
+          "expectedCreationContext",
+          "expectedCalendar",
+          "days"
+        ],
+        "properties": {
+          "expectedPlan": {
+            "$ref": "#/components/schemas/PlanState"
+          },
+          "expectedCreationContext": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expectedCalendar": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Token"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "days": {
+            "type": "array",
+            "minItems": 28,
+            "maxItems": 31,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "date",
+                "expected",
+                "desired"
+              ],
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "expected": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "day",
+                    "night"
+                  ],
+                  "properties": {
+                    "day": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/Token"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "night": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/Token"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "desired": {
+                  "$ref": "#/components/schemas/Desired"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Assignment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "dutyRole",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dutyRole": {
+            "enum": [
+              "EMPLOYEE",
+              "SHIFT_LEAD"
+            ]
+          },
+          "source": {
+            "enum": [
+              "NORMAL",
+              "REPLACEMENT"
+            ]
+          }
+        }
+      },
+      "ReadSlot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dutyId",
+          "version",
+          "startsAt",
+          "endsAt",
+          "assignment"
+        ],
+        "properties": {
+          "dutyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "assignment": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Assignment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "Calendar": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "effectiveFromMonth",
+          "operatingWeekdays"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "effectiveFromMonth": {
+            "type": "string",
+            "format": "date"
+          },
+          "operatingWeekdays": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 7,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 7
+            }
+          }
+        }
+      },
+      "EmployeeMonthRead": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "plan",
+          "employeeId",
+          "creationContextFingerprint",
+          "operatingCalendar",
+          "unavailableDates",
+          "days"
+        ],
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/Plan"
+          },
+          "employeeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "creationContextFingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "operatingCalendar": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "effective"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "MISSING"
+                  },
+                  "effective": {
+                    "type": "null"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "state",
+                  "effective"
+                ],
+                "properties": {
+                  "state": {
+                    "const": "CONFIGURED"
+                  },
+                  "effective": {
+                    "$ref": "#/components/schemas/Calendar"
+                  }
+                }
+              }
+            ]
+          },
+          "unavailableDates": {
+            "type": "array",
+            "maxItems": 31,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          "days": {
+            "type": "array",
+            "minItems": 28,
+            "maxItems": 31,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "date",
+                "day",
+                "night",
+                "currentState",
+                "operatingState",
+                "violations"
+              ],
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "day": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadSlot"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "night": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadSlot"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "currentState": {
+                  "enum": [
+                    "OFF",
+                    "DAY",
+                    "NIGHT",
+                    "INVALID_DUAL"
+                  ]
+                },
+                "operatingState": {
+                  "enum": [
+                    "OPEN",
+                    "CLOSED",
+                    "MISSING"
+                  ]
+                },
+                "violations": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": [
+                      "INVALID_DUAL",
+                      "PROJECT_CLOSED_WEEKDAY",
+                      "PROJECT_CALENDAR_MISSING"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "SaveResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "commandId",
+          "outcome",
+          "completedAt",
+          "plan",
+          "employeeId",
+          "counts",
+          "changes"
+        ],
+        "properties": {
+          "commandId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "outcome": {
+            "enum": [
+              "APPLIED",
+              "NO_OP"
+            ]
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/Plan"
+          },
+          "employeeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "counts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "createdDuties",
+              "changedDuties",
+              "addedMemberships",
+              "removedMemberships",
+              "updatedMemberships"
+            ],
+            "properties": {
+              "createdDuties": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 62
+              },
+              "changedDuties": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 62
+              },
+              "addedMemberships": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 62
+              },
+              "removedMemberships": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 62
+              },
+              "updatedMemberships": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 62
+              }
+            }
+          },
+          "changes": {
+            "type": "array",
+            "maxItems": 62,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "date",
+                "shiftKind",
+                "dutyId",
+                "version",
+                "startsAt",
+                "endsAt",
+                "assignment"
+              ],
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "shiftKind": {
+                  "enum": [
+                    "DAY",
+                    "NIGHT"
+                  ]
+                },
+                "dutyId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "startsAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "endsAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "assignment": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Assignment"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "ResultLookup": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "result"
+            ],
+            "properties": {
+              "state": {
+                "const": "COMPLETED"
+              },
+              "result": {
+                "$ref": "#/components/schemas/SaveResult"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "retryAfterSeconds"
+            ],
+            "properties": {
+              "state": {
+                "const": "IN_PROGRESS"
+              },
+              "retryAfterSeconds": {
+                "const": 1
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "enum": [
+                  "UNKNOWN",
+                  "NOT_COMPLETED"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "AtomicConflict": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "atomic",
+          "stage",
+          "conflicts"
+        ],
+        "properties": {
+          "atomic": {
+            "const": true
+          },
+          "stage": {
+            "enum": [
+              "LEASE",
+              "PRECONDITION",
+              "VALIDATION"
+            ]
+          },
+          "conflicts": {
+            "type": "array",
+            "maxItems": 62,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "date",
+                "shiftKind",
+                "reason"
+              ],
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "shiftKind": {
+                  "enum": [
+                    "DAY",
+                    "NIGHT"
+                  ]
+                },
+                "reason": {
+                  "enum": [
+                    "PLAN_CONCURRENT_MODIFICATION",
+                    "ACTIVE_DUTY_EDIT",
+                    "PRESERVED_ROSTER_CONFLICT",
+                    "PROJECT_INACTIVE",
+                    "PROJECT_CALENDAR_MISSING",
+                    "PROJECT_CLOSED_WEEKDAY",
+                    "SHIFT_CONFIGURATION_MISSING",
+                    "DUTY_TIME_RANGE_INVALID",
+                    "EMPLOYEE_INACTIVE",
+                    "EMPLOYEE_NOT_EMPLOYED_FOR_DAY",
+                    "EMPLOYEE_NOT_ASSIGNED_TO_PROJECT_MONTH",
+                    "EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT",
+                    "EMPLOYEE_UNAVAILABLE",
+                    "EMPLOYEE_DAILY_SHIFT_CONFLICT",
+                    "DUTY_ASSIGNMENT_CONFLICT"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

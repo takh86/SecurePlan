@@ -102,3 +102,40 @@ so they serialize with admitted writes. Publish claim/replay also validates the
 specific session. Clock expiry is checked after P/L/D/Q waits before accepting
 the business command. This is implementation evidence awaiting independent T4
 review, not a security sign-off. A2 receipts and employee-month Save are separate.
+
+## A2 batch admission supplement
+
+Accepted for bounded backend implementation, 2026-11-03, under the
+[A2-GATE-1 owner decision](https://github.com/takh86/SecurePlan/issues/88#issuecomment-6600906336),
+PR #94 head `c066ff41d3a5eda8d6f20a62144fc5212e3cf280`.
+The [adopted API](../../api/employee-month-save.md) and its OpenAPI define scope.
+
+Employee-month Save uses READ COMMITTED and short batch admission rather than
+interactive per-duty client leases. Acquire final strength initially:
+A sorted/actor SHARE → C SHARE → I nonwaiting/reservation UPDATE → E sorted
+NO KEY UPDATE → P SHARE → M sorted SHARE → L UPDATE → all D sorted UPDATE or
+tentative inserts → all A2 sorted UPDATE → all Q sorted UPDATE → Z.
+Allocate new duty UUIDs in PostgreSQL and merge them into D order. Discover the
+complete month's roster before E; after L, reject discovery drift without
+acquiring any late employee, account or monthly-link lock. Hold every D before
+any A2/Q; implicit FK parents must already be held.
+
+After all waits, revalidate the specific Identity session and query leases using
+a fresh database clock. Any live unreleased lease on an affected existing duty
+refuses the whole command, including a lease in another tab of the same actor.
+Do not rotate, release or acquire an interactive lease. Unchanged duties do not
+refuse admission. L/D/Q remain held through commit. Preserve SP-12 headers and
+all existing single-duty behavior. Retain existing bounded writer timeouts;
+technical failures roll back and never trigger automatic retry.
+
+The short durable claim takes A/C/I/E target/P/L KEY SHARE before inserting its
+context FKs. Its separate business transaction starts with L UPDATE, never an
+upgrade. Result lookup takes A/C/I/P, current visibility and fresh session, with
+no eligibility locks or claim mutation. All domain writes, bounded existing
+audit events and fenced immutable receipt completion share one transaction.
+No-op and replay emit no success audit. Existing INITIAL_PUBLISH is preserved.
+
+Tradeoff: whole-plan serialization and complete slot preconditions can refuse
+disjoint stale drafts. This is explicitly accepted; no silent roster merging.
+Implementation concurrency, failure-injection and independent security review
+remain acceptance gates; adoption alone does not prove them.

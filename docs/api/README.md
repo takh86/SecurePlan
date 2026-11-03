@@ -1,6 +1,8 @@
 # API Design – öffentliche Übersicht
 
 A1 implementation amendment (2026-11-03): [project operating calendar](project-operating-calendar.md).
+A2 adopted backend contract (2026-11-03): [employee-month Save](employee-month-save.md),
+[OpenAPI](employee-month-save.openapi.json). Owner approval and implementation evidence are separate.
 Product approval, implemented backend behavior and independent acceptance remain distinct.
 
 Stand: 29.10.2026, Implementierungsbaseline `7107781`. Die interne Designbaseline hat Phase 8.11 erreicht; spätere freigegebene Amendments werden kontrolliert nachgeführt. Produkt-API-Design und implementierte Endpunkte werden getrennt ausgewiesen.
