@@ -82,3 +82,23 @@ blocking, membership drift, missing slots, expiry after waits, token rotation,
 lease/version precedence, direct Published edits, retained history and audit
 rollback. Executed results belong to the PR evidence; this ADR alone grants no
 implementation PASS, independent sign-off, merge or deployment authorization.
+
+## A1 supplement — 2026-11-03
+
+The [calendar amendment](../../api/project-operating-calendar.md) implements PO
+P4/P5 without changing lease ownership. Calendar PATCH takes A SHARE → C SHARE →
+P NO KEY UPDATE from its first acquisition, then fresh configuration/dependency
+reads and Z audit. It takes no E/L/D/A2/Q row locks. Duty writers and Publish
+already acquire P SHARE before L/D, so calendar changes serialize with all
+effective writers, including direct CR-03 edits and removal. Exclusivity reads
+are fresh under the complete sorted E lock set; no late employee is acquired.
+The shared schema signature now includes the calendar table and its constraints.
+
+Identity supplies a read-only session check under A/C, scoped to the trusted
+session/account/company. It uses the existing idle/absolute policy with a fresh
+database clock after business-lock waits; it never calls validateAndTouch or
+updates/locks a session at a late tier. Logout/reset writers require A UPDATE,
+so they serialize with admitted writes. Publish claim/replay also validates the
+specific session. Clock expiry is checked after P/L/D/Q waits before accepting
+the business command. This is implementation evidence awaiting independent T4
+review, not a security sign-off. A2 receipts and employee-month Save are separate.

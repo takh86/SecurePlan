@@ -185,8 +185,10 @@ describe('SP-06 — runtime route access inventory', () => {
       expect(projectRoutes.map((h) => h.key)).toEqual([
         'GET /api/v1/projects',
         'GET /api/v1/projects/:projectId',
+        'GET /api/v1/projects/:projectId/operating-calendar',
         'GET /api/v1/projects/:projectId/shift-configuration',
         'PATCH /api/v1/projects/:projectId',
+        'PATCH /api/v1/projects/:projectId/operating-calendar',
         'PATCH /api/v1/projects/:projectId/shift-configuration',
         'POST /api/v1/projects',
       ]);

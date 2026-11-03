@@ -7,6 +7,7 @@
  */
 import { Injectable } from '@nestjs/common';
 import type { PoolClient } from 'pg';
+import { validCivilDate } from '../workforce/availability/availability.rules.js';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
@@ -38,6 +39,8 @@ export type BusinessAuditAction =
   | 'PROJECT_ASSIGNMENT_REMOVED'
   /** PO D1 / ADR-0004: shift set of one effective month replaced; resource = project. */
   | 'SHIFT_CONFIGURATION_UPDATED'
+  /** PO P6, 2026-11-02: exact bounded calendar values, validated at this boundary. */
+  | 'PROJECT_OPERATING_CALENDAR_UPDATED'
   /** SP-10 owner technical approval, 30.10.2026: date-only per-day values. */
   | 'EMPLOYEE_AVAILABILITY_SET'
   | 'EMPLOYEE_AVAILABILITY_CLEARED'
@@ -63,7 +66,7 @@ export type BusinessAuditEntry = {
   action: BusinessAuditAction;
   resourceType:
     | 'EMPLOYEE' | 'ACCOUNT' | 'PROJECT' | 'PROJECT_ASSIGNMENT' | 'PROJECT_SHIFT_CONFIGURATION' | 'EMPLOYEE_AVAILABILITY'
-    | 'MONTHLY_PLAN' | 'DUTY' | 'DUTY_ASSIGNMENT';
+    | 'MONTHLY_PLAN' | 'DUTY' | 'DUTY_ASSIGNMENT' | 'PROJECT_OPERATING_CALENDAR';
   resourceId: string;
   oldValues?: Readonly<Record<string, unknown>> | null;
   newValues?: Readonly<Record<string, unknown>> | null;
@@ -73,6 +76,13 @@ export type BusinessAuditEntry = {
 @Injectable()
 export class BusinessAuditService {
   async recordBusinessAction(client: Queryable, entry: BusinessAuditEntry): Promise<void> {
+    if (entry.action === 'PROJECT_OPERATING_CALENDAR_UPDATED') {
+      if (entry.resourceType !== 'PROJECT_OPERATING_CALENDAR' || entry.actorAccountId === null
+        || entry.newValues == null || !calendarValues(entry.newValues, true)
+        || (entry.oldValues != null && !calendarValues(entry.oldValues, false))) {
+        throw new Error('Invalid bounded calendar audit');
+      }
+    }
     await client.query(
       `INSERT INTO audit_event (
          company_id, actor_account_id, action, resource_type, resource_id,
@@ -91,4 +101,16 @@ export class BusinessAuditService {
       ],
     );
   }
+}
+
+function calendarValues(value: Readonly<Record<string, unknown>>, allowBootstrap: boolean): boolean {
+  const keys = Object.keys(value).sort().join(',');
+  const basic = 'effectiveFromMonth,operatingWeekdays,version';
+  if (keys !== basic && !(allowBootstrap && keys === 'bootstrap,' + basic && value.bootstrap === true)) return false;
+  const days = value.operatingWeekdays;
+  return typeof value.effectiveFromMonth === 'string' && validCivilDate(value.effectiveFromMonth)
+    && value.effectiveFromMonth.endsWith('-01') && Number.isSafeInteger(value.version) && Number(value.version) >= 1
+    && Array.isArray(days) && days.length >= 1 && days.length <= 7
+    && days.every((day: unknown, index: number) => Number.isInteger(day) && Number(day) >= 1 && Number(day) <= 7
+      && (index === 0 || Number(days[index - 1]) < Number(day)));
 }

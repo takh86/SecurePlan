@@ -11,6 +11,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service.js';
 import { isTenantRole, type TenantRole } from './authorization/tenant-context.js';
+import type { TenantContext } from './authorization/tenant-context.js';
 
 const TOKEN_BYTES = 32;
 const TOKEN_FORMAT = /^[A-Za-z0-9_-]{43}$/;
@@ -19,6 +20,22 @@ const SESSION_POLICY: Readonly<Record<TenantRole, { idleMs: number; absoluteMs: 
   COMPANY_ADMIN: { idleMs: 30 * 60 * 1000, absoluteMs: 12 * HOUR_MS },
   EMPLOYEE: { idleMs: 8 * HOUR_MS, absoluteMs: 7 * 24 * HOUR_MS },
 };
+
+/** Identity-owned check under A/C locks. Revocation writers require A UPDATE;
+ * no session lock, touch or account upgrade is allowed at a later planning tier.
+ * Call again after business-lock waits to evaluate expiry with a fresh clock.
+ */
+export async function assertSessionInTransaction(client: Pick<PoolClient, 'query'>, tenant: TenantContext): Promise<void> {
+  const { rows: [session] } = await client.query<{ revoked_at: Date | null; expired: boolean }>(
+    `SELECT revoked_at, (clock_timestamp() >= least(absolute_expires_at, created_at + $4::double precision * interval '1 millisecond')
+      OR clock_timestamp() >= last_seen_at + $5::double precision * interval '1 millisecond'
+      OR clock_timestamp() < last_seen_at) AS expired
+     FROM sessions WHERE company_id = $1 AND account_id = $2 AND id = $3`,
+    [tenant.companyId, tenant.accountId, tenant.sessionId, SESSION_POLICY[tenant.role].absoluteMs, SESSION_POLICY[tenant.role].idleMs],
+  );
+  if (!session || session.revoked_at !== null) unauthorized('SESSION_REVOKED');
+  if (session.expired) unauthorized('SESSION_EXPIRED');
+}
 
 type SessionErrorCode = 'SESSION_REQUIRED' | 'SESSION_EXPIRED' | 'SESSION_REVOKED';
 

@@ -173,3 +173,15 @@ privacy policy, backups and restore proof are separately tracked in
 [pre-staging gates](../../security/pre-staging-gates.md). Application append-only
 convention is not database immutability, and D1 does not approve indefinite
 retention or operational readiness.
+
+## A1 supplement — 2026-11-03
+
+[PO P6](https://github.com/takh86/SecurePlan/issues/90#issuecomment-6588992180)
+approves PROJECT_OPERATING_CALENDAR_UPDATED / PROJECT_OPERATING_CALENDAR, with
+the project as resource. Old values are null for insertion or the replaced
+effective month, sorted weekday set and safe numeric version; new values contain
+the persisted equivalent and bootstrap:true only for explicit bootstrap. The
+audit boundary rejects extra fields, invalid dates/sets/versions and a bootstrap
+marker on old values. No-op, refusal and read produce no success event. Calendar
+mutation and audit share one transaction. Existing retention/privileged-role
+limits above remain open; independent T4 implementation acceptance is separate.

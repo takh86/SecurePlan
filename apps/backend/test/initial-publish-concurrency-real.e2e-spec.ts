@@ -7,10 +7,10 @@ import type { App } from 'supertest/types.js';
 import { DatabaseService } from '../src/database/database.service.js';
 import { BusinessAuditService, type BusinessAuditAction, type BusinessAuditEntry } from '../src/modules/audit/business-audit.service.js';
 import { MonthlyPlansService } from '../src/modules/planning/monthly-plans.service.js';
+import { SessionService } from '../src/auth/session.service.js';
 import { PLANNING_WRITER_TIMEOUTS } from '../src/modules/planning/planning-locks.js';
 import { ORIGIN, RecordingDelivery, bootEmployeesApp } from './helpers/employees-test-app.js';
 import { backendPid, openLocalTestPool, removeSyntheticTenants, type SyntheticSession, type TestPool } from './helpers/synthetic-tenants.js';
-import { adminContext } from './helpers/planning-fixtures.js';
 import { dutyMutationFixture, dutyPath, MUTATION_DAY, MUTATION_MONTH, MUTATION_NOW, type DutyMutationFixture } from './helpers/duty-mutation-fixtures.js';
 
 function latch() { let release!: () => void; const promise = new Promise<void>((resolve) => { release = resolve; }); return { promise, release }; }
@@ -191,6 +191,7 @@ for (const rollback of [false, true]) {
 
 it('a stale live reservation cannot be stolen; I responds in-progress without waiting or replaying', async () => {
   await boot(); const key = randomUUID(); const held = holdAudit('MONTHLY_PLAN_PUBLISHED', false);
+  const trusted = await app!.get(SessionService).validateAndTouch(f.admin.rawToken);
   database.after = async (client, sql) => {
     if (!sql.includes('INSERT INTO public.idempotency_records')) return;
     database.after = undefined;
@@ -200,7 +201,7 @@ it('a stale live reservation cannot be stolen; I responds in-progress without wa
   };
   const first = publish(key); await reached(held, first);
   const service = app!.get(MonthlyPlansService);
-  await expect(service.publish(adminContext(f.tenant.admin), f.planId, key, randomUUID())).rejects.toMatchObject({ status: 409, response: { code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS' } });
+  await expect(service.publish(trusted, f.planId, key, randomUUID())).rejects.toMatchObject({ status: 409, response: { code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS' } });
   held.resume.release(); expect((await first).status).toBe(200); expect((await publish(key)).headers['idempotency-replayed']).toBe('true');
 });
 
