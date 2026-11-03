@@ -268,3 +268,60 @@ describe('SP-12 — single duty, edits, removal and edit leases (ADR-0006)', () 
     expect(await createMonthlyPlansApi(api).acquireLease(PLAN, DUTY)).toEqual(leaseJson());
   });
 });
+
+describe('SP-13 — First Publish request and response', () => {
+  const PUBLISH_URL = `/api/v1/monthly-plans/${PLAN}/publish`;
+  const KEY = '3f6c1f0e-8a52-4c1b-9d3e-5a7b9c1d2e3f';
+  const published = (overrides: Record<string, unknown> = {}) =>
+    planJson({ status: 'PUBLISHED', publishedAt: '2026-11-30T12:00:00Z', ...overrides });
+
+  it('sends one bodyless POST with only the Idempotency-Key (no Expected-Version, no lease token)', async () => {
+    const { api, requests } = fakeSessionApi(() => ({ ...published(), companyId: 'x', publishedByAccountId: 'y' }));
+    expect(await createMonthlyPlansApi(api).publish(PLAN, KEY)).toEqual(published());
+    expect(requests).toEqual([{ path: PUBLISH_URL, method: 'POST', body: undefined, idempotencyKey: KEY, noBody: true }]);
+  });
+
+  it('encodes the plan id in the path', async () => {
+    const { api, requests } = fakeSessionApi(() => published());
+    await expect(createMonthlyPlansApi(api).publish('a/b', KEY)).rejects.toSatisfy(invalidResponse);
+    expect(requests[0].path).toBe('/api/v1/monthly-plans/a%2Fb/publish');
+  });
+
+  it.each([
+    ['still UNPUBLISHED', planJson()],
+    ['another plan', published({ id: 'e0000000-0000-4000-8000-000000000001' })],
+    ['PUBLISHED without publishedAt', published({ publishedAt: null })],
+    ['a local-time publishedAt', published({ publishedAt: '2026-11-30T13:00:00+01:00' })],
+    ['no plan at all', { ok: true }],
+    ['an empty answer', undefined],
+  ])('rejects a publish answer that is %s (outcome then counts as unknown)', async (_label, answer) => {
+    const { api } = fakeSessionApi(() => answer);
+    await expect(createMonthlyPlansApi(api).publish(PLAN, KEY)).rejects.toSatisfy(invalidResponse);
+  });
+
+  it('accepts the replayed answer of the same key like a fresh one (same logical 200)', async () => {
+    const { api, requests } = fakeSessionApi(() => published());
+    const plans = createMonthlyPlansApi(api);
+    const first = await plans.publish(PLAN, KEY);
+    const replay = await plans.publish(PLAN, KEY);
+    expect(replay).toEqual(first);
+    expect(requests.map((request) => request.idempotencyKey)).toEqual([KEY, KEY]);
+  });
+
+  it.each(['', 'short', 'x'.repeat(129), 'has space inside', 'umlaut-ä-key', 'tab\there12'])(
+    'refuses a malformed Idempotency-Key before sending anything (%#)',
+    async (key) => {
+      const { api, requests } = fakeSessionApi(() => published());
+      const request = createMonthlyPlansApi(api).publish(PLAN, key);
+      await expect(request).rejects.toThrow('Idempotency-Key has an invalid format');
+      expect(requests).toEqual([]);
+    },
+  );
+
+  it('passes API errors through unchanged (no retry, no translation)', async () => {
+    const refusal = new ApiError('http', 409, 'MONTHLY_PLAN_ALREADY_PUBLISHED', 'req-13');
+    const { api, requests } = fakeSessionApi(() => { throw refusal; });
+    await expect(createMonthlyPlansApi(api).publish(PLAN, KEY)).rejects.toBe(refusal);
+    expect(requests).toHaveLength(1);
+  });
+});

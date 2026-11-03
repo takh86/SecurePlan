@@ -107,3 +107,58 @@ describe('SP-12 — edit and removal error texts', () => {
     expect(`${text.title} ${text.description}`).not.toMatch(/krank|urlaub|abwesen|grund|sick|leave/i);
   });
 });
+
+describe('SP-13 — First Publish error texts', () => {
+  it('every definitive refusal says the plan was not published', () => {
+    const codes: [number, KnownErrorCode][] = [
+      [409, 'PLAN_CONCURRENT_MODIFICATION'],
+      [409, 'PROJECT_INACTIVE'],
+      [409, 'SHIFT_CONFIGURATION_MISSING'],
+      [404, 'RESOURCE_NOT_FOUND'],
+      [409, 'EMPLOYEE_INACTIVE'],
+      [409, 'EMPLOYEE_NOT_EMPLOYED_FOR_DAY'],
+      [409, 'EMPLOYEE_NOT_ASSIGNED_TO_PROJECT_MONTH'],
+      [409, 'EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT'],
+      [409, 'EMPLOYEE_UNAVAILABLE'],
+      [409, 'DUTY_ASSIGNMENT_CONFLICT'],
+      [409, 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST'],
+      [400, 'IDEMPOTENCY_KEY_REQUIRED'],
+      [400, 'IDEMPOTENCY_KEY_INVALID'],
+      [400, 'INVALID_REQUEST_BODY'],
+    ];
+    for (const [status, code] of codes) {
+      const text = planningErrorText(http(status, code), 'publish-plan');
+      expect(text, code).toBeDefined();
+      expect(text!.description, code).toContain('Der Plan wurde nicht veröffentlicht.');
+      // Staffing refusals never name a duty or a person (the server reports neither).
+      expect(text!.description, code).not.toMatch(/Mira|Jonas|\d{2}\.\d{2}\.\d{4}/);
+    }
+  });
+
+  it('already published: no re-publish is offered; CR-03 direct changes are named', () => {
+    const text = planningErrorText(http(409, 'MONTHLY_PLAN_ALREADY_PUBLISHED'), 'publish-plan')!;
+    expect(text.title).toBe('Bereits veröffentlicht');
+    expect(text.description).toContain('Ein erneutes Veröffentlichen gibt es nicht');
+    expect(text.description).not.toContain('nicht veröffentlicht');
+  });
+
+  it('in progress and lost answers claim neither success nor failure', () => {
+    const inProgress = planningErrorText(http(409, 'IDEMPOTENCY_REQUEST_IN_PROGRESS'), 'publish-plan')!;
+    expect(inProgress.description).toContain('mit demselben Vorgang');
+    expect(inProgress.description).not.toContain('nicht veröffentlicht');
+    for (const kind of ['network', 'invalid-response'] as const) {
+      const text = planningErrorText(new ApiError(kind, null, null, null), 'publish-plan')!;
+      expect(text.description).toContain('Ob der Monatsplan veröffentlicht wurde, ist unklar.');
+      expect(text.description).toContain('keine doppelte Veröffentlichung');
+    }
+  });
+
+  it('a 400 without a known code is a client defect; unavailability stays neutral', () => {
+    expect(planningErrorText(http(400, null), 'publish-plan')!.title).toBe('Veröffentlichung nicht angenommen');
+    const text = planningErrorText(http(409, 'EMPLOYEE_UNAVAILABLE'), 'publish-plan')!;
+    expect(`${text.title} ${text.description}`).not.toMatch(/krank|urlaub|abwesen|grund|sick|leave/i);
+    // Shared session/permission codes keep the shared default text.
+    expect(planningErrorText(http(401, 'SESSION_EXPIRED'), 'publish-plan')).toBeUndefined();
+    expect(planningErrorText(http(403, 'ACTION_FORBIDDEN'), 'publish-plan')).toBeUndefined();
+  });
+});

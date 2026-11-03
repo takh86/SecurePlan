@@ -6,7 +6,6 @@ import userEvent from '@testing-library/user-event';
 import { ApiError } from '../../../shared/api/api-error';
 import { deferred, httpError } from '../../employees/employees.test-support';
 import { shiftVersion } from '../../projects/projects.test-support';
-import type { PublishSlot } from './MonthlyPlanPage';
 import {
   HAFEN_ID,
   JONAS_ID,
@@ -85,11 +84,10 @@ describe('SP-12 A10 — plan page: employee-by-day matrix (real API source)', ()
     expect(await screen.findByRole('heading', { level: 1, name: 'Demo-Objekt Hafen – Dezember 2026' })).toBeTruthy();
     const status = section('Planstatus');
     expect(status.textContent).toContain('Unveröffentlicht');
-    expect(status.textContent).toContain('Das Veröffentlichen ist in dieser Ausbaustufe noch nicht verfügbar.');
     expect(within(status).getByRole('link', { name: /Schichtzeiten und Mitarbeiterzuordnung/ }).getAttribute('href'))
       .toBe(`/projekte/${HAFEN_ID}/2026-12`);
-    // No publish action exists in this slice (SP-13).
-    expect(screen.queryByRole('button', { name: /veröffentlichen/i })).toBeNull();
+    // SP-13: the First Publish action sits in the plan status; opening the page sends no write.
+    expect(await within(status).findByRole('button', { name: 'Monatsplan veröffentlichen …' })).toBeTruthy();
 
     const grid = await matrix();
     // Assigned persons (A09) plus every member; deactivated and unknown persons stay visible.
@@ -175,7 +173,8 @@ describe('SP-12 A10 — plan page: employee-by-day matrix (real API source)', ()
     const status = (await screen.findByRole('heading', { level: 2, name: 'Planstatus' })).closest('section')!;
     expect(status.textContent).toContain('Veröffentlicht am Mo., 30.11.2026, 13:00 MEZ.');
     expect(status.textContent).toContain('Änderungen an Diensten gelten sofort, ohne erneutes Veröffentlichen.');
-    expect(status.textContent).not.toContain('noch nicht verfügbar');
+    // No re-publish (CR-03): a PUBLISHED plan offers no publish action at all.
+    expect(within(status).queryByRole('button', { name: /veröffentlichen/i })).toBeNull();
   });
 
   it('an inactive project shows its duties but offers no creation', async () => {
@@ -328,24 +327,23 @@ describe('SP-12 A10 — plan page: employee-by-day matrix (real API source)', ()
     expect(location()).toBe(PLAN_PATH);
   });
 
-  it('SP-13 integration point: a publish slot gets the plan and can report a new status', async () => {
-    // Synthetic stand-in for the later Initial Publish dialog; not a publish implementation.
-    const slot: PublishSlot = ({ plan: current, hasUnsavedChanges, onPlanChanged }) => (
-      <button
-        type="button"
-        onClick={() => onPlanChanged({ ...current, status: 'PUBLISHED', publishedAt: '2026-12-01T08:00:00Z' })}
-      >
-        Testaktion {hasUnsavedChanges ? 'mit offenen Eingaben' : 'ohne offene Eingaben'}
-      </button>
-    );
-    renderPlanning(PLAN_PATH, planningCompany({ plans: [plan()] }).handler, { publishSlot: slot });
+  it('SP-13 integration point: the publish slot sees unsaved panel input and stays blocked until it is gone', async () => {
+    renderPlanning(PLAN_PATH, planningCompany({ plans: [plan()] }).handler);
     const user = userEvent.setup();
     await openForm(user);
     setDate('2026-12-05');
-    expect(within(section('Planstatus')).getByRole('button', { name: 'Testaktion mit offenen Eingaben' })).toBeTruthy();
-    expect(section('Planstatus').textContent).not.toContain('noch nicht verfügbar');
-    await user.click(within(section('Planstatus')).getByRole('button', { name: /^Testaktion/ }));
-    expect(section('Planstatus').textContent).toContain('Veröffentlicht am Di., 01.12.2026, 09:00 MEZ.');
+    const publish = within(section('Planstatus')).getByRole('button', { name: 'Monatsplan veröffentlichen …' });
+    expect(publish.getAttribute('aria-disabled')).toBe('true');
+    expect(publish.getAttribute('aria-describedby')).toBeTruthy();
+    expect(document.getElementById(publish.getAttribute('aria-describedby')!)!.textContent)
+      .toContain('ungespeicherte Eingaben');
+    await user.click(publish);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    // Discarding the input (closing the panel) unblocks it.
+    await user.click(within(form()).getByRole('button', { name: 'Schließen' }));
+    await user.click(within(await within(form()).findByRole('group', { name: 'Ungespeicherter Dienst' }))
+      .getByRole('button', { name: 'Eingaben verwerfen und wechseln' }));
+    await waitFor(() => expect(publish.getAttribute('aria-disabled')).toBeNull());
   });
 });
 

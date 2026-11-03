@@ -66,7 +66,9 @@ export type KnownErrorCode =
   | 'EMPLOYEE_NOT_ASSIGNED_TO_PROJECT_MONTH'
   | 'EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT'
   | 'EMPLOYEE_UNAVAILABLE'
-  | 'DUTY_ASSIGNMENT_CONFLICT';
+  | 'DUTY_ASSIGNMENT_CONFLICT'
+  // SP-13 First Publish (approved backend catalogue); German text lives in the planning feature.
+  | 'MONTHLY_PLAN_ALREADY_PUBLISHED';
 
 export type ApiErrorKind = 'http' | 'network' | 'invalid-response';
 
@@ -143,6 +145,7 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT: 409,
   EMPLOYEE_UNAVAILABLE: 409,
   DUTY_ASSIGNMENT_CONFLICT: 409,
+  MONTHLY_PLAN_ALREADY_PUBLISHED: 409,
 };
 
 const POINTER_PATTERN = /^#(?:\/(?:[A-Za-z0-9_-]|~[01])+)+$/;

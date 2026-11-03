@@ -80,7 +80,14 @@ describe('SP-07 — field errors and employee codes', () => {
       }
     }
     // Codes of later slices stay untrusted until a UI handles them.
-    expect((await parseApiError(problem(409, { code: 'MONTHLY_PLAN_ALREADY_PUBLISHED' }))).code).toBeNull();
+    expect((await parseApiError(problem(409, { code: 'CANCELLATION_ALREADY_EXISTS' }))).code).toBeNull();
+  });
+
+  it('SP-13: trusts MONTHLY_PLAN_ALREADY_PUBLISHED only with its catalogued 409', async () => {
+    expect((await parseApiError(problem(409, { code: 'MONTHLY_PLAN_ALREADY_PUBLISHED' }))).code).toBe('MONTHLY_PLAN_ALREADY_PUBLISHED');
+    for (const status of [400, 404, 500]) {
+      expect((await parseApiError(problem(status, { code: 'MONTHLY_PLAN_ALREADY_PUBLISHED' }))).code, String(status)).toBeNull();
+    }
   });
 
   it('has German texts for every SP-07 code', () => {

@@ -7,6 +7,7 @@
  * follows ADR-0006 closely enough for screen tests (no real clock, no hashing).
  * Not part of the application bundle (only imported by tests).
  */
+import { ApiError } from '../../../shared/api/api-error';
 import { employee, httpError, type Handler, type RecordedRequest } from '../../employees/employees.test-support';
 import type { Employee } from '../../employees/employee-types';
 import type { ProjectAssignment } from '../../projects/project-assignments-api';
@@ -151,7 +152,11 @@ export function planningCompany(initial: Partial<PlanningState> = {}) {
     leases: initial.leases ?? {},
   };
   let failNext: ((request: RecordedRequest) => unknown) | null = null;
+  let loseNext: ((request: RecordedRequest) => boolean) | null = null;
   let planSeq = 0;
+  /** SP-13 model of the idempotency records: key -> plan id of the completed publication. */
+  const publishKeys = new Map<string, string>();
+  const publishLog = { publications: 0, replays: 0 };
 
   const handler: Handler = (request) => {
     if (failNext) {
@@ -161,12 +166,23 @@ export function planningCompany(initial: Partial<PlanningState> = {}) {
         throw injected;
       }
     }
+    if (loseNext?.(request)) {
+      // The server processes (and commits) the request; its answer never arrives.
+      loseNext = null;
+      route(request);
+      throw new ApiError('network', null, null, null);
+    }
+    return route(request);
+  };
+
+  function route(request: RecordedRequest): unknown {
     const [pathname, search = ''] = request.path.split('?');
     const params = new URLSearchParams(search);
     const planMatch = /^\/api\/v1\/monthly-plans\/([^/]+)$/.exec(pathname);
     const entriesMatch = /^\/api\/v1\/monthly-plans\/([^/]+)\/entries$/.exec(pathname);
     const entryMatch = /^\/api\/v1\/monthly-plans\/([^/]+)\/entries\/([^/]+)$/.exec(pathname);
     const leaseMatch = /^\/api\/v1\/monthly-plans\/([^/]+)\/entries\/([^/]+)\/edit-lease$/.exec(pathname);
+    const publishMatch = /^\/api\/v1\/monthly-plans\/([^/]+)\/publish$/.exec(pathname);
     const projectMatch = /^\/api\/v1\/projects\/([^/]+)$/.exec(pathname);
     const shiftMatch = /^\/api\/v1\/projects\/([^/]+)\/shift-configuration$/.exec(pathname);
 
@@ -218,6 +234,7 @@ export function planningCompany(initial: Partial<PlanningState> = {}) {
       if (!found) throw httpError(404, 'RESOURCE_NOT_FOUND');
       return found;
     }
+    if (publishMatch && request.method === 'POST') return publishPlan(decodeURIComponent(publishMatch[1]), request);
     if (entriesMatch) {
       const target = state.plans.find((item) => item.id === decodeURIComponent(entriesMatch[1]));
       if (!target) throw httpError(404, 'RESOURCE_NOT_FOUND');
@@ -237,7 +254,47 @@ export function planningCompany(initial: Partial<PlanningState> = {}) {
       if (request.method === 'DELETE') return removeDuty(duties, found, request);
     }
     throw new Error(`Unexpected request ${request.method} ${request.path}`);
-  };
+  }
+
+  /**
+   * SP-13 model (precedence of the contract): key syntax and the bodyless rule
+   * (400) -> visibility (404) -> completed replay of the same key -> key reused
+   * for another plan -> lifecycle -> project ACTIVE -> configuration and staffing
+   * of every live duty (UUID order). The plan object is replaced, never mutated,
+   * so answers already handed out stay unchanged.
+   */
+  function publishPlan(planId: string, request: RecordedRequest): MonthlyPlan {
+    const key = request.idempotencyKey;
+    if (key === undefined) throw httpError(400, 'IDEMPOTENCY_KEY_REQUIRED');
+    if (!/^[\x21-\x7e]{8,128}$/.test(key)) throw httpError(400, 'IDEMPOTENCY_KEY_INVALID');
+    if (request.noBody !== true || request.body !== undefined) throw httpError(400, 'INVALID_REQUEST_BODY');
+    const index = state.plans.findIndex((item) => item.id === planId);
+    if (index < 0) throw httpError(404, 'RESOURCE_NOT_FOUND');
+    const target = state.plans[index];
+    const prior = publishKeys.get(key);
+    if (prior !== undefined) {
+      if (prior !== planId) throw httpError(409, 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST');
+      publishLog.replays += 1;
+      return structuredClone(target);
+    }
+    if (target.status === 'PUBLISHED') throw httpError(409, 'MONTHLY_PLAN_ALREADY_PUBLISHED');
+    const owner = state.projects.find((item) => item.id === target.projectId)!;
+    if (owner.status !== 'ACTIVE') throw httpError(409, 'PROJECT_INACTIVE');
+    for (const item of [...(state.duties[planId] ?? [])].sort((a, b) => a.id.localeCompare(b.id))) {
+      shiftRule(target, item.shiftKind);
+      const members = item.assignments.map((assignment) => {
+        const person = state.employees.find((candidate) => candidate.id === assignment.employeeId);
+        if (!person) throw httpError(404, 'RESOURCE_NOT_FOUND');
+        return { person };
+      });
+      assertStaffing(target, item.dutyDate, item.shiftKind, members);
+    }
+    const published: MonthlyPlan = { ...target, status: 'PUBLISHED', publishedAt: PUBLISHED_AT };
+    state.plans[index] = published;
+    publishKeys.set(key, planId);
+    publishLog.publications += 1;
+    return structuredClone(published);
+  }
 
   function leaseCommand(target: Duty, request: RecordedRequest) {
     const slot = state.leases[target.id];
@@ -388,9 +445,23 @@ export function planningCompany(initial: Partial<PlanningState> = {}) {
   return {
     state,
     handler,
+    /** SP-13: completed publications and replays of a completed key. */
+    publishLog,
     /** The next request for which `match` returns an error fails with it. */
     fail(match: (request: RecordedRequest) => unknown) {
       failNext = match;
     },
+    /** The next request for which `match` is true is processed, but its answer is lost (network error). */
+    loseResponse(match: (request: RecordedRequest) => boolean) {
+      loseNext = match;
+    },
   };
+}
+
+/** SP-13 synthetic publication instant of the in-memory company (an example, not a rule). */
+export const PUBLISHED_AT = '2026-12-01T08:00:00Z';
+
+/** True for the SP-13 publish command of any plan. */
+export function isPublish(request: RecordedRequest): boolean {
+  return request.method === 'POST' && /^\/api\/v1\/monthly-plans\/[^/]+\/publish$/.test(request.path);
 }

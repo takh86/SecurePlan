@@ -36,16 +36,20 @@ export type PlanPageApis = {
 };
 
 /**
- * SP-13 integration point: the plan's publish action (Initial Publish dialog).
- * Rendered in the plan status section; this slice provides none.
+ * SP-13 integration point: the plan's publish action (First Publish dialog,
+ * see `InitialPublish`). Rendered in the plan status section.
  */
 export type PublishSlotProps = {
   plan: MonthlyPlan;
   project: Project;
+  /** The duties on screen (last read plus answers of own writes); null while no current read is available. */
+  duties: readonly Duty[] | null;
   /** True while the focus panel holds unsaved input or a write is in flight. */
   hasUnsavedChanges: boolean;
   /** Call with the server's answer after a successful publication; the page shows the new status. */
   onPlanChanged: (plan: MonthlyPlan) => void;
+  /** Re-reads plan, project and duties; the current view stays on screen until the new reads replace it. */
+  onReload: () => void;
 };
 export type PublishSlot = (props: PublishSlotProps) => ReactNode;
 
@@ -71,6 +75,16 @@ function planMonth(plan: MonthlyPlan): MonthKey {
   return plan.monthStart.slice(0, 7);
 }
 
+/**
+ * The newer of two states of the same plan. CR-03: the status only ever moves
+ * UNPUBLISHED -> PUBLISHED (no unpublish, no re-publish), so a PUBLISHED state
+ * is never replaced by an older UNPUBLISHED answer that arrives later.
+ */
+function newerPlan(update: MonthlyPlan | null, read: MonthlyPlan | null): MonthlyPlan | null {
+  if (update === null || read === null) return update ?? read;
+  return read.status === 'PUBLISHED' && update.status !== 'PUBLISHED' ? read : update;
+}
+
 /** What the focus panel shows (UX A10 "Focus Editor"). */
 type PanelState =
   | { mode: 'day'; date: DateOnly; employeeId: string | null }
@@ -83,14 +97,14 @@ function dutyLabel(duty: Pick<Duty, 'shiftKind' | 'dutyDate'>): string {
 
 const PUBLISHED_EFFECT = 'Der Plan ist veröffentlicht: Die Änderung gilt sofort, ohne erneutes Veröffentlichen.';
 
-type PageProps = { planId: string; basePath: string; apis: PlanPageApis; timeZone: string; publishSlot?: PublishSlot };
+type PageProps = { planId: string; basePath: string; apis: PlanPageApis; timeZone: string; publishSlot: PublishSlot };
 
 /**
  * UX A10 plan page: plan status, the employee-by-day matrix of the plan's
  * duties and a focus panel for one cell, one day, one duty (SP-12 editor with
  * edit lease) or a new duty. Each save is one atomic server write; the server
- * re-validates everything. The first publication is a separate slice (SP-13,
- * see `PublishSlot`); under CR-03 edits of a PUBLISHED plan apply at once.
+ * re-validates everything. The first publication (SP-13) is the `PublishSlot`
+ * in the status section; under CR-03 edits of a PUBLISHED plan apply at once.
  */
 export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot }: PageProps) {
   const location = useLocation();
@@ -155,8 +169,16 @@ export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot 
     if (panelFocus) panelHeading.current?.focus();
   }, [panelFocus]);
 
-  const ready = context.state.status === 'ready' ? context.state.data : null;
-  const plan = planUpdate ?? ready?.plan ?? null;
+  /**
+   * The last plan context read. A re-read (after a publish conflict) keeps it,
+   * and with it the matrix and an open panel, on screen until the new read
+   * replaces it; only the first read shows the page-wide loading state.
+   */
+  const contextRead = context.state.status === 'ready' ? context.state.data : null;
+  const [shownContext, setShownContext] = useState<PlanContext | null>(null);
+  if (contextRead !== null && shownContext !== contextRead) setShownContext(contextRead);
+  const ready = contextRead ?? shownContext;
+  const plan = newerPlan(planUpdate, ready?.plan ?? null);
   const allDuties = useMemo(() => {
     if (view === null) return null;
     const kept = view.loaded.filter((duty) => !(duty.id.toLowerCase() in view.changes));
@@ -208,6 +230,12 @@ export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot 
 
   /** Re-reads the duties; the new read replaces the view including local answers. */
   function reloadDuties() {
+    duties.retry();
+  }
+
+  /** Re-reads plan, project, staff and duties (SP-13 conflicts); the current view stays until replaced. */
+  function reloadAll() {
+    context.retry();
     duties.retry();
   }
 
@@ -295,14 +323,18 @@ export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot 
         </div>
         {ready && plan && month ? (
           <>
+            {context.state.status === 'loading' && <LoadingState label="Planstatus wird neu geladen …" />}
+            {context.state.status === 'error' && <ErrorState error={context.state.error} onRetry={context.retry} />}
             <PlanStatusSection
               plan={plan}
               project={ready.project}
               month={month}
               timeZone={timeZone}
               publishSlot={publishSlot}
+              duties={duties.state.status === 'ready' ? allDuties : null}
               hasUnsavedChanges={editState !== 'clean'}
               onPlanChanged={setPlanUpdate}
+              onReload={reloadAll}
             />
             <section className="employees-card planning-board" aria-labelledby="planning-duties-title">
               <h2 id="planning-duties-title">Dienste</h2>
@@ -539,17 +571,14 @@ function PlanningWorkspace({ month, rows, totalRows, duties, selection, editingD
   );
 }
 
-type StatusProps = {
-  plan: MonthlyPlan;
-  project: Project;
+type StatusProps = PublishSlotProps & {
   month: MonthKey;
   timeZone: string;
-  publishSlot?: PublishSlot;
-  hasUnsavedChanges: boolean;
-  onPlanChanged: (plan: MonthlyPlan) => void;
+  publishSlot: PublishSlot;
 };
 
-function PlanStatusSection({ plan, project, month, timeZone, publishSlot, hasUnsavedChanges, onPlanChanged }: StatusProps) {
+function PlanStatusSection({ month, timeZone, publishSlot, ...slotProps }: StatusProps) {
+  const { plan, project } = slotProps;
   const status = PLAN_STATUS[plan.status];
   const projectStatus = PROJECT_STATUS[project.status];
   return (
@@ -569,12 +598,8 @@ function PlanStatusSection({ plan, project, month, timeZone, publishSlot, hasUns
           den aktuellen Stand dieses Plans. Änderungen an Diensten gelten sofort, ohne erneutes Veröffentlichen.
         </p>
       )}
-      {/* SP-13 integration point (Initial Publish). */}
-      <div className="planning-publish">
-        {publishSlot
-          ? publishSlot({ plan, project, hasUnsavedChanges, onPlanChanged })
-          : plan.status === 'UNPUBLISHED' && <p>Das Veröffentlichen ist in dieser Ausbaustufe noch nicht verfügbar.</p>}
-      </div>
+      {/* SP-13 integration point (First Publish). */}
+      <div className="planning-publish">{publishSlot(slotProps)}</div>
       <Link to={`${PROJECTS_PATH}/${encodeURIComponent(project.id)}/${month}`}>
         Schichtzeiten und Mitarbeiterzuordnung von {project.name} im {formatMonthLabel(month)}
       </Link>

@@ -2,10 +2,12 @@
  * Monthly-plan API client: exactly the routes the backend provides. SP-11:
  * list/create/read plans, list/create duties. SP-12 (ADR-0006): read one duty,
  * edit it (PATCH) and remove it (DELETE) under `Expected-Version` and an edit
- * lease, and acquire/renew/release that lease. No publish call exists (SP-13).
+ * lease, and acquire/renew/release that lease. SP-13: the First Publish of a
+ * plan (bodyless POST under an Idempotency-Key; there is no re-publish).
  * Tenant, role, status and instants are never sent: the server derives them.
  * Responses are shape-checked, so a malformed payload never reaches the UI.
- * Writes are never retried here; lease tokens travel only as a header.
+ * Writes are never retried here; lease tokens and idempotency keys travel only
+ * as headers.
  */
 import { ApiError } from '../../../shared/api/api-error';
 import { MAX_PAGE_SIZE, loadAllPages } from '../../../shared/data/load-all-pages';
@@ -51,6 +53,14 @@ export interface MonthlyPlansApi {
   renewLease(planId: string, dutyId: string, leaseToken: string): Promise<EditLeaseGrant>;
   /** ADR-0006: releases the lease; `keepalive` lets the request outlive a closing page. */
   releaseLease(planId: string, dutyId: string, leaseToken: string, options?: { keepalive?: boolean }): Promise<void>;
+  /**
+   * SP-13 First Publish (UNPUBLISHED -> PUBLISHED): a POST with no body at all,
+   * the session's CSRF token and `idempotencyKey`. The caller keeps ONE key per
+   * confirmed decision and resends it unchanged when the outcome is unknown; the
+   * server then replays the completed result instead of publishing twice.
+   * Resolves only with this plan as PUBLISHED (fresh or replayed). Never retried here.
+   */
+  publish(planId: string, idempotencyKey: string): Promise<MonthlyPlan>;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -61,6 +71,8 @@ const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 // ADR-0006: lease expiry keeps PostgreSQL microseconds.
 const LEASE_EXPIRY = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
 const LEASE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+// Phase 8.7: 8-128 visible ASCII characters (a UUIDv4 qualifies).
+const IDEMPOTENCY_KEY = /^[\x21-\x7e]{8,128}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -318,6 +330,16 @@ export function createMonthlyPlansApi(api: SessionApi): MonthlyPlansApi {
       await api.request<unknown>(`${dutyPath(planId, dutyId)}/edit-lease`, {
         method: 'DELETE', editLeaseToken: leaseToken, keepalive: options.keepalive,
       });
+    },
+    async publish(planId, idempotencyKey) {
+      // Checked before sending; the key itself is never part of an error message.
+      if (!IDEMPOTENCY_KEY.test(idempotencyKey)) throw new Error('Idempotency-Key has an invalid format');
+      const plan = toMonthlyPlan(await api.request<unknown>(`${planPath(planId)}/publish`, {
+        method: 'POST', noBody: true, idempotencyKey,
+      }));
+      // The answer is this plan, published; toMonthlyPlan already requires publishedAt with PUBLISHED.
+      if (!sameId(plan.id, planId) || plan.status !== 'PUBLISHED') invalid();
+      return plan;
     },
   };
 }

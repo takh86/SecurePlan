@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Navigate, Route, Routes, useParams } from 'react-router';
 import type { AppRoute } from '../../../app/routes';
 import { useFocusHeadingOnSubpageChange } from '../../../app/use-focus-heading-on-subpage-change';
@@ -12,6 +12,7 @@ import { createShiftConfigurationApi } from '../../projects/shift-configuration-
 import '../../employees/Employees.css';
 import '../../projects/Projects.css';
 import { deviceTimeZone } from './duty-time';
+import { InitialPublish } from './InitialPublish';
 import { createMonthlyPlansApi } from './monthly-plans-api';
 import { MonthlyPlanPage, type PlanPageApis, type PublishSlot } from './MonthlyPlanPage';
 import { MonthlyPlansOverviewPage } from './MonthlyPlansOverviewPage';
@@ -23,18 +24,16 @@ type SectionProps = {
   clock?: Clock;
   /** IANA zone used to display duty instants; defaults to the device's zone (see duty-time.ts). */
   timeZone?: string;
-  /** SP-13 integration point for the Initial Publish action; none in this slice. */
-  publishSlot?: PublishSlot;
 };
 
 /**
  * Admin area `/monatsplanung`: month overview of all projects with their plan
  * (`?month=YYYY-MM`) and the A10 plan page (`/:planId`): employee-by-day matrix
- * with a focus panel to create, edit and remove duties (SP-11/SP-12 API). No
- * publish action exists yet (SP-13, see `publishSlot`). Only real API data;
- * the server enforces COMPANY_ADMIN, tenant scope, leases and versions.
+ * with a focus panel to create, edit and remove duties (SP-11/SP-12 API) and the
+ * SP-13 First Publish dialog in the plan status. Only real API data; the server
+ * enforces COMPANY_ADMIN, tenant scope, leases, versions and idempotency.
  */
-export function MonthlyPlanningSection({ route, api, clock = systemClock, timeZone, publishSlot }: SectionProps) {
+export function MonthlyPlanningSection({ route, api, clock = systemClock, timeZone }: SectionProps) {
   const apis = useMemo<PlanPageApis>(
     () => ({
       plans: createMonthlyPlansApi(api),
@@ -46,6 +45,7 @@ export function MonthlyPlanningSection({ route, api, clock = systemClock, timeZo
     [api],
   );
   const zone = useMemo(() => timeZone ?? deviceTimeZone(), [timeZone]);
+  const publishSlot = useCallback<PublishSlot>((props) => <InitialPublish {...props} plans={apis.plans} />, [apis]);
   useFocusHeadingOnSubpageChange();
   return (
     <Routes>
@@ -56,7 +56,7 @@ export function MonthlyPlanningSection({ route, api, clock = systemClock, timeZo
   );
 }
 
-type PlanRouteProps = { basePath: string; apis: PlanPageApis; timeZone: string; publishSlot?: PublishSlot };
+type PlanRouteProps = { basePath: string; apis: PlanPageApis; timeZone: string; publishSlot: PublishSlot };
 
 function PlanRoute({ basePath, apis, timeZone, publishSlot }: PlanRouteProps) {
   const { planId = '' } = useParams();

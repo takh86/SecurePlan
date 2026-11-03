@@ -4,7 +4,7 @@ import type { StatusTone } from '../../../shared/ui/StatusBadge';
 /**
  * Planning resources exactly as returned by `/api/v1/monthly-plans`: SP-11
  * create/read plus the SP-12 single-duty read, edit (PATCH), removal (DELETE)
- * and edit leases (ADR-0006). The first publication (SP-13) is not part of it.
+ * and edit leases (ADR-0006), and the SP-13 First Publish answer (a plan).
  */
 export type MonthlyPlanStatus = 'UNPUBLISHED' | 'PUBLISHED';
 

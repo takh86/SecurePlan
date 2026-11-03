@@ -25,6 +25,12 @@ export type SessionRequest = {
   editLeaseToken?: string;
   /** Lets a lease release outlive the page (pagehide); no other effect. */
   keepalive?: boolean;
+  /**
+   * SP-13: send this POST/PATCH with no request body at all (no `{}`, no
+   * Content-Type), for commands whose contract forbids a body (First Publish).
+   * Without it, POST and PATCH keep sending JSON (`{}` when `body` is omitted).
+   */
+  noBody?: boolean;
 };
 
 export interface SessionApi {
@@ -43,10 +49,14 @@ export function createSessionApi(
   return {
     async request<T>(
       path: string,
-      { method = 'GET', body, signal, expectedVersion, idempotencyKey, editLeaseToken, keepalive }: SessionRequest = {},
+      { method = 'GET', body, signal, expectedVersion, idempotencyKey, editLeaseToken, keepalive, noBody = false }: SessionRequest = {},
     ): Promise<T> {
       if (!path.startsWith(API_PREFIX) || path.includes('//')) {
         throw new Error('Session requests are limited to the SecurePlan API');
+      }
+      // A caller defect: a bodyless command must never silently drop (or send) a body.
+      if (noBody && body !== undefined) {
+        throw new Error('A bodyless request cannot carry a body');
       }
       if (expectedVersion !== undefined && !(Number.isSafeInteger(expectedVersion) && expectedVersion > 0)) {
         throw new Error('Expected-Version must be a positive safe integer');
@@ -56,8 +66,9 @@ export function createSessionApi(
         throw new Error('Edit-Lease-Token has an invalid format');
       }
       const unsafe = method !== 'GET';
-      // DELETE (#73) and the SP-12 lease renewal (PUT) have no request body; POST and PATCH send JSON.
-      const sendsBody = unsafe && method !== 'DELETE' && method !== 'PUT';
+      // DELETE (#73) and the SP-12 lease renewal (PUT) have no request body; POST and PATCH send
+      // JSON unless the caller explicitly asks for a bodyless command (SP-13 First Publish).
+      const sendsBody = unsafe && method !== 'DELETE' && method !== 'PUT' && !noBody;
       const headers: Record<string, string> = {};
       if (sendsBody) headers['Content-Type'] = 'application/json';
       if (unsafe) headers['X-CSRF-Token'] = csrfToken;
