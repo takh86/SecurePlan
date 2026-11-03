@@ -14,12 +14,12 @@ Evidence uses synthetic data only, Node 24.21.0 and a separately verified memory
 | --- | --- |
 | Lint; backend typecheck; backend/frontend build | PASS |
 | Backend unit suite | PASS ? 423 tests, 38 files |
-| Frontend suite | PASS ? 1,122 tests, 67 files |
-| Full backend HTTP/PostgreSQL suite | PASS ? 1,493 tests before the additional race cases; final suite recorded in PR |
+| Frontend suite | PASS ? 1,123 tests, 67 files |
+| Full backend HTTP/PostgreSQL suite | PASS ? 1,501 tests in CI; exact final-commit run linked in PR |
 | Expanded SP-14 real HTTP/PostgreSQL regressions | PASS ? 78 cases, including case-insensitive cache handling |
 | Repository script tests | PASS ? 34 tests in Node 24, sharing only the disposable PostgreSQL container network |
 | Public-content check | PASS ? limited automated scan, plus diff review |
-| Real installed Chrome | Admin Save/First Publish, employee reload/refresh, CR-03, mobile390px, browser zones, malformed responses, principal changes, cross-tab logout and expiry verified; final native lifecycle result recorded in PR |
+| Real installed Chrome | PASS ? 10 scenarios, including native foreground concealment, actual persisted history-cache restoration, retained selected month, and late responses across both different-account and same-account login |
 | Staging deployment and human screen-reader/device review | NOT_RUN |
 
 The legacy demo-script guard requires port5432. Its host invocation refused the random-port target before its fixtures; the complete script suite subsequently passed inside an isolated Node container with the existing verified receipt. No host demo connection was substituted.

@@ -781,6 +781,36 @@ describe('SP14 additional real writer, integrity and snapshot regressions', () =
       dutyDate: date,
     });
     expect(await saved()).toEqual(before);
+    if (zone === 'Europe/Berlin') {
+      const spring = date === '2026-03-29';
+      const previous = spring ? '2026-03-28' : '2026-10-24';
+      const starts = `${previous}T${spring ? '17' : '16'}:00:00Z`;
+      const ends = `${date}T${spring ? '04' : '05'}:00:00Z`;
+      const night = await insertDuty(pool, {
+        companyId: a.companyId,
+        projectId: project.projectId,
+        planId: p,
+        month,
+        dutyDate: previous,
+        kind: 'NACHT',
+        startsAt: starts,
+        endsAt: ends,
+      });
+      await insertMembership(pool, a.companyId, night, own.employeeId);
+      const response = await read(`monthStart=${month}`).expect(200);
+      const snapshot = response.body.items[0].duties.find(
+        (value: { dutyId: string }) => value.dutyId === night,
+      );
+      expect(snapshot).toMatchObject({
+        startsAt: starts,
+        endsAt: ends,
+        dutyDate: previous,
+        timeZone: 'Europe/Berlin',
+      });
+      expect(
+        (Date.parse(snapshot.endsAt) - Date.parse(snapshot.startsAt)) / 3600000,
+      ).toBe(spring ? 11 : 13);
+    }
   });
   it.each(['COMMIT', 'ROLLBACK'])(
     'D2 First Publish %s has no half-published read',
@@ -955,9 +985,18 @@ describe('SP14 complete visibility and authority race regressions', () => {
   );
 });
 
-it('R7 case-insensitive Express route aliases keep the private cache boundary on successes and errors',async()=>{
-  for(const [suffix,session,status] of [[`?monthStart=${MONTH}`,employee,200],['?monthStart=bad',employee,400],[`?monthStart=${MONTH}`,null,401]] as const){
-    const operation=request(app.getHttpServer()).get('/API/V1/ME/MONTHLY-PLANS'+suffix).set('If-None-Match','*');if(session)operation.set('Cookie',session.cookie);
-    const response=await operation.expect(status);expect(response.headers['cache-control']).toBe('private, no-store');expect(response.headers.etag).toBeUndefined();
+it('R7 case-insensitive Express route aliases keep the private cache boundary on successes and errors', async () => {
+  for (const [suffix, session, status] of [
+    [`?monthStart=${MONTH}`, employee, 200],
+    ['?monthStart=bad', employee, 400],
+    [`?monthStart=${MONTH}`, null, 401],
+  ] as const) {
+    const operation = request(app.getHttpServer())
+      .get('/API/V1/ME/MONTHLY-PLANS' + suffix)
+      .set('If-None-Match', '*');
+    if (session) operation.set('Cookie', session.cookie);
+    const response = await operation.expect(status);
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(response.headers.etag).toBeUndefined();
   }
 });

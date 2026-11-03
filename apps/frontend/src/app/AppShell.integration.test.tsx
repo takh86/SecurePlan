@@ -377,6 +377,13 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
     await waitFor(() => expect(window.location.pathname).toBe('/mein-monatsplan/2026-12'));
   });
 
+  it('SP14 revoked employee restore retains the selected month with no protected view',async()=>{
+    enqueue(queues,'/api/v1/me',authorized('EMPLOYEE'),unauthorized);stubApi(queues);
+    renderAt('/mein-monatsplan/2026-12');await expectShell('Mein Monatsplan');restoreFromBfcache();
+    await screen.findByRole('heading',{name:'Anmelden'});expectNoProtectedContent('EMPLOYEE');
+    expect(window.location.pathname).toBe('/mein-monatsplan/2026-12');
+  });
+
   describe('P1 — bfcache revalidation is single-flight and fail-closed', () => {
     it.each([
       ['401 settles first, then the stale 200', ['first', 'stale'] as const],
@@ -435,7 +442,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
     it('fails closed with a safe alert when the revalidation hits a network error', async () => {
       enqueue(queues, '/api/v1/me', authorized('EMPLOYEE'), () => Promise.reject(new TypeError('private network diagnostic')));
       stubApi(queues);
-      renderAt('/mein-monatsplan');
+      renderAt('/mein-monatsplan/2026-12');
       await expectShell('Mein Monatsplan');
 
       restoreFromBfcache();
@@ -443,7 +450,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       expect(alert.textContent).toContain('Verbindung fehlgeschlagen');
       expect(alert.textContent).not.toContain('private network diagnostic');
       expectNoProtectedContent('EMPLOYEE');
-      expect(window.location.pathname).toBe('/');
+      expect(window.location.pathname).toBe('/mein-monatsplan/2026-12');
     });
 
     it('re-checks once per restore and keeps a session the server still confirms', async () => {

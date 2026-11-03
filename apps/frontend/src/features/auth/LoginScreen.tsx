@@ -33,7 +33,7 @@ export type AuthenticatedSession = {
 type LoginScreenProps = {
   /** Protected UI; rendered only with an identity validated by login or GET /me. */
   authenticatedView: ComponentType<AuthenticatedSession>;
-  /** Called once the server session is gone (logout 204 or 401, also in another tab). */
+  /** Requests logout navigation; employee revalidation failures retain the selected URL. */
   onSignedOut?: () => void;
   /** Cross-tab session signals; replaceable in tests. */
   openChannel?: OpenSessionChannel;
@@ -124,6 +124,7 @@ export function LoginScreen({
   // Single-flight: shares the login/logout guard, so overlapping checks cannot
   // race and an obsolete response cannot override a newer outcome.
   const recheckSession = useCallback((isCurrent: () => boolean, discard = false) => {
+    const preserveEmployeeLocation = auth?.identity.role === 'EMPLOYEE';
     // Invalidate synchronously even when an existing check/login/logout is busy.
     if (discard) memory.clear(); else memory.suspend();
     currentAuth.current = null;
@@ -146,11 +147,11 @@ export function LoginScreen({
         if (!unauthorized) setError(cause instanceof Error ? cause : new Error('Session check failed'));
         setAuth(null);
         setState('logged-out');
-        onSignedOut?.();
+        if (!preserveEmployeeLocation) onSignedOut?.();
         if (unauthorized) broadcast('signed-out');
       },
     ).finally(() => { inFlight.current = false; rechecking.current = false; });
-  }, [memory, onSignedOut, setAuth]);
+  }, [auth, memory, onSignedOut, setAuth]);
   const requestSessionRevalidation = useCallback(() => recheckSession(() => true, true), [recheckSession]);
 
   useEffect(() => {
