@@ -1,8 +1,8 @@
 /**
  * A2 employee-month Save client (#88). Contract: A2-GATE-1, adopted 2026-11-03
- * (`docs/api/employee-month-save.md` and `employee-month-save.openapi.json` in
- * backend Draft PR #95). These routes are NOT on main until #95 is merged; the
- * production page therefore does not create this client yet.
+ * (`docs/api/employee-month-save.md`, `docs/api/employee-month-save.openapi.json`;
+ * backend #95). The production page does not create this client yet: the
+ * wiring lands together with the combined browser acceptance.
  *
  * - GET  /monthly-plans/{planId}/employee-months/{employeeId}: one consistent
  *   read of the whole month for one employee (both slots per date with exact

@@ -79,7 +79,7 @@ export type KnownErrorCode =
   | 'PROJECT_CALENDAR_INVALID'
   | 'PROJECT_CALENDAR_CONCURRENT_MODIFICATION'
   | 'PROJECT_CALENDAR_DEPENDENCY_CONFLICT'
-  // A2 employee-month Save (adopted contract A2-GATE-1, backend Draft PR #95; not yet on main).
+  // A2 employee-month Save (adopted contract A2-GATE-1, backend #95).
   // Its German texts live in the planning feature.
   | 'EMPLOYEE_MONTH_SAVE_CONFLICT';
 

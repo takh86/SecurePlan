@@ -2,8 +2,8 @@
 // @vitest-environment-options {"url":"https://localhost:8443/monatsplanung"}
 /**
  * #88 A2 on the plan page with an injected `employeeMonths` port. Production
- * (`MonthlyPlanningSection`) passes none until the backend PR #95 is on main,
- * so this is a mocked integration test, not browser acceptance.
+ * (`MonthlyPlanningSection`) passes none until the wiring step, so this is a
+ * mocked integration test, not browser acceptance.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';

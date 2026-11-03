@@ -1,18 +1,21 @@
 # #88 A2 employee-month Save — frontend integration preparation
 
-Date: 2026-11-03. Branch `agent/claude/sp88-a2-employee-month-ui` from `origin/main` `eca4b3d`
-(after #92, #93 and #96). Tracking: [#88](https://github.com/takh86/SecurePlan/issues/88).
-Contract: **A2-GATE-1**, adopted 2026-11-03
+Date: 2026-11-03. Branch `agent/claude/sp88-a2-employee-month-ui`, started from `origin/main`
+`eca4b3d` (after #92, #93, #96) and rebased (unpushed) onto `fc7ec3b`, the merge of backend PR
+[#95](https://github.com/takh86/SecurePlan/pull/95) that landed during this work. Tracking:
+[#88](https://github.com/takh86/SecurePlan/issues/88). Contract: **A2-GATE-1**, adopted 2026-11-03
 ([owner decision](https://github.com/takh86/SecurePlan/issues/88#issuecomment-6600906336)),
-documented in `docs/api/employee-month-save.md` and `docs/api/employee-month-save.openapi.json`
-of backend Draft PR [#95](https://github.com/takh86/SecurePlan/pull/95) (head `c147e58`, not merged).
+`docs/api/employee-month-save.md` and `docs/api/employee-month-save.openapi.json`. Reviewed at
+#95 head `c147e58`; the merged head `e9fd9a0` changes no backend source, migration or contract
+file (only a merge of main, an E2E test and a First Publish test-timing fix).
 
-**Status:** frontend preparation only. The A2 routes are not on `main`, so the production page
-does **not** create the A2 client: "Monat einer Person planen" stays the labelled preview and
-sends no write. Everything below the page is implemented against the frozen contract and tested
-with a model of the three routes; it is enabled by one wiring change after #95 is merged (see
-"Enablement"). No backend, database, migration, dependency, CI or `.env` change. Not an
-acceptance claim: mocked UI tests do not establish browser end-to-end completion.
+**Status:** frontend preparation only, as scoped. The A2 routes are now on `main`, but the
+production page still does **not** create the A2 client: "Monat einer Person planen" stays the
+labelled preview and sends no write. Everything below the page is implemented against the
+frozen contract and tested with a model of the three routes; it is enabled by one wiring change
+(see "Enablement"), which should land together with the combined browser acceptance. No backend,
+database, migration, dependency, CI or `.env` change. Not an acceptance claim: mocked UI tests
+do not establish browser end-to-end completion.
 
 ## 1. Migration of Draft PR #91 onto current main
 
@@ -46,7 +49,8 @@ Observations for the reviewers (no contract change requested here):
 1. `unavailableDates` covers every date, not only scheduled ones; the planner shows the neutral
    "!" hint on such dates as a planning aid (no reason, no status).
 2. The read does not say whether shift times exist for the month; SHIFT_CONFIGURATION_MISSING
-   is therefore only learnt from a refused save (neutral dated text).
+   is therefore only learnt from a refused save (neutral dated text). Per #95's combined review
+   this also applies to a pure removal (SP-12 compatibility); only a true NO_OP skips it.
 3. The read does not list other members (by design). The planner shows them only from the page's
    duty read **and only if that read has the same duty version**; otherwise it says "weitere
    eingeplante Personen bleiben unverändert" without names (two reads of different times are
@@ -55,7 +59,12 @@ Observations for the reviewers (no contract change requested here):
    without it. The UI treats both as "Speichern läuft noch" with a manual "Ergebnis erneut
    abfragen" (no automatic polling).
 5. Slot instants are second precision, `completedAt` has microseconds; the decoder accepts 0–6
-   fraction digits for both.
+   fraction digits for both. Checked against the merged mapper and service: `to_char(… "Z")` for
+   duty/publication instants, `.US` for `completedAt`; a created duty is returned at version 1,
+   a changed duty incremented once, a removal with `assignment: null`.
+6. After logout the lookup answers 401 and after a role change 403 (#95 combined review); the UI
+   classifies them as signed-out and terminal. Another actor's lookup of the same raw key is
+   UNKNOWN, which the UI treats as "not provable", never as failure.
 
 ## 3. Frontend design
 
@@ -128,8 +137,9 @@ eligibility outcomes. That model is a test simplification, not the #95 implement
 
 **NOT_RUN** (with reason):
 
-- Real Chrome → React → NestJS → PostgreSQL acceptance of the combined A2 flow: blocked until #95
-  (migration 0015, routes) is on main.
+- Real Chrome → React → NestJS → PostgreSQL acceptance of the combined A2 flow: #95 is merged
+  (`fc7ec3b`), but the production wiring is intentionally not in this preparation PR; the run
+  belongs to the enablement step below.
 - Backend E2E suites: no backend change on this branch; #95 reports its own evidence.
 - `test:scripts`: no script change.
 - Human screen-reader, keyboard-only, cross-browser and real-device checks; security review.
@@ -137,7 +147,8 @@ eligibility outcomes. That model is a test simplification, not the #95 implement
 
 ## 5. Remaining gates and gaps
 
-1. **#95 merge** (backend, migration 0015, ADR-0006 batch admission) and its own review gates.
+1. **Enablement and browser acceptance** (now unblocked: #95 merged as `fc7ec3b`; its release
+   gates such as capacity/retention and human security stay with #95).
 2. **Principal-bound hidden draft across 401 / re-login** (contract: keep drafts in actor/company/
    resource-bound memory; another login must neither see nor submit them). **Not implemented:**
    a 401 shows the login in place and the planner's in-memory draft is lost, as for every other
@@ -153,9 +164,9 @@ eligibility outcomes. That model is a test simplification, not the #95 implement
    routes; tenant/role/CSRF (404/403).
 6. Human UX/accessibility and security acceptance; TL review.
 
-## 6. Enablement after #95 is merged
+## 6. Enablement (#95 is merged)
 
-1. Merge current `main` into this branch (no force-push).
+1. Merge current `main` into this branch if it moved (no force-push once pushed).
 2. In `MonthlyPlanningSection.tsx` add `employeeMonths: createEmployeeMonthApi(api)` to `apis`.
    The page then shows the workspace instead of the preview; the "Vorschau" badges disappear.
 3. Re-run lint, typecheck, build, frontend tests and the combined browser acceptance above on a

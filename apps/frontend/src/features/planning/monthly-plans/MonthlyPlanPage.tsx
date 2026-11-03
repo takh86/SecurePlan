@@ -36,9 +36,9 @@ export type PlanPageApis = {
   assignments: ProjectAssignmentsApi;
   shiftConfigurations: ShiftConfigurationApi;
   /**
-   * #88 A2 employee-month Save (contract A2-GATE-1, backend Draft PR #95). Absent: the
-   * "Monat einer Person planen" view is a preview without saving. Production passes it
-   * only once the A2 routes are on main.
+   * #88 A2 employee-month Save (contract A2-GATE-1, backend #95). Absent: the
+   * "Monat einer Person planen" view is a preview without saving. Production does not
+   * pass it yet; the wiring lands together with the combined browser acceptance.
    */
   employeeMonths?: EmployeeMonthApi;
 };

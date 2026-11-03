@@ -2,8 +2,8 @@
 /**
  * #88 A2 employee-month Save (contract A2-GATE-1) through the planner, the
  * real adapter and an in-memory model of the three A2 routes. Mocked UI
- * tests: they do not establish browser end-to-end acceptance (pending until
- * the backend PR #95 is on main).
+ * tests: they do not establish browser end-to-end acceptance (pending with
+ * the production wiring).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
