@@ -609,7 +609,8 @@ describe('SP-13 First Publish — dialog transitions, focus and repeated input',
     gate.resolve();
     const notice = await screen.findByText(/^Der Monatsplan wurde veröffentlicht\./);
     expect(dialog.isConnected).toBe(false);
-    expect(document.activeElement).toBe(notice.closest('[tabindex="-1"]'));
+    // The notice can render before InitialPublish's passive focus effect runs.
+    await waitFor(() => expect(document.activeElement).toBe(notice.closest('[tabindex="-1"]')));
     expect(publishes(requests)).toHaveLength(1);
     expect(server.publishLog).toEqual({ publications: 1, replays: 0 });
   });
@@ -711,7 +712,7 @@ describe('SP-13 First Publish — dialog transitions, focus and repeated input',
     expect(alert.textContent).toContain('Ein erneutes Veröffentlichen gibt es nicht');
     expect(dialog.isConnected).toBe(false);
     expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(document.activeElement).toBe(alert.closest('[tabindex="-1"]'));
+    await waitFor(() => expect(document.activeElement).toBe(alert.closest('[tabindex="-1"]')));
     await waitFor(() => expect(statusSection().textContent).toContain('Veröffentlicht am Mo., 30.11.2026, 13:00 MEZ.'));
     expect(within(statusSection()).queryByRole('button', { name: /veröffentlichen/i })).toBeNull();
     // Only the refused first attempt was ever sent.

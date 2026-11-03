@@ -29,6 +29,17 @@ required this combined-head gate. Inspection and nine additional real HTTP/PG
 tests found no confirmed runtime defect. The approved A2-GATE-1 contract, applied
 migrations and business rules remain unchanged.
 
+The first combined-head [push CI](https://github.com/takh86/SecurePlan/actions/runs/41646379627)
+was FAIL on a confirmed inherited test timing defect; its matching
+[PR CI](https://github.com/takh86/SecurePlan/actions/runs/41646384324) was PASS.
+The failure was
+in First Publish: an immediate focus assertion could run after the outcome text
+rendered but before the component's passive React focus effect. That assertion
+and the previously observed late-plan-read focus assertion now use `waitFor`
+around the same exact active-element expectation. No assertion is removed, no
+timeout is enlarged, and First Publish/Calendar runtime behavior is unchanged.
+The initial failed CI run is retained in the PR ledger; final-head runs supersede it.
+
 | Review question | Disposition and executed proof |
 |---|---|
 | Missing shift configuration | True NO_OP succeeds without eligibility revalidation. Effective changes, including corrective membership removal, still require that duty kind in the effective configuration. Actual A2 and SP-12 PATCH routes are exercised side by side and both refuse with SHIFT_CONFIGURATION_MISSING; all business/audit state is unchanged. This preserves SP-12's existing effective-PATCH semantics, explicitly retained by the adopted A2 contract; it introduces no new bypass. |
@@ -59,6 +70,7 @@ would require an explicit business amendment; this task makes none.
 | Backend units | PASS 411/411, 37 files |
 | Frontend regression including Calendar UI | PASS 890/890, 55 files |
 | Focused A2 command suite | PASS 98/98; nine new review-focused tests |
+| Focused First Publish UI suite after focus timing correction | PASS 48/48; exact focus expectations retained |
 | Full combined PostgreSQL/HTTP suite | PASS 1423/1423, 53 files, two workers; includes nine additional review-focused tests |
 | Migrations 0001–0015 forward, checksum replay, DB verification | PASS on fresh identity-verified disposable PG17 |
 | Script tests | PASS 34/34 in disposable Node 24 environment against that same verified PG17 cluster |
