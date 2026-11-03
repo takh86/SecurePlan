@@ -104,6 +104,55 @@ describe('SP-07 — session-bound API (CSRF token stays in the closure)', () => 
     expect(String(fetchMock.mock.calls[0][0])).not.toContain(token);
   });
 
+  it('a POST without `body` still sends `{}` as JSON (unchanged default)', async () => {
+    const fetchMock = stubFetch(ok);
+    await createSessionApi(CSRF, vi.fn()).request('/api/v1/monthly-plans/p/entries/d/edit-lease', { method: 'POST' });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(new Headers(init.headers).get('content-type')).toBe('application/json');
+    expect(init.body).toBe('{}');
+  });
+
+  it('SP-13 bodyless POST: CSRF and Idempotency-Key, but no body and no Content-Type', async () => {
+    const fetchMock = stubFetch(ok);
+    const key = '3f6c1f0e-8a52-4c1b-9d3e-5a7b9c1d2e3f';
+    await expect(createSessionApi(CSRF, vi.fn())
+      .request('/api/v1/monthly-plans/p/publish', { method: 'POST', noBody: true, idempotencyKey: key }))
+      .resolves.toEqual({ ok: true });
+    const [input, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
+    expect(headers.get('content-type')).toBeNull();
+    expect(headers.get('x-csrf-token')).toBe(CSRF);
+    expect(headers.get('idempotency-key')).toBe(key);
+    expect(headers.get('expected-version')).toBeNull();
+    expect(headers.get('edit-lease-token')).toBeNull();
+    expect(init.credentials).toBe('same-origin');
+    expect(init.cache).toBe('no-store');
+    // The key travels only as a header, never in the URL.
+    expect(String(input)).not.toContain(key);
+  });
+
+  it('SP-13 refuses a bodyless request that also carries a body, before sending anything', async () => {
+    const fetchMock = stubFetch(ok);
+    for (const body of [{}, null, '', 0]) {
+      await expect(createSessionApi(CSRF, vi.fn()).request('/api/v1/monthly-plans/p/publish', { method: 'POST', noBody: true, body }))
+        .rejects.toThrow('A bodyless request cannot carry a body');
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('SP-13 a bodyless POST still reports a 401 to the session boundary', async () => {
+    stubFetch(() => new Response(JSON.stringify({ code: 'SESSION_EXPIRED' }), {
+      status: 401,
+      headers: { 'content-type': 'application/problem+json' },
+    }));
+    const onUnauthorized = vi.fn();
+    await expect(createSessionApi(CSRF, onUnauthorized).request('/api/v1/monthly-plans/p/publish', { method: 'POST', noBody: true }))
+      .rejects.toMatchObject({ status: 401, code: 'SESSION_EXPIRED' });
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
   it('SP-12 PATCH sends Expected-Version and Edit-Lease-Token next to the JSON body', async () => {
     const fetchMock = stubFetch(ok);
     const token = 'a'.repeat(43);

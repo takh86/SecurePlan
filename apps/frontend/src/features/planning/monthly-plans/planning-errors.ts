@@ -10,6 +10,8 @@ import { ApiError } from '../../../shared/api/api-error';
 export type ErrorText = { title: string; description: string };
 
 const NOTHING_SAVED = 'Es wurde nichts gespeichert.';
+/** A1 ships no calendar admin page; the texts must not send the admin to a page that does not exist. */
+const NO_CALENDAR_PAGE = 'Eine Seite zum Festlegen der Betriebstage gibt es in dieser Ausbaustufe noch nicht.';
 
 const CREATE_PLAN: Partial<Record<string, ErrorText>> = {
   MONTHLY_PLAN_ALREADY_EXISTS: {
@@ -78,6 +80,19 @@ const CREATE_DUTY: Partial<Record<string, ErrorText>> = {
     title: 'Zeitliche Überschneidung',
     description: `Eine ausgewählte Person ist in diesem Zeitraum bereits für einen anderen Dienst eingeplant. Passen Sie die Besetzung an. ${NOTHING_SAVED}`,
   },
+  // A1 (#90): project operating calendar and one shift per person, project and local date.
+  PROJECT_CALENDAR_MISSING: {
+    title: 'Keine Betriebstage festgelegt',
+    description: `Für dieses Projekt sind für den Monat dieses Plans keine Betriebstage festgelegt; ohne sie können keine Dienste angelegt werden. ${NO_CALENDAR_PAGE} ${NOTHING_SAVED}`,
+  },
+  PROJECT_CLOSED_WEEKDAY: {
+    title: 'Kein Betriebstag',
+    description: `Das Projekt ist an diesem Wochentag nicht in Betrieb. Maßgeblich ist der Tag, an dem der Dienst beginnt, bei Nachtdiensten also der Starttag. Wählen Sie einen Betriebstag des Projekts. ${NOTHING_SAVED}`,
+  },
+  EMPLOYEE_DAILY_SHIFT_CONFLICT: {
+    title: 'Tag- und Nachtdienst am selben Tag',
+    description: `Eine ausgewählte Person ist an diesem Datum in diesem Projekt bereits für die andere Dienstart eingeplant. Pro Person, Projekt und Tag ist nur ein Dienst möglich, Tag oder Nacht. Passen Sie die Besetzung an. ${NOTHING_SAVED}`,
+  },
 };
 
 const NOTHING_CHANGED = 'Es wurde nichts geändert.';
@@ -117,6 +132,20 @@ const UPDATE_DUTY: Partial<Record<string, ErrorText>> = {
     description: `Der Dienst wurde geändert, seit Sie ihn geöffnet haben. ${NOTHING_CHANGED} Laden Sie den aktuellen Stand, bevor Sie erneut speichern.`,
   },
   EMPTY_PATCH: { title: 'Keine Änderungen', description: `Es wurden keine Änderungen übermittelt. ${NOTHING_CHANGED}` },
+  // A1: changed times, new members and changed roles are validated; pure removals stay possible
+  // (they can correct legacy dates and dual staffing).
+  PROJECT_CALENDAR_MISSING: {
+    title: 'Keine Betriebstage festgelegt',
+    description: `Für dieses Projekt sind für den Monat dieses Plans keine Betriebstage festgelegt. Geänderte Zeiten, neue Einplanungen und geänderte Funktionen sind erst danach möglich; Austragen und Löschen bleiben möglich. ${NO_CALENDAR_PAGE} ${NOTHING_CHANGED}`,
+  },
+  PROJECT_CLOSED_WEEKDAY: {
+    title: 'Kein Betriebstag',
+    description: `Das Projekt ist am Starttag dieses Dienstes nicht in Betrieb. Ein anderes Datum muss ein Betriebstag sein; an einem geschlossenen Tag sind geänderte Zeiten, neue Einplanungen und geänderte Funktionen nicht möglich, Austragen und Löschen schon. ${NOTHING_CHANGED}`,
+  },
+  EMPLOYEE_DAILY_SHIFT_CONFLICT: {
+    title: 'Tag- und Nachtdienst am selben Tag',
+    description: `Eine eingeplante Person ist an diesem Datum in diesem Projekt bereits für die andere Dienstart eingeplant. Pro Person, Projekt und Tag ist nur ein Dienst möglich, Tag oder Nacht. Passen Sie die Besetzung an; Austragen bleibt möglich. ${NOTHING_CHANGED}`,
+  },
 };
 
 const NOTHING_REMOVED = 'Es wurde nichts gelöscht.';
@@ -135,6 +164,90 @@ const REMOVE_DUTY: Partial<Record<string, ErrorText>> = {
     title: 'Dienst wurde inzwischen geändert',
     description: `Der Dienst wurde geändert, seit Sie ihn geöffnet haben. ${NOTHING_REMOVED} Laden Sie den aktuellen Stand und entscheiden Sie erneut.`,
   },
+};
+
+const NOTHING_PUBLISHED = 'Der Plan wurde nicht veröffentlicht.';
+
+/** SP-13: a 400 of the publish command is a client defect (key or body), never the admin's input. */
+const PUBLISH_REJECTED: ErrorText = {
+  title: 'Veröffentlichung nicht angenommen',
+  description: `Die Anfrage wurde nicht angenommen. ${NOTHING_PUBLISHED} Laden Sie die Ansicht neu und versuchen Sie es erneut.`,
+};
+
+/**
+ * SP-13 First Publish. The server re-validates every live duty and member and
+ * reports the FIRST violation only, without naming the duty or the person.
+ * EMPLOYEE_UNAVAILABLE stays neutral (no reason). There is no re-publish.
+ */
+const PUBLISH_PLAN: Partial<Record<string, ErrorText>> = {
+  MONTHLY_PLAN_ALREADY_PUBLISHED: {
+    title: 'Bereits veröffentlicht',
+    description: 'Der Monatsplan ist bereits veröffentlicht, etwa in einem anderen Fenster oder durch eine andere Administration. Der aktuelle Stand wird geladen. Ein erneutes Veröffentlichen gibt es nicht; Änderungen an Diensten gelten sofort.',
+  },
+  PLAN_CONCURRENT_MODIFICATION: {
+    title: 'Plan wurde währenddessen geändert',
+    description: `Während der Veröffentlichung wurden Dienste dieses Plans geändert. ${NOTHING_PUBLISHED} Der aktuelle Stand wird geladen; prüfen Sie ihn und bestätigen Sie die Veröffentlichung danach erneut.`,
+  },
+  PROJECT_INACTIVE: {
+    title: 'Projekt ist inaktiv',
+    description: `Der Monatsplan eines inaktiven Projekts kann nicht veröffentlicht werden. Reaktivieren Sie das Projekt zuerst. ${NOTHING_PUBLISHED}`,
+  },
+  SHIFT_CONFIGURATION_MISSING: {
+    title: 'Keine Schichtzeiten hinterlegt',
+    description: `Für mindestens eine Dienstart dieses Plans sind für den Planmonat keine Schichtzeiten gespeichert. Legen Sie die Schichtzeiten im Projekt fest. ${NOTHING_PUBLISHED}`,
+  },
+  RESOURCE_NOT_FOUND: {
+    title: 'Monatsplan nicht verfügbar',
+    description: `Der Monatsplan oder eine eingeplante Person ist nicht mehr verfügbar. Laden Sie die Ansicht neu. ${NOTHING_PUBLISHED}`,
+  },
+  EMPLOYEE_INACTIVE: {
+    title: 'Deaktivierte Person eingeplant',
+    description: `In mindestens einem Dienst ist eine deaktivierte Person eingeplant. Tragen Sie sie aus, bevor Sie veröffentlichen. ${NOTHING_PUBLISHED}`,
+  },
+  EMPLOYEE_NOT_EMPLOYED_FOR_DAY: {
+    title: 'Am Diensttag nicht beschäftigt',
+    description: `In mindestens einem Dienst ist eine Person eingeplant, deren dokumentierter Beschäftigungszeitraum den Diensttag nicht abdeckt. Passen Sie die Besetzung an. ${NOTHING_PUBLISHED}`,
+  },
+  EMPLOYEE_NOT_ASSIGNED_TO_PROJECT_MONTH: {
+    title: 'Nicht dem Projekt zugeordnet',
+    description: `In mindestens einem Dienst ist eine Person eingeplant, die im Monat dieses Plans nicht diesem Projekt zugeordnet ist. Passen Sie die Besetzung oder die Zuordnung an. ${NOTHING_PUBLISHED}`,
+  },
+  EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT: {
+    title: 'Nicht für die Dienstart freigegeben',
+    description: `In mindestens einem Dienst ist eine Person eingeplant, die für diese Dienstart nicht freigegeben ist. Passen Sie die Besetzung an. ${NOTHING_PUBLISHED}`,
+  },
+  EMPLOYEE_UNAVAILABLE: {
+    title: 'Person nicht verfügbar',
+    description: `In mindestens einem Dienst ist eine Person eingeplant, die am Diensttag nicht verfügbar ist. Passen Sie die Besetzung an. ${NOTHING_PUBLISHED}`,
+  },
+  DUTY_ASSIGNMENT_CONFLICT: {
+    title: 'Zeitliche Überschneidung',
+    description: `In mindestens einem Dienst ist eine Person eingeplant, die im selben Zeitraum bereits für einen anderen Dienst eingeplant ist. Passen Sie die Besetzung an. ${NOTHING_PUBLISHED}`,
+  },
+  // A1 (#90): checked for the plan month and for every live duty (also empty ones) and member.
+  PROJECT_CALENDAR_MISSING: {
+    title: 'Keine Betriebstage festgelegt',
+    description: `Für dieses Projekt sind für den Monat dieses Plans keine Betriebstage festgelegt; dann kann auch ein Plan ohne Dienste nicht veröffentlicht werden. ${NO_CALENDAR_PAGE} ${NOTHING_PUBLISHED}`,
+  },
+  PROJECT_CLOSED_WEEKDAY: {
+    title: 'Dienst an einem geschlossenen Tag',
+    description: `Mindestens ein Dienst dieses Plans beginnt an einem Tag, an dem das Projekt laut seinen Betriebstagen nicht in Betrieb ist. Löschen Sie diesen Dienst, bevor Sie veröffentlichen. ${NOTHING_PUBLISHED}`,
+  },
+  EMPLOYEE_DAILY_SHIFT_CONFLICT: {
+    title: 'Tag- und Nachtdienst am selben Tag',
+    description: `Mindestens eine Person ist am selben Datum in diesem Projekt sowohl für den Tag- als auch für den Nachtdienst eingeplant. Tragen Sie sie aus einem der beiden Dienste aus. ${NOTHING_PUBLISHED}`,
+  },
+  IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST: {
+    title: 'Vorgang stimmt nicht überein',
+    description: `Dieser Vorgang gehört zu einer anderen Veröffentlichung. ${NOTHING_PUBLISHED} Laden Sie die Ansicht neu und bestätigen Sie die Veröffentlichung erneut.`,
+  },
+  IDEMPOTENCY_REQUEST_IN_PROGRESS: {
+    title: 'Veröffentlichung läuft noch',
+    description: 'Der Server verarbeitet diese Veröffentlichung noch. Fragen Sie das Ergebnis in einem Moment mit demselben Vorgang erneut an; es entsteht keine doppelte Veröffentlichung.',
+  },
+  IDEMPOTENCY_KEY_REQUIRED: PUBLISH_REJECTED,
+  IDEMPOTENCY_KEY_INVALID: PUBLISH_REJECTED,
+  INVALID_REQUEST_BODY: PUBLISH_REJECTED,
 };
 
 /**
@@ -158,13 +271,17 @@ const UNKNOWN_OUTCOME: Record<PlanningWrite, ErrorText> = {
     title: 'Ergebnis unbekannt',
     description: 'Die Antwort des Servers ist nicht angekommen. Ob der Dienst gelöscht wurde, ist unklar. Prüfen Sie den aktuellen Stand, bevor Sie es erneut versuchen.',
   },
+  'publish-plan': {
+    title: 'Ergebnis unbekannt',
+    description: 'Die Antwort des Servers ist nicht angekommen. Ob der Monatsplan veröffentlicht wurde, ist unklar. Fragen Sie das Ergebnis mit demselben Vorgang erneut an; es entsteht keine doppelte Veröffentlichung.',
+  },
 };
 
 /**
  * A 400 without a known code on an edit or removal: a missing/invalid
  * Expected-Version or lease header is a client defect, never the admin's input.
  */
-const REJECTED_REQUEST: Record<'update-duty' | 'remove-duty', ErrorText> = {
+const REJECTED_REQUEST: Record<'update-duty' | 'remove-duty' | 'publish-plan', ErrorText> = {
   'update-duty': {
     title: 'Änderung nicht angenommen',
     description: `Die Anfrage wurde nicht angenommen. ${NOTHING_CHANGED} Laden Sie die Ansicht neu und versuchen Sie es erneut.`,
@@ -173,15 +290,17 @@ const REJECTED_REQUEST: Record<'update-duty' | 'remove-duty', ErrorText> = {
     title: 'Löschen nicht angenommen',
     description: `Die Anfrage wurde nicht angenommen. ${NOTHING_REMOVED} Laden Sie die Ansicht neu und versuchen Sie es erneut.`,
   },
+  'publish-plan': PUBLISH_REJECTED,
 };
 
-export type PlanningWrite = 'create-plan' | 'create-duty' | 'update-duty' | 'remove-duty';
+export type PlanningWrite = 'create-plan' | 'create-duty' | 'update-duty' | 'remove-duty' | 'publish-plan';
 
 const TEXTS: Record<PlanningWrite, Partial<Record<string, ErrorText>>> = {
   'create-plan': CREATE_PLAN,
   'create-duty': CREATE_DUTY,
   'update-duty': UPDATE_DUTY,
   'remove-duty': REMOVE_DUTY,
+  'publish-plan': PUBLISH_PLAN,
 };
 
 /** Context text for a failed planning write, or undefined for the shared default text. */
@@ -189,7 +308,7 @@ export function planningErrorText(error: unknown, write: PlanningWrite): ErrorTe
   if (!(error instanceof ApiError)) return undefined;
   if (error.kind === 'network' || error.kind === 'invalid-response') return UNKNOWN_OUTCOME[write];
   if (error.code === null) {
-    return error.status === 400 && (write === 'update-duty' || write === 'remove-duty') ? REJECTED_REQUEST[write] : undefined;
+    return error.status === 400 && write in REJECTED_REQUEST ? REJECTED_REQUEST[write as keyof typeof REJECTED_REQUEST] : undefined;
   }
   return TEXTS[write][error.code];
 }

@@ -19,6 +19,8 @@ export type RecordedRequest = {
   idempotencyKey?: string;
   editLeaseToken?: string;
   keepalive?: boolean;
+  /** SP-13: the request explicitly carries no body at all. */
+  noBody?: boolean;
 };
 export type Handler = (request: RecordedRequest) => unknown;
 
@@ -31,6 +33,11 @@ export function fakeSessionApi(handler: Handler) {
       if (options.idempotencyKey !== undefined) recorded.idempotencyKey = options.idempotencyKey;
       if (options.editLeaseToken !== undefined) recorded.editLeaseToken = options.editLeaseToken;
       if (options.keepalive) recorded.keepalive = true;
+      if (options.noBody) {
+        // Mirrors the real transport's guard: a bodyless request with a body never leaves.
+        if (options.body !== undefined) throw new Error('A bodyless request cannot carry a body');
+        recorded.noBody = true;
+      }
       requests.push(recorded);
       return (await handler(recorded)) as T;
     },

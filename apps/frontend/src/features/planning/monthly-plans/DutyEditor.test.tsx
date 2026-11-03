@@ -75,7 +75,7 @@ describe('SP-12 A10 — duty editor: lease, read, edit', () => {
     ].sort());
     expect(opened[0]).toMatchObject({ method: 'POST', path: leaseUrl });
     expect(editor().textContent).toContain('Für Sie reserviert');
-    expect(editor().textContent).toContain('Mitarbeitende sehen Änderungen erst nach der Veröffentlichung.');
+    expect(editor().textContent).toContain('Gespeicherte Änderungen werden Teil der späteren Veröffentlichung.');
     expect((within(editor()).getByLabelText('Datum') as HTMLInputElement).value).toBe('2026-12-03');
     expect((within(editor()).getByRole('radio', { name: 'Tagdienst' }) as HTMLInputElement).checked).toBe(true);
     // The person of the selected cell comes first; members are ticked with their duty role.
@@ -366,6 +366,10 @@ describe('SP-12 A10 — duty editor: another editor, conflicts and lost response
     ['EMPLOYEE_UNAVAILABLE', 'Person nicht verfügbar'],
     ['DUTY_ASSIGNMENT_CONFLICT', 'Zeitliche Überschneidung'],
     ['PROJECT_INACTIVE', 'Projekt ist inaktiv'],
+    // A1 (#90): changed work is validated; the texts keep removal as the correction path.
+    ['PROJECT_CALENDAR_MISSING', 'Keine Betriebstage festgelegt'],
+    ['PROJECT_CLOSED_WEEKDAY', 'Kein Betriebstag'],
+    ['EMPLOYEE_DAILY_SHIFT_CONFLICT', 'Tag- und Nachtdienst am selben Tag'],
   ] as const)('a business refusal %s says nothing was changed and keeps input and lease', async (code, title) => {
     const { server } = setup();
     const user = await openEditor();
@@ -425,7 +429,7 @@ describe('SP-12 A10 — duty removal and leaving the editor', () => {
     const user = await openEditor();
     await user.click(within(editor()).getByRole('button', { name: 'Dienst löschen' }));
     expect(within(editor()).getByRole('group', { name: /löschen\?$/ }).textContent)
-      .toContain('Der Plan ist veröffentlicht: Das Löschen gilt sofort; Mitarbeitende sehen den Dienst danach nicht mehr.');
+      .toContain('Der Plan ist veröffentlicht: Das Löschen gilt sofort, ohne erneutes Veröffentlichen.');
     await user.click(within(editor()).getByRole('button', { name: 'Ja, Dienst löschen' }));
     expect(await screen.findByText('Der Tagdienst am Do., 03.12.2026 wurde gelöscht. Der Plan ist veröffentlicht: Die Löschung gilt sofort.')).toBeTruthy();
   });

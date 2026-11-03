@@ -278,7 +278,7 @@ function CreatePlanConfirmation({ project, month, plans, planPath, onCancel, onR
         Monatsplan für {project.name}, {monthLabel} erstellen?
       </h3>
       <ul>
-        <li>Der Monatsplan wird unveröffentlicht angelegt. Mitarbeitende sehen ihn noch nicht.</li>
+        <li>Der Monatsplan wird unveröffentlicht angelegt.</li>
         <li>Anschließend legen Sie die Tag- und Nachtdienste des Monats an.</li>
         <li>Ein erstellter Monatsplan kann in dieser Ausbaustufe nicht gelöscht werden.</li>
       </ul>

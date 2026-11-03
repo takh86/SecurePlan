@@ -80,7 +80,28 @@ describe('SP-07 — field errors and employee codes', () => {
       }
     }
     // Codes of later slices stay untrusted until a UI handles them.
-    expect((await parseApiError(problem(409, { code: 'MONTHLY_PLAN_ALREADY_PUBLISHED' }))).code).toBeNull();
+    expect((await parseApiError(problem(409, { code: 'CANCELLATION_ALREADY_EXISTS' }))).code).toBeNull();
+  });
+
+  it('SP-13: trusts MONTHLY_PLAN_ALREADY_PUBLISHED only with its catalogued 409', async () => {
+    expect((await parseApiError(problem(409, { code: 'MONTHLY_PLAN_ALREADY_PUBLISHED' }))).code).toBe('MONTHLY_PLAN_ALREADY_PUBLISHED');
+    for (const status of [400, 404, 500]) {
+      expect((await parseApiError(problem(status, { code: 'MONTHLY_PLAN_ALREADY_PUBLISHED' }))).code, String(status)).toBeNull();
+    }
+  });
+
+  it('A1: trusts the planning-writer calendar codes only with their catalogued 409', async () => {
+    for (const code of ['PROJECT_CALENDAR_MISSING', 'PROJECT_CLOSED_WEEKDAY', 'EMPLOYEE_DAILY_SHIFT_CONFLICT'] as const) {
+      expect((await parseApiError(problem(409, { code }))).code, code).toBe(code);
+      for (const status of [400, 404, 500]) {
+        expect((await parseApiError(problem(status, { code }))).code, `${code} ${status}`).toBeNull();
+      }
+    }
+    // The calendar-write codes are not consumed by any screen yet and stay untrusted.
+    for (const code of ['PROJECT_CALENDAR_INVALID', 'PROJECT_CALENDAR_CONCURRENT_MODIFICATION', 'PROJECT_CALENDAR_DEPENDENCY_CONFLICT']) {
+      const status = code === 'PROJECT_CALENDAR_INVALID' ? 400 : 409;
+      expect((await parseApiError(problem(status, { code }))).code, code).toBeNull();
+    }
   });
 
   it('has German texts for every SP-07 code', () => {
