@@ -45,6 +45,9 @@ import { AvailabilityService } from './modules/workforce/availability/availabili
 import { MonthlyPlansController } from './modules/planning/monthly-plans.controller.js';
 import { MonthlyPlansService } from './modules/planning/monthly-plans.service.js';
 import { PublishIdempotencyService } from './modules/planning/publish-idempotency.service.js';
+import { EmployeeMonthController } from './modules/planning/employee-month.controller.js';
+import { EmployeeMonthService } from './modules/planning/employee-month.service.js';
+import { EmployeeMonthIdempotencyService } from './modules/planning/employee-month-idempotency.service.js';
 
 @Module({
   imports: [
@@ -68,6 +71,7 @@ import { PublishIdempotencyService } from './modules/planning/publish-idempotenc
     OperatingCalendarController,
     AvailabilityController,
     MonthlyPlansController,
+    EmployeeMonthController,
   ],
   providers: [
     AppService,
@@ -102,6 +106,8 @@ import { PublishIdempotencyService } from './modules/planning/publish-idempotenc
     // SP-11 PR-1: monthly plans and duties (create/read slice, SP11A-R1 Rev3.1).
     MonthlyPlansService,
     PublishIdempotencyService,
+    EmployeeMonthService,
+    EmployeeMonthIdempotencyService,
     // Business "current month" rules read the time here (company time zone, never UTC).
     { provide: WALL_CLOCK, useValue: systemWallClock },
   ],

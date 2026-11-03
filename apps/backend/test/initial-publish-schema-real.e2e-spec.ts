@@ -44,7 +44,9 @@ it('unique reservation scope includes actor and operation and contains only hash
 it.each([
   ["key_hash=decode('ab','hex')", 'ck_idempotency_records__hashes'],
   ["request_hash=decode('ab','hex')", 'ck_idempotency_records__hashes'],
-  ["operation='OTHER'", 'ck_idempotency_records__operation'],
+  // 0015 adds an operation/context CHECK; PostgreSQL evaluates its name first.
+  // Unsupported operations still fail with 23514; valid INITIAL_PUBLISH is unchanged.
+  ["operation='OTHER'", 'ck_idempotency_records__employee_month'],
   ["state='COMPLETED'", 'ck_idempotency_records__state'],
   ["state='UNKNOWN'", 'ck_idempotency_records__state'],
   ["expires_at=created_at", 'ck_idempotency_records__time'],
