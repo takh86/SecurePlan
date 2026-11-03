@@ -498,7 +498,7 @@ export function DutyEditor(props: DutyEditorProps) {
                 </li>
                 <li>
                   {plan.status === 'PUBLISHED'
-                    ? 'Der Plan ist veröffentlicht: Das Löschen gilt sofort; Mitarbeitende sehen den Dienst danach nicht mehr.'
+                    ? 'Der Plan ist veröffentlicht: Das Löschen gilt sofort, ohne erneutes Veröffentlichen.'
                     : 'Der Plan ist noch nicht veröffentlicht.'}
                 </li>
                 <li>Wurde der Dienst inzwischen geändert, wird er nicht gelöscht.</li>
@@ -525,7 +525,7 @@ export function DutyEditor(props: DutyEditorProps) {
   );
 }
 
-/** CR-03: what a saved change means for the plan's audience. */
+/** CR-03: what a saved change means for the plan (no employee visibility is promised: SP-14 reads do not exist yet). */
 function PlanEffectNote({ plan }: { plan: MonthlyPlan }) {
   return plan.status === 'PUBLISHED' ? (
     <p className="planning-editor__effect">
@@ -534,7 +534,7 @@ function PlanEffectNote({ plan }: { plan: MonthlyPlan }) {
     </p>
   ) : (
     <p className="planning-editor__effect">
-      <StatusBadge tone="info">Unveröffentlicht</StatusBadge> Mitarbeitende sehen Änderungen erst nach der Veröffentlichung.
+      <StatusBadge tone="info">Unveröffentlicht</StatusBadge> Gespeicherte Änderungen werden Teil der späteren Veröffentlichung.
     </p>
   );
 }

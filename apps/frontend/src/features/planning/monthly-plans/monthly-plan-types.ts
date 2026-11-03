@@ -89,6 +89,13 @@ export const PLAN_STATUS: Record<MonthlyPlanStatus, { label: string; tone: Statu
   PUBLISHED: { label: 'Veröffentlicht', tone: 'success' },
 };
 
+/**
+ * What publication does NOT do yet: employee-owned plan reads (SP-14) are not
+ * implemented, so no screen may promise that employees see a published plan.
+ * Replace this one sentence when SP-14 ships.
+ */
+export const NO_EMPLOYEE_PLAN_VIEW = 'Mitarbeitende können veröffentlichte Monatspläne in dieser Ausbaustufe noch nicht abrufen.';
+
 export const DUTY_ROLE_LABELS: Record<DutyRole, string> = {
   EMPLOYEE: 'Mitarbeitende',
   SHIFT_LEAD: 'Schichtleitung',

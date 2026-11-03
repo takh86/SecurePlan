@@ -21,7 +21,7 @@ import type { ShiftConfigurationApi, ShiftKind } from '../../projects/shift-conf
 import { DutyCreateForm } from './DutyCreateForm';
 import { DutyEditor } from './DutyEditor';
 import { formatInstant } from './duty-time';
-import { PLAN_CREATED_STATE, PLAN_STATUS, type Duty, type MonthlyPlan } from './monthly-plan-types';
+import { NO_EMPLOYEE_PLAN_VIEW, PLAN_CREATED_STATE, PLAN_STATUS, type Duty, type MonthlyPlan } from './monthly-plan-types';
 import { sortDuties, type MonthlyPlansApi } from './monthly-plans-api';
 import { PlanningDayDetails } from './PlanningDayDetails';
 import { PlanningMatrix, type MatrixSelection } from './PlanningMatrix';
@@ -591,11 +591,11 @@ function PlanStatusSection({ month, timeZone, publishSlot, ...slotProps }: Statu
         <div><dt>Projektstatus</dt><dd><StatusBadge tone={projectStatus.tone}>{projectStatus.label}</StatusBadge></dd></div>
       </dl>
       {plan.status === 'UNPUBLISHED' ? (
-        <p>Dieser Monatsplan ist noch nicht veröffentlicht; Mitarbeitende sehen ihn nicht.</p>
+        <p>Dieser Monatsplan ist noch nicht veröffentlicht.</p>
       ) : (
         <p>
-          Veröffentlicht am {plan.publishedAt ? formatInstant(plan.publishedAt, timeZone) : '–'}. Mitarbeitende sehen
-          den aktuellen Stand dieses Plans. Änderungen an Diensten gelten sofort, ohne erneutes Veröffentlichen.
+          Veröffentlicht am {plan.publishedAt ? formatInstant(plan.publishedAt, timeZone) : '–'}. Änderungen an
+          Diensten gelten sofort, ohne erneutes Veröffentlichen. {NO_EMPLOYEE_PLAN_VIEW}
         </p>
       )}
       {/* SP-13 integration point (First Publish). */}

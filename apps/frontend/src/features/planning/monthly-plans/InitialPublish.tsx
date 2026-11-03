@@ -11,6 +11,7 @@ import {
   publishSummary,
 } from './initial-publish';
 import type { PublishSlotProps } from './MonthlyPlanPage';
+import { NO_EMPLOYEE_PLAN_VIEW } from './monthly-plan-types';
 import type { MonthlyPlansApi } from './monthly-plans-api';
 import { planningErrorText, unknownOutcomeText, type ErrorText } from './planning-errors';
 
@@ -55,6 +56,15 @@ type Props = PublishSlotProps & { plans: MonthlyPlansApi };
  * and its duties; the next attempt is a new decision with a new key. PUBLISHED
  * is shown only from a server answer or a confirming read. There is no
  * re-publish: under CR-03 later duty changes apply directly.
+ *
+ * Versionless contract (known gap, not closed here): the publish command
+ * carries no plan version or fingerprint, so the server publishes the live
+ * state it finds at commit time, after its own full re-validation. The
+ * pre-send re-read only proves what the duties were when that GET completed;
+ * a change another admin commits between that read and the server's plan lock
+ * is published without having been shown. The dialog says so and never claims
+ * that exactly the reviewed snapshot was published. Closing the gap needs a
+ * server-enforced precondition (contract decision), not client retries.
  */
 export function InitialPublish({ plan, project, duties, hasUnsavedChanges, onPlanChanged, onReload, plans }: Props) {
   const [phase, setPhase] = useState<Phase>({ step: 'idle' });
@@ -355,9 +365,17 @@ export function InitialPublish({ plan, project, duties, hasUnsavedChanges, onPla
                 </p>
               )}
               <ul>
-                <li>Beim Veröffentlichen prüft der Server alle Dienste und Einplanungen erneut. Ist eine Regel verletzt, wird nichts veröffentlicht.</li>
+                <li>
+                  Veröffentlicht wird der Stand, der beim Abschluss auf dem Server gespeichert ist. Der Server prüft dabei
+                  alle Dienste und Einplanungen erneut; ist eine Regel verletzt, wird nichts veröffentlicht.
+                </li>
+                <li>
+                  Vor dem Senden wird geprüft, ob die Dienste noch dieser Anzeige entsprechen. Eine Änderung, die eine
+                  andere Administration unmittelbar danach speichert, kann trotzdem mitveröffentlicht werden. Dass genau
+                  der angezeigte Stand veröffentlicht wird, ist nicht garantiert.
+                </li>
                 <li>Danach gelten Änderungen an Diensten sofort, ohne erneutes Veröffentlichen.</li>
-                <li>Es wird keine Benachrichtigung versendet.</li>
+                <li>Es wird keine Benachrichtigung versendet. {NO_EMPLOYEE_PLAN_VIEW}</li>
               </ul>
               {!canConfirm && blocked && <p id={`${id}-reason`} className="employee-form__hint">{blocked}</p>}
               <div role="status" aria-live="polite">

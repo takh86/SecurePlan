@@ -34,7 +34,9 @@ export function publishSummary(duties: readonly Duty[]): PublishSummary {
  * Order-independent form of everything the server validates on publication and
  * the admin saw: identity and version of each duty, date, kind, interval,
  * members with role and source, and the neutral availability hints (these can
- * change without a new duty version).
+ * change without a new duty version). Client-side only: it is never sent, so
+ * it narrows but cannot close the window up to the server's commit (the
+ * publish API has no version precondition).
  */
 export function dutiesSignature(duties: readonly Duty[]): string {
   const canonical = duties

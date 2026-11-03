@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // @vitest-environment-options {"url":"https://localhost:8443/monatsplanung"}
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError, type KnownErrorCode } from '../../../shared/api/api-error';
 import { installDialogPolyfill } from '../../../shared/ui/native-dialog.test-support';
@@ -89,8 +89,15 @@ describe('SP-13 First Publish — confirmation dialog and the bodyless command',
       .toContain('Sie veröffentlichen den Monatsplan Demo-Objekt Hafen – Dezember 2026 zum ersten Mal.');
     expect(within(dialog).getByText('Dienste').nextElementSibling!.textContent).toBe('2 (davon 1 ohne Besetzung)');
     expect(within(dialog).getByText('Eingeplante Personen').nextElementSibling!.textContent).toBe('2');
-    expect(dialog.textContent).toContain('Es wird keine Benachrichtigung versendet.');
     expect(dialog.textContent).toContain('Danach gelten Änderungen an Diensten sofort, ohne erneutes Veröffentlichen.');
+    // Versionless contract: the server publishes the state it finds at commit time; no snapshot-level promise.
+    expect(dialog.textContent).toContain('Veröffentlicht wird der Stand, der beim Abschluss auf dem Server gespeichert ist.');
+    expect(dialog.textContent).toContain('ist eine Regel verletzt, wird nichts veröffentlicht.');
+    expect(dialog.textContent).toContain('Eine Änderung, die eine andere Administration unmittelbar danach speichert, kann trotzdem mitveröffentlicht werden.');
+    expect(dialog.textContent).toContain('Dass genau der angezeigte Stand veröffentlicht wird, ist nicht garantiert.');
+    // No notification and no employee visibility (SP-14 plan reads do not exist yet).
+    expect(dialog.textContent).toContain('Es wird keine Benachrichtigung versendet. Mitarbeitende können veröffentlichte Monatspläne in dieser Ausbaustufe noch nicht abrufen.');
+    expect(dialog.textContent).not.toMatch(/Mitarbeitende sehen/);
     // Least destructive action first: publication cannot be undone.
     expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Abbrechen' }));
     // Opening the dialog sends nothing.
@@ -110,6 +117,9 @@ describe('SP-13 First Publish — confirmation dialog and the bodyless command',
     expect(within(statusSection()).queryByRole('button', { name: /veröffentlichen/i })).toBeNull();
     expect(notice.textContent).toContain('Änderungen an Diensten gelten ab jetzt sofort, ohne erneutes Veröffentlichen.');
     expect(document.activeElement).toBe(notice.closest('[tabindex="-1"]'));
+    // Neither the result nor the new status claims an employee view or the exact reviewed snapshot.
+    expect(statusSection().textContent).toContain('Mitarbeitende können veröffentlichte Monatspläne in dieser Ausbaustufe noch nicht abrufen.');
+    expect(document.body.textContent).not.toMatch(/Mitarbeitende sehen|angezeigte Stand wurde veröffentlicht/);
     // The key never reaches the DOM.
     expect(document.body.innerHTML).not.toContain(sent[1].idempotencyKey!);
   });
@@ -221,7 +231,7 @@ describe('SP-13 First Publish — what blocks the action', () => {
     await user.click(within(screen.getByRole('region', { name: /Do., 03.12.2026/ })).getByRole('button', { name: 'Tagdienst bearbeiten' }));
     const editor = screen.getByRole('region', { name: 'Tagdienst am Do., 03.12.2026 bearbeiten' });
     await within(editor).findByLabelText('Datum');
-    expect(editor.textContent).toContain('Mitarbeitende sehen Änderungen erst nach der Veröffentlichung.');
+    expect(editor.textContent).toContain('Gespeicherte Änderungen werden Teil der späteren Veröffentlichung.');
     const dialog = await openDialog(user);
     await user.click(confirmButton(dialog));
     await screen.findByText(/^Der Monatsplan wurde veröffentlicht\./);
@@ -480,28 +490,283 @@ describe('SP-13 First Publish — lost responses and idempotent retries', () => 
     expect(second.idempotencyKey).toBe(first.idempotencyKey);
   });
 
-  it.each(['the leave button', 'Escape'])('leaving an open outcome with %s reloads the state; a later decision gets a new key', async (how) => {
+  it.each(['the leave button', 'Escape', 'Escape pressed three times', 'a browser close'])(
+    'leaving an open outcome with %s reloads the state once; a later decision gets a new key',
+    async (how) => {
+      const server = company();
+      const { requests } = renderPlanning(PLAN_PATH, server.handler);
+      const user = userEvent.setup();
+      const dialog = await openDialog(user);
+      server.fail((request) => (isPublish(request) ? new ApiError('invalid-response', 200, null, null) : undefined));
+      await user.click(confirmButton(dialog));
+      await within(dialog).findByRole('heading', { level: 3, name: 'Ergebnis unbekannt' });
+      const reads = planReads(requests).length;
+      if (how === 'Escape') await user.keyboard('{Escape}');
+      else if (how === 'Escape pressed three times') await user.keyboard('{Escape}{Escape}{Escape}');
+      // The browser closed the modal dialog itself (e.g. Chrome after repeated close requests).
+      else if (how === 'a browser close') (dialog as HTMLDialogElement).close();
+      else await user.click(within(dialog).getByRole('button', { name: 'Vorgang verlassen und Stand laden' }));
+
+      const alert = await findAlert('Ergebnis offen');
+      expect(alert.textContent).toContain('der Planstatus zeigt danach, ob der Monatsplan veröffentlicht ist');
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(document.activeElement).toBe(alert.closest('[tabindex="-1"]'));
+      await waitFor(() => expect(planReads(requests).length).toBe(reads + 1));
+
+      const again = await openDialog(user);
+      await user.click(confirmButton(again));
+      await screen.findByText(/^Der Monatsplan wurde veröffentlicht\./);
+      const [first, second] = publishes(requests);
+      expect(second.idempotencyKey).not.toBe(first.idempotencyKey);
+      expect(server.publishLog.publications).toBe(1);
+      // Exactly one reload for leaving, however often the close request came.
+      expect(planReads(requests).length).toBe(reads + 1);
+    },
+  );
+});
+
+describe('SP-13 First Publish — dialog transitions, focus and repeated input', () => {
+  it('repeated Escape: the first press cancels and returns focus; further presses reopen and send nothing', async () => {
     const server = company();
     const { requests } = renderPlanning(PLAN_PATH, server.handler);
     const user = userEvent.setup();
-    const dialog = await openDialog(user);
-    server.fail((request) => (isPublish(request) ? new ApiError('invalid-response', 200, null, null) : undefined));
-    await user.click(confirmButton(dialog));
-    await within(dialog).findByRole('heading', { level: 3, name: 'Ergebnis unbekannt' });
-    const reads = planReads(requests).length;
-    if (how === 'Escape') await user.keyboard('{Escape}');
-    else await user.click(within(dialog).getByRole('button', { name: 'Vorgang verlassen und Stand laden' }));
-
-    const alert = await findAlert('Ergebnis offen');
-    expect(alert.textContent).toContain('der Planstatus zeigt danach, ob der Monatsplan veröffentlicht ist');
+    const trigger = await readyTrigger();
+    const before = requests.length;
+    await user.click(trigger);
+    expect(screen.getByRole('alertdialog', { name: DIALOG })).toBeTruthy();
+    await user.keyboard('{Escape}{Escape}{Escape}');
     expect(screen.queryByRole('alertdialog')).toBeNull();
-    await waitFor(() => expect(planReads(requests).length).toBe(reads + 1));
+    expect(document.activeElement).toBe(trigger);
 
-    const again = await openDialog(user);
-    await user.click(confirmButton(again));
+    // The keyboard path still works afterwards: Enter reopens a fresh confirmation, focus on "Abbrechen".
+    await user.keyboard('{Enter}');
+    const again = screen.getByRole('alertdialog', { name: DIALOG });
+    expect(document.activeElement).toBe(within(again).getByRole('button', { name: 'Abbrechen' }));
+    await user.keyboard('{Escape}{Escape}');
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+    expect(requests.slice(before)).toEqual([]);
+    expect(server.publishLog.publications).toBe(0);
+  });
+
+  it('during the pre-send check, a second confirmation, "Abbrechen", Escape and a native cancel do nothing; one POST follows', async () => {
+    const server = company();
+    const gate = deferred<void>();
+    let holdCheck = false;
+    const handler: Handler = async (request) => {
+      if (holdCheck && request.method === 'GET' && request.path === ENTRIES) await gate.promise;
+      return server.handler(request);
+    };
+    const { requests } = renderPlanning(PLAN_PATH, handler);
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    holdCheck = true;
+    await user.click(confirmButton(dialog));
+    await waitFor(() => expect(dialog.textContent).toContain('Aktueller Stand wird geprüft …'));
+
+    const busy = within(dialog).getByRole('button', { name: 'Wird veröffentlicht …' });
+    expect(busy.getAttribute('aria-disabled')).toBe('true');
+    await user.click(busy);
+    await user.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
+    await user.keyboard('{Escape}');
+    const cancel = new Event('cancel', { cancelable: true });
+    fireEvent(dialog, cancel);
+    expect(cancel.defaultPrevented).toBe(true);
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+    expect(publishes(requests)).toEqual([]);
+
+    gate.resolve();
     await screen.findByText(/^Der Monatsplan wurde veröffentlicht\./);
+    expect(publishes(requests)).toHaveLength(1);
+    expect(server.publishLog).toEqual({ publications: 1, replays: 0 });
+  });
+
+  it('a forced browser close while the request runs cancels nothing; the answer still settles the result and takes focus', async () => {
+    const server = company();
+    const gate = deferred<void>();
+    const handler: Handler = async (request) => {
+      if (isPublish(request)) await gate.promise;
+      return server.handler(request);
+    };
+    const { requests } = renderPlanning(PLAN_PATH, handler);
+    const user = userEvent.setup();
+    const dialog = (await openDialog(user)) as HTMLDialogElement;
+    await user.click(confirmButton(dialog));
+    await waitFor(() => expect(publishes(requests)).toHaveLength(1));
+
+    // Chrome may close a modal dialog itself after repeated close requests; the request is not cancelled.
+    dialog.close();
+    expect(dialog.open).toBe(false);
+    expect(dialog.isConnected).toBe(true);
+    // Progress stays announced outside the dialog; nothing is claimed.
+    expect(statusSection().querySelector('.planning-publish__live')!.textContent).toContain('Veröffentlichung wird übertragen …');
+    expect(statusSection().textContent).toContain('Unveröffentlicht');
+
+    gate.resolve();
+    const notice = await screen.findByText(/^Der Monatsplan wurde veröffentlicht\./);
+    expect(dialog.isConnected).toBe(false);
+    expect(document.activeElement).toBe(notice.closest('[tabindex="-1"]'));
+    expect(publishes(requests)).toHaveLength(1);
+    expect(server.publishLog).toEqual({ publications: 1, replays: 0 });
+  });
+
+  it('a forced browser close and then an unknown outcome: the decision is shown modally again with focus on its heading', async () => {
+    const server = company();
+    const gate = deferred<void>();
+    let dropFirst = true;
+    const handler: Handler = async (request) => {
+      if (isPublish(request) && dropFirst) {
+        dropFirst = false;
+        await gate.promise;
+        // The request never reached the server.
+        throw new ApiError('network', null, null, null);
+      }
+      return server.handler(request);
+    };
+    const { requests } = renderPlanning(PLAN_PATH, handler);
+    const user = userEvent.setup();
+    const dialog = (await openDialog(user)) as HTMLDialogElement;
+    await user.click(confirmButton(dialog));
+    await waitFor(() => expect(publishes(requests)).toHaveLength(1));
+    dialog.close();
+    expect(dialog.open).toBe(false);
+
+    gate.resolve();
+    const heading = await within(dialog).findByRole('heading', { level: 3, name: 'Ergebnis unbekannt' });
+    // Same element, opened with showModal() again: the open decision is never left behind a closed dialog.
+    expect(dialog.open).toBe(true);
+    expect(dialog.dataset.testModal).toBe('true');
+    expect(document.activeElement).toBe(heading);
+    expect(statusSection().textContent).toContain('Unveröffentlicht');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Erneut anfragen' }));
+    await screen.findByText(/erneute Anfrage mit demselben Vorgang bestätigt/);
     const [first, second] = publishes(requests);
-    expect(second.idempotencyKey).not.toBe(first.idempotencyKey);
+    expect(second.idempotencyKey).toBe(first.idempotencyKey);
+    expect(server.publishLog).toEqual({ publications: 1, replays: 0 });
+  });
+
+  it('two clicks on "Erneut anfragen" in one tick resend the same key once; focus stays inside the dialog while it runs', async () => {
+    const server = company();
+    const gate = deferred<void>();
+    let holdResend = false;
+    const handler: Handler = async (request) => {
+      if (holdResend && isPublish(request)) await gate.promise;
+      return server.handler(request);
+    };
+    const { requests } = renderPlanning(PLAN_PATH, handler);
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    server.fail((request) => (isPublish(request) ? new ApiError('network', null, null, null) : undefined));
+    await user.click(confirmButton(dialog));
+    const resend = await within(dialog).findByRole('button', { name: 'Erneut anfragen' });
+    holdResend = true;
+    // Both clicks reach the same button before React re-renders: only the synchronous guard can stop the second.
+    act(() => {
+      resend.click();
+      resend.click();
+    });
+    await waitFor(() => expect(publishes(requests)).toHaveLength(2));
+    // The focused button was replaced by the progress view: focus moved to the dialog title, not to the page.
+    expect(document.activeElement).toBe(within(dialog).getByRole('heading', { level: 2, name: DIALOG }));
+    expect(within(dialog).getByRole('button', { name: 'Wird veröffentlicht …' }).getAttribute('aria-disabled')).toBe('true');
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+
+    gate.resolve();
+    await screen.findByText(/erneute Anfrage mit demselben Vorgang bestätigt/);
+    expect(publishes(requests)).toHaveLength(2);
+    const [first, second] = publishes(requests);
+    expect(second.idempotencyKey).toBe(first.idempotencyKey);
+    expect(server.publishLog).toEqual({ publications: 1, replays: 0 });
+  });
+
+  it('a late plan read showing PUBLISHED closes an open confirmation: nothing is sent, no re-publish, focus on the notice', async () => {
+    const server = company();
+    const gate = deferred<void>();
+    let holdPlanRead = false;
+    const handler: Handler = async (request) => {
+      if (holdPlanRead && request.method === 'GET' && request.path === PLAN_URL) await gate.promise;
+      return server.handler(request);
+    };
+    const { requests } = renderPlanning(PLAN_PATH, handler);
+    const user = userEvent.setup();
+    const first = await openDialog(user);
+    // A refusal reloads plan and duties; here the duties come back first and the plan read is slow.
+    server.fail((request) => (isPublish(request) ? httpError(409, 'PLAN_CONCURRENT_MODIFICATION') : undefined));
+    holdPlanRead = true;
+    await user.click(confirmButton(first));
+    await findAlert('Plan wurde währenddessen geändert');
+    const dialog = await openDialog(user);
+
+    // Meanwhile another admin published; the slow read returns that state.
+    server.state.plans[0] = { ...server.state.plans[0], status: 'PUBLISHED', publishedAt: '2026-11-30T12:00:00Z' };
+    gate.resolve();
+    const alert = await findAlert('Bereits veröffentlicht');
+    expect(alert.textContent).toContain('Der Monatsplan ist inzwischen veröffentlicht.');
+    expect(alert.textContent).toContain('Ein erneutes Veröffentlichen gibt es nicht');
+    expect(dialog.isConnected).toBe(false);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(document.activeElement).toBe(alert.closest('[tabindex="-1"]'));
+    await waitFor(() => expect(statusSection().textContent).toContain('Veröffentlicht am Mo., 30.11.2026, 13:00 MEZ.'));
+    expect(within(statusSection()).queryByRole('button', { name: /veröffentlichen/i })).toBeNull();
+    // Only the refused first attempt was ever sent.
+    expect(publishes(requests)).toHaveLength(1);
+    expect(server.publishLog.publications).toBe(0);
+  });
+});
+
+describe('SP-13 First Publish — versionless contract (documented gap, not closed by the client)', () => {
+  // Synthetic example: another admin's duty for Jonas on 10 December, committed after the pre-send read.
+  const LATE_DUTY = { dutyDate: '2026-12-10', startsAt: '2026-12-10T05:00:00Z', endsAt: '2026-12-10T17:00:00Z' };
+  const LATE_CELL = /^Jonas Muster, Do\., 10\. Dezember: Tagdienst/;
+
+  it('a valid change committed between the pre-send read and the POST is published without having been shown', async () => {
+    const server = company();
+    let raced = false;
+    const handler: Handler = async (request) => {
+      if (isPublish(request) && !raced) {
+        raced = true;
+        server.state.duties[PLAN_ID].push(duty({ ...LATE_DUTY, assignments: [member(JONAS_ID)] }));
+      }
+      return server.handler(request);
+    };
+    const { requests } = renderPlanning(PLAN_PATH, handler);
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    expect(within(dialog).getByText('Dienste').nextElementSibling!.textContent).toBe('2 (davon 1 ohne Besetzung)');
+    await user.click(confirmButton(dialog));
+    await screen.findByText(/^Der Monatsplan wurde veröffentlicht\./);
+
+    // The command carries nothing that binds it to the reviewed state: no version, fingerprint or body.
+    expect(publishes(requests)).toEqual([
+      { path: PUBLISH_URL, method: 'POST', body: undefined, noBody: true, idempotencyKey: expect.stringMatching(UUID_V4) },
+    ]);
+    // The server published three live duties; the admin reviewed two and the screen still shows two.
+    expect(server.state.duties[PLAN_ID]).toHaveLength(3);
     expect(server.publishLog.publications).toBe(1);
+    expect(screen.queryByRole('button', { name: LATE_CELL })).toBeNull();
+  });
+
+  it('the latest state must still pass every rule: an unseen change the server refuses publishes nothing and appears after the reload', async () => {
+    const server = company();
+    server.state.unavailable.add(`${JONAS_ID}|2026-12-10`);
+    let raced = false;
+    const handler: Handler = async (request) => {
+      if (isPublish(request) && !raced) {
+        raced = true;
+        server.state.duties[PLAN_ID].push(duty({ ...LATE_DUTY, assignments: [member(JONAS_ID)] }));
+      }
+      return server.handler(request);
+    };
+    renderPlanning(PLAN_PATH, handler);
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    await user.click(confirmButton(dialog));
+    const alert = await findAlert('Person nicht verfügbar');
+    expect(alert.textContent).toContain('Der Plan wurde nicht veröffentlicht.');
+    expect(server.publishLog.publications).toBe(0);
+    expect(statusSection().textContent).toContain('Unveröffentlicht');
+    expect(await screen.findByRole('button', { name: LATE_CELL })).toBeTruthy();
   });
 });

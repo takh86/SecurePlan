@@ -84,6 +84,8 @@ describe('SP-12 A10 — plan page: employee-by-day matrix (real API source)', ()
     expect(await screen.findByRole('heading', { level: 1, name: 'Demo-Objekt Hafen – Dezember 2026' })).toBeTruthy();
     const status = section('Planstatus');
     expect(status.textContent).toContain('Unveröffentlicht');
+    expect(status.textContent).toContain('Dieser Monatsplan ist noch nicht veröffentlicht.');
+    expect(status.textContent).not.toMatch(/Mitarbeitende sehen/);
     expect(within(status).getByRole('link', { name: /Schichtzeiten und Mitarbeiterzuordnung/ }).getAttribute('href'))
       .toBe(`/projekte/${HAFEN_ID}/2026-12`);
     // SP-13: the First Publish action sits in the plan status; opening the page sends no write.
@@ -173,6 +175,9 @@ describe('SP-12 A10 — plan page: employee-by-day matrix (real API source)', ()
     const status = (await screen.findByRole('heading', { level: 2, name: 'Planstatus' })).closest('section')!;
     expect(status.textContent).toContain('Veröffentlicht am Mo., 30.11.2026, 13:00 MEZ.');
     expect(status.textContent).toContain('Änderungen an Diensten gelten sofort, ohne erneutes Veröffentlichen.');
+    // SP-14 employee plan reads do not exist yet: no visibility promise, an explicit statement instead.
+    expect(status.textContent).toContain('Mitarbeitende können veröffentlichte Monatspläne in dieser Ausbaustufe noch nicht abrufen.');
+    expect(status.textContent).not.toMatch(/Mitarbeitende sehen/);
     // No re-publish (CR-03): a PUBLISHED plan offers no publish action at all.
     expect(within(status).queryByRole('button', { name: /veröffentlichen/i })).toBeNull();
   });

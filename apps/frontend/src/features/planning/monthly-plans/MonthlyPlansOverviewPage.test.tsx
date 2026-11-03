@@ -120,6 +120,8 @@ describe('SP-11 PR-2 — create an UNPUBLISHED plan', () => {
     expect(document.activeElement).toBe(within(panel).getByRole('heading', { level: 3 }));
     expect(panel.textContent).toContain('unveröffentlicht angelegt');
     expect(panel.textContent).toContain('in dieser Ausbaustufe nicht gelöscht werden');
+    // No employee-visibility promise ("not yet" would imply a view after publication; SP-14 reads do not exist).
+    expect(panel.textContent).not.toMatch(/Mitarbeitende sehen/);
 
     await user.click(within(panel).getByRole('button', { name: 'Abbrechen' }));
     expect(screen.queryByRole('group')).toBeNull();

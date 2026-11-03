@@ -393,6 +393,12 @@ try {
     assert.match(await dialog.innerText(), new RegExp(`Sie veröffentlichen den Monatsplan ${PROJECTS.hafen} – ${MONTH_LABEL} zum ersten Mal`));
     assert.equal(await dialog.locator('dt', { hasText: 'Dienste' }).locator('xpath=following-sibling::dd').innerText(), '2 (davon 1 ohne Besetzung)');
     assert.equal(await dialog.locator('dt', { hasText: 'Eingeplante Personen' }).locator('xpath=following-sibling::dd').innerText(), '2');
+    // Versionless contract: commit-time state, no snapshot promise; no employee view (SP-14) and no notification.
+    const wording = (await dialog.innerText()).replace(/\s+/g, ' ');
+    assert.match(wording, /Veröffentlicht wird der Stand, der beim Abschluss auf dem Server gespeichert ist\./);
+    assert.match(wording, /Dass genau der angezeigte Stand veröffentlicht wird, ist nicht garantiert\./);
+    assert.match(wording, /Es wird keine Benachrichtigung versendet\. Mitarbeitende können veröffentlichte Monatspläne in dieser Ausbaustufe noch nicht abrufen\./);
+    assert.doesNotMatch(wording, /Mitarbeitende sehen/);
     // The page behind the modal is inert: the back link under the backdrop is not hit.
     const box = await page.getByRole('link', { name: 'Zurück zur Übersicht', exact: true }).boundingBox();
     const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('a')?.textContent ?? null, [box.x + box.width / 2, box.y + box.height / 2]);
@@ -442,7 +448,10 @@ try {
     assert.equal(records[0].state, 'COMPLETED');
     assert.ok(records[0].key_hash.equals(sha256(request.key)), 'only the hash of the browser key is stored');
     await focusIs(page.locator('.planning-publish__outcome'));
-    assert.match(await region(page, 'Planstatus').innerText(), /Veröffentlicht am .*Änderungen an Diensten gelten sofort, ohne erneutes Veröffentlichen\./s);
+    const statusText = (await region(page, 'Planstatus').innerText()).replace(/\s+/g, ' ');
+    assert.match(statusText, /Veröffentlicht am .*Änderungen an Diensten gelten sofort, ohne erneutes Veröffentlichen\./);
+    assert.match(statusText, /Mitarbeitende können veröffentlichte Monatspläne in dieser Ausbaustufe noch nicht abrufen\./);
+    assert.doesNotMatch(statusText, /Mitarbeitende sehen/);
     assert.equal(await trigger(page).count(), 0, 'no re-publish action');
     assert.ok(!(await page.content()).includes(request.key), 'key not in the DOM');
     report.publishedAt = row.published_at.toISOString();
