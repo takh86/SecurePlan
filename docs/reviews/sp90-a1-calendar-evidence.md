@@ -83,3 +83,78 @@ PR after push. No claim of production readiness, statutory compliance or
 privileged-SQL enforcement is made. #51 retention, roles, operations and other
 pre-staging gates remain open. Existing projects intentionally remain MISSING
 until explicitly configured; rollout must account for that transition.
+
+## Development integration follow-up (2026-11-03)
+
+Reviewed the independent [PR #92 review](https://github.com/takh86/SecurePlan/pull/92#pullrequestreview-5747924883)
+and [approved P1–P6](https://github.com/takh86/SecurePlan/issues/90#issuecomment-6588992180).
+The review's remaining development rollout gap is addressed by the
+[development-only runbook](../development-a1-rollout.md) and
+`node scripts/rehearse-legacy-calendar.mjs`. This supersedes the earlier
+NOT_RUN statement for disposable legacy bootstrap and manual HTTP integration;
+it does not claim an existing-target rollout or browser acceptance.
+
+One confirmed inventory defect was fixed: the previous duty-only report omitted
+projects with no duties and historical empty plans. The additive `projects`
+output now exposes those projects, company-local current month, earliest live
+duty month, version count and missing plan months. The existing violation-count
+format is retained. No runtime domain rules or applied migrations were changed.
+
+Two new labelled tmpfs PostgreSQL 17 containers were independently verified by
+container ID, label, loopback binding (55492/55494), role/database, storage and
+cluster receipt before writes. Shared development PostgreSQL on 5432 was never
+used. Node 24.21.0; existing installed dependencies used (`npm ci` NOT_RUN in
+this follow-up; it passed for the reviewed baseline).
+
+The fresh-target rehearsal applied 0001–0013, then committed fixtures before
+0014: a January 2020 PUBLISHED DAY/NIGHT pair with the same active member, a
+February 2020 retained empty duty with removed membership, and a project with
+no duties but a January 2019 empty plan. Exact complete rows of monthly plans,
+duties and memberships were unchanged by migration, inventory and bootstrap.
+No policy was seeded. Read-only inventory reported two missing historical
+duties, one missing empty duty, one dual-member/date group and the no-duty
+project's missing old plan. Explicit Sunday/Saturday policies succeeded;
+incompatible sets returned dependency conflicts. Three audited explicit
+bootstraps left dual memberships/history intact. A Tuesday policy then allowed
+actual HTTP plan and staffed duty creation and First Publish, persisted in PG.
+The final inventory retained the dual conflict and historical empty-plan gap.
+
+Important verified boundary: with no live duties, bootstrap is current month
+only. A 2019 empty plan remains readable/MISSING and First Publish returns
+PROJECT_CALENDAR_MISSING; there is no approved backdate/delete workaround. The
+runbook explicitly gates any requirement to publish such plans on a separate
+approved rule. This is a documented contract limitation, not a silent repair.
+
+Executed follow-up checks:
+
+| Command | Result |
+|---|---|
+| `node scripts/disposable-test-target.mjs record` | PASS independently for both new containers |
+| pre-0014 preparation + `npm run test:e2e -- legacy-calendar-bootstrap-real --maxWorkers=1 --testTimeout=15000` | PASS fresh upgrade and HTTP lifecycle |
+| `node scripts/rehearse-legacy-calendar.mjs` | PASS on second fresh target, including DB verification |
+| `npm run test:e2e -- --maxWorkers=4 --testTimeout=15000` | PASS 1,311/1,311, 51 files, 103.74s; includes 57 existing A1 guard/concurrency cases + new lifecycle scenario |
+| `node scripts/disposable-test-target.mjs` | PASS read-only target re-verification |
+| `node scripts/migrate.mjs` / `node scripts/verify-db.mjs` | PASS replay of all 14 checksums and schema verification |
+| `node --test scripts/disposable-test-target.test.mjs scripts/migration-safety.test.mjs scripts/check-public.test.mjs` | PASS 17/17 including failed forward-migration rollback |
+| `npm run lint` / `npm run typecheck` | PASS |
+| `npm run build` | PASS both; existing frontend chunk-size warning |
+| `npm test -- --maxWorkers=2` | PASS 385/385; root npm wrapper warned and did not forward worker limit |
+| `npm run test --workspace=frontend -- --maxWorkers=2` | PASS 698/698 |
+| `npm run check:public` / `git diff --check` | PASS |
+
+Initial sandboxed Vitest/public-check attempts were refused by Windows child
+process permissions (EPERM); expanded-access reruns above passed. These startup
+failures are not test passes. The complete 34-case script suite is NOT_RUN
+locally in this follow-up (17 relevant cases executed); normal exact-head CI
+must still run the complete suite. No new dependency audit or runtime/browser
+smoke test is claimed here.
+
+Development merge recommendation: GO for the documented manual admin path,
+subject to required review and green exact-head CI. Applying to an existing
+development database still requires separate target authorization, backup and
+restore proof, old-writer drain, private inventory and explicit policy acceptance.
+No migration/configuration was applied there. Staging/production remain NO-GO:
+environment rollout proof, controlled contract adoption, admin/error UI and
+browser acceptance, company-time-zone acceptance, #51 proxy/operations,
+dependency findings, privileged SQL, retention and human security/UX gates.
+PR remains Draft pending the owner's review decision; A2, #88 and #90 stay open.

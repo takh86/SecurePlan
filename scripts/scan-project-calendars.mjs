@@ -22,8 +22,22 @@ try {
     HAVING count(DISTINCT d.shift_kind) > 1
   ) SELECT company_id, project_id, to_char(planning_month, 'YYYY-MM-DD') AS month, violation, count(*)::int AS count
     FROM facts GROUP BY company_id, project_id, planning_month, violation ORDER BY company_id, project_id, month, violation`);
+  // Include projects without duties: an empty findings list alone does not mean
+  // that creation or First Publish is ready. Historical empty plans also need coverage.
+  const projects = await client.query(`SELECT p.company_id, p.id AS project_id, p.status,
+    to_char(date_trunc('month', clock_timestamp() AT TIME ZONE c.time_zone), 'YYYY-MM-DD') AS current_month,
+    (SELECT to_char(min(d.planning_month), 'YYYY-MM-DD') FROM duties d
+      WHERE d.company_id = p.company_id AND d.project_id = p.id AND d.removed_at IS NULL) AS earliest_live_duty_month,
+    (SELECT count(*)::int FROM project_operating_calendars v
+      WHERE v.company_id = p.company_id AND v.project_id = p.id) AS calendar_versions,
+    ARRAY(SELECT to_char(m.planning_month, 'YYYY-MM-DD') FROM monthly_plans m
+      WHERE m.company_id = p.company_id AND m.project_id = p.id AND NOT EXISTS (
+        SELECT 1 FROM project_operating_calendars v WHERE v.company_id = p.company_id
+          AND v.project_id = p.id AND v.effective_from_month <= m.planning_month)
+      ORDER BY m.planning_month) AS missing_plan_months
+    FROM projects p JOIN companies c ON c.id = p.company_id ORDER BY p.company_id, p.id`);
   await client.query('COMMIT');
-  console.log(JSON.stringify({ kind: 'project-calendar-legacy-inventory', findings: result.rows }, null, 2));
+  console.log(JSON.stringify({ kind: 'project-calendar-legacy-inventory', findings: result.rows, projects: projects.rows }, null, 2));
 } catch {
   await client.query('ROLLBACK').catch(() => {});
   console.error('Read-only project calendar inventory failed.'); process.exitCode = 1;

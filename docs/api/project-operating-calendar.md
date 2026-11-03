@@ -59,5 +59,8 @@ Before rollout, explicitly review the read-only inventory from
 `node scripts/scan-project-calendars.mjs` against an authorized target. It reports
 only tenant/project/month violation counts; it makes no repairs. Historical
 bootstrap records explicit compatibility acceptance, not proof of an old policy.
-No rollout, development-data cleanup, frontend integration or readiness claim
-is part of this branch. See the A1 PR for executed verification and limitations.
+The [development runbook](../development-a1-rollout.md) provides the explicit
+manual admin path and disposable legacy migration/demo rehearsal. Its inventory
+also reports projects without duties and missing historical plan months. No
+existing environment rollout, development-data cleanup or frontend integration
+has been performed. See the A1 PR for executed verification and limitations.
