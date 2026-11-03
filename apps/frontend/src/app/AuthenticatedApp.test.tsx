@@ -32,13 +32,14 @@ let apiRequests: RecordedRequest[] = [];
 function renderApp(role: TenantRole, path: string, overrides: { logoutPending?: boolean; logoutError?: Error | null } = {}) {
   const logout = vi.fn();
   // SP-07: the employees area reads through the session-bound API (empty company here).
-  const { api, requests } = fakeSessionApi(() => page([]));
+  const { api, requests } = fakeSessionApi(({ path }) => path === '/api/v1/me' ? { ...identityFor(role), companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01' } : path.startsWith('/api/v1/me/monthly-plans?') ? { items: [] } : page([]));
   apiRequests = requests;
   render(
     <MemoryRouter initialEntries={[path]}>
       <AuthenticatedApp
         identity={identityFor(role)}
         api={api}
+        requestSessionRevalidation={vi.fn()}
         logout={logout}
         logoutPending={overrides.logoutPending ?? false}
         logoutError={overrides.logoutError ?? null}
@@ -135,10 +136,10 @@ describe('F1 — role-based routes (UI gating only; the server authorizes every 
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Januar 2027');
   });
 
-  it('redirects an invalid month to the current month for EMPLOYEE', async () => {
+  it('rejects an invalid month without a private read for EMPLOYEE', async () => {
     renderApp('EMPLOYEE', '/mein-monatsplan/2026-13');
-    await waitFor(() => expect(currentPath()).toBe('/mein-monatsplan'));
-    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Dezember 2026');
+    expect(currentPath()).toBe('/mein-monatsplan/2026-13');
+    expect(screen.getByRole('alert')).toBeTruthy();
   });
 
   it('keeps the access-denied page for COMPANY_ADMIN on an employee month deep link', () => {
@@ -181,7 +182,7 @@ describe('F1 — role-based routes (UI gating only; the server authorizes every 
   it('keeps focus on the month link when switching months within the plan', async () => {
     const user = userEvent.setup();
     renderApp('EMPLOYEE', '/mein-monatsplan');
-    await user.click(screen.getByRole('link', { name: /^Nächster Monat/ }));
+    await user.click(await screen.findByRole('link', { name: /^Nächster Monat/ }));
     expect(currentPath()).toBe('/mein-monatsplan/2027-01');
     expect(document.activeElement?.textContent).toContain('Nächster Monat');
   });
@@ -192,7 +193,7 @@ describe('F1 — role-based routes (UI gating only; the server authorizes every 
     const main = screen.getByRole('main');
     await userEvent.setup().click(screen.getByRole('link', { name: 'Zum Inhalt springen' }));
     expect(document.activeElement).toBe(main);
-    expect(currentPath()).toBe('/mein-monatsplan');
+    await waitFor(() => expect(currentPath()).toBe('/mein-monatsplan/2026-12'));
   });
 
   it('toggles the compact menu and closes it with Escape, returning focus to the toggle', async () => {

@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { LoginScreen } from '../features/auth/LoginScreen';
 import { AuthenticatedApp } from './AuthenticatedApp';
@@ -11,12 +12,13 @@ import { SESSION_REDIRECT_STATE } from './session-redirect';
  */
 export function SessionRoot() {
   const navigate = useNavigate();
+  const onSignedOut = useCallback(() => {
+    void navigate('/', { replace: true, state: SESSION_REDIRECT_STATE });
+  }, [navigate]);
   return (
     <LoginScreen
       authenticatedView={AuthenticatedApp}
-      onSignedOut={() => {
-        void navigate('/', { replace: true, state: SESSION_REDIRECT_STATE });
-      }}
+      onSignedOut={onSignedOut}
     />
   );
 }

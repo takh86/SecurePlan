@@ -30,7 +30,7 @@ const identityOf = (email: string) => ({
   email,
   role: 'COMPANY_ADMIN',
 });
-const authorized = (email = 'admin@secureplan.test') => () => new Response(JSON.stringify(identityOf(email)), {
+const authorized = (email = 'admin@secureplan.test') => () => new Response(JSON.stringify({ ...identityOf(email), companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01' }), {
   status: 200,
   headers: { 'content-type': 'application/json', 'x-csrf-token': CSRF },
 });

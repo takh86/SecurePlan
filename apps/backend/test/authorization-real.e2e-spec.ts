@@ -141,6 +141,7 @@ describe('SP-06 Part A — real sessions through the global guard', () => {
       .set('X-Company-Id', tenantB.companyId).set('X-Role', 'COMPANY_ADMIN')
       .expect(200);
     expect(meA.body).toEqual({
+      companyTimeZone: expect.any(String), currentCompanyMonth: expect.stringMatching(/^\d{4}-\d{2}-01$/),
       accountId: tenantA.admin.accountId,
       companyId: tenantA.companyId,
       email: tenantA.admin.email,

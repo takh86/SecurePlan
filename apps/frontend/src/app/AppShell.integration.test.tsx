@@ -40,14 +40,14 @@ const IDENTITIES: Record<TenantRole, IdentityContext> = {
 // Per role: landing page, a second protected page reached by a click, and how to get there.
 const JOURNEYS = {
   COMPANY_ADMIN: { landing: '/arbeitsuebersicht', landingTitle: 'Arbeitsübersicht', next: '/mitarbeitende', nextLink: /^Mitarbeitende/ },
-  EMPLOYEE: { landing: '/mein-monatsplan', landingTitle: 'Mein Monatsplan', next: '/mein-monatsplan/2027-01', nextLink: /^Nächster Monat/ },
+  EMPLOYEE: { landing: '/mein-monatsplan/2026-12', landingTitle: 'Mein Monatsplan', next: '/mein-monatsplan/2027-01', nextLink: /^Nächster Monat/ },
 } as const;
 
 type Handler = () => Response | Promise<Response>;
 type Responder = () => Response;
 
 function authorized(role: TenantRole): Responder {
-  return () => new Response(JSON.stringify(IDENTITIES[role]), {
+  return () => new Response(JSON.stringify({ ...IDENTITIES[role], companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01' }), {
     status: 200,
     headers: { 'content-type': 'application/json', 'x-csrf-token': CSRF },
   });
@@ -98,10 +98,19 @@ function deferred() {
 
 /** Routes fetch calls by URL; each call consumes the next queued response. */
 function stubApi(queues: Partial<Record<string, Handler[]>>) {
+  let currentIdentity: IdentityContext | null = null;
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-    void init;
+    // Feature context reads use SessionApi, independently of queued auth bootstrap/rechecks.
+    if (String(input) === '/api/v1/me' && init?.headers instanceof Headers && currentIdentity) {
+      return Promise.resolve(new Response(JSON.stringify({ ...currentIdentity, companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01' }), { status: 200 }));
+    }
+    if (String(input).startsWith('/api/v1/me/monthly-plans?')) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
     const next = queues[String(input)]?.shift();
-    return next ? Promise.resolve(next()) : Promise.reject(new Error(`Unexpected request ${String(input)}`));
+    if (!next) return Promise.reject(new Error(`Unexpected request ${String(input)}`));
+    return Promise.resolve(next()).then(async (response) => {
+      if (response.ok && ['/api/v1/me','/api/v1/auth/login'].includes(String(input))) currentIdentity = await response.clone().json() as IdentityContext;
+      return response;
+    });
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -144,7 +153,7 @@ function restoreFromBfcache() {
 }
 
 function meCalls(fetchMock: { mock: { calls: unknown[][] } }) {
-  return fetchMock.mock.calls.filter(([url]) => url === '/api/v1/me').length;
+  return fetchMock.mock.calls.filter(([url, init]) => url === '/api/v1/me' && !((init as RequestInit | undefined)?.headers instanceof Headers)).length;
 }
 
 async function traverse(direction: 'back' | 'forward', expectedPath: string) {
@@ -189,7 +198,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
     expectNoProtectedContent('COMPANY_ADMIN');
     expect(window.location.pathname).toBe('/arbeitsuebersicht');
     expect(window.location.search).toBe('');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(meCalls(fetchMock)).toBe(1);
     expect(document.title).toBe('Anmelden – SecurePlan');
   });
 
@@ -199,11 +208,11 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
     renderAt('/');
 
     await expectShell(JOURNEYS[role].landingTitle);
-    expect(window.location.pathname).toBe(JOURNEYS[role].landing);
+    await waitFor(() => expect(window.location.pathname).toBe(JOURNEYS[role].landing));
     const nav = screen.getByRole('navigation', { name: 'Hauptnavigation' });
     const otherLanding = role === 'COMPANY_ADMIN' ? 'Mein Monatsplan' : 'Arbeitsübersicht';
     expect(within(nav).queryByText(otherLanding)).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(meCalls(fetchMock)).toBe(1);
   });
 
   it('keeps an allowed deep link across login', async () => {
@@ -249,7 +258,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
     renderAt('/mein-monatsplan/2027-01');
     await expectShell('Mein Monatsplan');
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Januar 2027');
-    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['/api/v1/me']);
+    expect(meCalls(fetchMock)).toBe(1);
   });
 
   describe.each(['COMPANY_ADMIN', 'EMPLOYEE'] as const)('logout, then Back, Forward and Refresh (%s)', (role) => {
@@ -264,7 +273,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       await expectShell(journey.landingTitle);
 
       const user = userEvent.setup();
-      await user.click(screen.getByRole('link', { name: journey.nextLink }));
+      await user.click(await screen.findByRole('link', { name: journey.nextLink }));
       expect(window.location.pathname).toBe(journey.next);
 
       await user.click(screen.getByRole('button', { name: 'Abmelden' }));
@@ -313,7 +322,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       await act(async () => me.resolve(unauthorized()));
       expect(await screen.findByRole('heading', { name: 'Anmelden' })).toBeTruthy();
       expectNoProtectedContent(role);
-      expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['/api/v1/me']);
+      expect(meCalls(fetchMock)).toBe(1);
     });
   });
 
@@ -365,7 +374,14 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
 
     await act(async () => me.resolve(authorized('EMPLOYEE')()));
     await expectShell('Mein Monatsplan');
-    expect(window.location.pathname).toBe('/mein-monatsplan');
+    await waitFor(() => expect(window.location.pathname).toBe('/mein-monatsplan/2026-12'));
+  });
+
+  it('SP14 revoked employee restore retains the selected month with no protected view',async()=>{
+    enqueue(queues,'/api/v1/me',authorized('EMPLOYEE'),unauthorized);stubApi(queues);
+    renderAt('/mein-monatsplan/2026-12');await expectShell('Mein Monatsplan');restoreFromBfcache();
+    await screen.findByRole('heading',{name:'Anmelden'});expectNoProtectedContent('EMPLOYEE');
+    expect(window.location.pathname).toBe('/mein-monatsplan/2026-12');
   });
 
   describe('P1 — bfcache revalidation is single-flight and fail-closed', () => {
@@ -426,7 +442,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
     it('fails closed with a safe alert when the revalidation hits a network error', async () => {
       enqueue(queues, '/api/v1/me', authorized('EMPLOYEE'), () => Promise.reject(new TypeError('private network diagnostic')));
       stubApi(queues);
-      renderAt('/mein-monatsplan');
+      renderAt('/mein-monatsplan/2026-12');
       await expectShell('Mein Monatsplan');
 
       restoreFromBfcache();
@@ -434,7 +450,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       expect(alert.textContent).toContain('Verbindung fehlgeschlagen');
       expect(alert.textContent).not.toContain('private network diagnostic');
       expectNoProtectedContent('EMPLOYEE');
-      expect(window.location.pathname).toBe('/');
+      expect(window.location.pathname).toBe('/mein-monatsplan/2026-12');
     });
 
     it('re-checks once per restore and keeps a session the server still confirms', async () => {
@@ -492,7 +508,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false }));
     });
     expect(screen.getByRole('navigation', { name: 'Hauptnavigation' })).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(meCalls(fetchMock)).toBe(1);
   });
 
   it('keeps the shell and shows an alert when logout is rejected with 403', async () => {
@@ -1151,7 +1167,7 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
       await user.type(screen.getByLabelText('Passwort'), 'Local Password 2026!');
       await user.click(screen.getByRole('button', { name: 'Anmelden' }));
       await expectShell(JOURNEYS.EMPLOYEE.landingTitle);
-      expect(window.location.pathname).toBe(JOURNEYS.EMPLOYEE.landing);
+      await waitFor(() => expect(window.location.pathname).toBe(JOURNEYS.EMPLOYEE.landing));
       expect(held()).toBeNull();
       expect(document.body.textContent).not.toContain(project.name);
     });

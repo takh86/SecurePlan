@@ -1,3 +1,8 @@
 .login__muted {
   color: #526579;
 }
+
+/* Conceal a frozen private document before history or foreground restoration. */
+html[data-private-session-hidden] body {
+  visibility: hidden;
+}

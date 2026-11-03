@@ -1,3 +1,5 @@
+import { SessionContextService } from '../src/modules/identity/session-context.service.js';
+import type { TenantContext } from '../src/auth/authorization/tenant-context.js';
 /** SP-05 — HTTP transport for GET /me and POST /auth/logout (mocked DB/session). */
 import { Test } from '@nestjs/testing';
 import { UnauthorizedException, type INestApplication } from '@nestjs/common';
@@ -42,6 +44,8 @@ describe('SP-05 — /me and logout HTTP transport', () => {
     const moduleFixture = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DatabaseService)
       .useValue({ isReady: vi.fn().mockResolvedValue(true) })
+      .overrideProvider(SessionContextService)
+      .useValue({ read: async (tenant: TenantContext) => ({ accountId: tenant.accountId, companyId: tenant.companyId, role: tenant.role, email: 'synthetic@secureplan.invalid', companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01' }) })
       .overrideProvider(PASSWORD_DENYLIST)
       .useValue(new Set<string>())
       .overrideProvider(SessionService)
@@ -65,9 +69,10 @@ describe('SP-05 — /me and logout HTTP transport', () => {
       companyId: context.companyId,
       email: context.email,
       role: context.role,
+      companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01',
     });
     expect(result.headers['x-csrf-token']).toBe(CSRF_TOKEN);
-    expect(result.headers['cache-control']).toBe('no-store');
+    expect(result.headers['cache-control']).toBe('private, no-store');
     expect(result.text).not.toContain(RAW_TOKEN);
     expect(result.text).not.toContain(CSRF_TOKEN);
     expect(validateAndTouch).toHaveBeenCalledWith(RAW_TOKEN);

@@ -27,7 +27,7 @@ const identity = {
 };
 
 function authorized() {
-  return new Response(JSON.stringify(identity), {
+  return new Response(JSON.stringify({ ...identity, companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01' }), {
     status: 200,
     headers: { 'content-type': 'application/json', 'x-csrf-token': csrf },
   });
@@ -163,7 +163,7 @@ describe('SP-05 — React Login and session UX', () => {
   it('rejects a login response missing the CSRF header', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(unauthorized())
-      .mockResolvedValueOnce(new Response(JSON.stringify(identity), {
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...identity, companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01' }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }));

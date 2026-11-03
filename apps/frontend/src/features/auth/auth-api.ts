@@ -4,6 +4,7 @@
  * Only the CSRF token and non-secret identity context are kept in React memory.
  */
 import { ApiError, parseApiError, safeCorrelationId } from '../../shared/api/api-error';
+import { isCivilDate, isNamedTimeZone } from '../../shared/time/civil-time';
 
 export type IdentityContext = {
   accountId: string;
@@ -11,6 +12,9 @@ export type IdentityContext = {
   email: string;
   role: 'EMPLOYEE' | 'COMPANY_ADMIN';
 };
+
+export type MeIdentity = IdentityContext & { companyTimeZone: string; currentCompanyMonth: string };
+export type RestoredAuthenticatedContext = { identity: MeIdentity; csrfToken: string };
 
 export type AuthenticatedContext = {
   identity: IdentityContext;
@@ -32,36 +36,25 @@ function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);
 }
 
-async function readAuthenticated(response: Response): Promise<AuthenticatedContext> {
+export function parseBaseIdentity(body: unknown): IdentityContext {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!isRecord(body) || typeof body.accountId !== 'string' || !uuid.test(body.accountId) ||
+    typeof body.companyId !== 'string' || !uuid.test(body.companyId) || typeof body.email !== 'string' ||
+    (body.role !== 'EMPLOYEE' && body.role !== 'COMPANY_ADMIN')) throw new ApiError('invalid-response', 200, null, null);
+  return { accountId: body.accountId, companyId: body.companyId, email: body.email, role: body.role };
+}
+export function parseMeIdentity(body: unknown): MeIdentity {
+  const base = parseBaseIdentity(body);
+  if (!isRecord(body) || !isNamedTimeZone(body.companyTimeZone) || !isCivilDate(body.currentCompanyMonth) ||
+    !body.currentCompanyMonth.endsWith('-01')) throw new ApiError('invalid-response', 200, null, null);
+  return { ...base, companyTimeZone: body.companyTimeZone, currentCompanyMonth: body.currentCompanyMonth };
+}
+async function readAuthenticated<T extends IdentityContext>(response: Response, parse: (body: unknown) => T): Promise<{ identity: T; csrfToken: string }> {
   const csrfToken = response.headers.get('x-csrf-token');
   if (!csrfToken || !CSRF_TOKEN_PATTERN.test(csrfToken)) invalidResponse(response);
-
   let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    invalidResponse(response);
-  }
-
-  if (
-    !isRecord(body) ||
-    typeof body.accountId !== 'string' ||
-    typeof body.companyId !== 'string' ||
-    typeof body.email !== 'string' ||
-    (body.role !== 'EMPLOYEE' && body.role !== 'COMPANY_ADMIN')
-  ) {
-    invalidResponse(response);
-  }
-
-  return {
-    identity: {
-      accountId: body.accountId as string,
-      companyId: body.companyId as string,
-      email: body.email as string,
-      role: body.role as IdentityContext['role'],
-    },
-    csrfToken,
-  };
+  try { body = await response.json(); } catch { invalidResponse(response); }
+  return { identity: parse(body), csrfToken };
 }
 
 async function send(
@@ -88,9 +81,9 @@ async function send(
   return response;
 }
 
-export async function currentSession(): Promise<AuthenticatedContext> {
+export async function currentSession(): Promise<RestoredAuthenticatedContext> {
   const response = await send('/api/v1/me', { method: 'GET' });
-  return readAuthenticated(response);
+  return readAuthenticated(response, parseMeIdentity);
 }
 
 export async function login(
@@ -103,7 +96,7 @@ export async function login(
     // Do not trim or normalize passwords.
     body: JSON.stringify({ email, password }),
   });
-  return readAuthenticated(response);
+  return readAuthenticated(response, parseBaseIdentity);
 }
 
 export async function logout(csrfToken: string): Promise<void> {

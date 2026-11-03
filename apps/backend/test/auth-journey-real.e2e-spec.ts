@@ -232,6 +232,7 @@ describe('SP-05 — Full authentication journey (real PostgreSQL)', () => {
     const me = await request(http().getHttpServer())
       .get('/api/v1/me').set('Cookie', session.cookie).expect(200);
     expect(me.body).toEqual({
+      companyTimeZone: expect.any(String), currentCompanyMonth: expect.stringMatching(/^\d{4}-\d{2}-01$/),
       accountId: fixture!.accountId,
       companyId: fixture!.companyId,
       email: fixture!.email,
