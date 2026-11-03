@@ -1491,3 +1491,292 @@ it('bounded explicit cleanup removes only this principal’s expired A2 evidence
     status: 400,
   });
 });
+
+// PR #95 independent review: compare the actual A2 and SP-12 correction paths.
+it('missing shift configuration allows a true no-op but refuses corrective membership changes in both A2 and SP-12', async () => {
+  await pool.query('DELETE FROM shift_configurations WHERE project_id=$1', [
+    f.project.projectId,
+  ]);
+  const dto = await draft(),
+    before = await planningState(pool, f.tenant.companyId);
+  const noop = await save(dto);
+  expect(noop.status).toBe(200);
+  expect(noop.body.outcome).toBe('NO_OP');
+  paint(dto, MUTATION_DAY, 'OFF');
+  const refused = await save(dto);
+  expect(refused.status).toBe(409);
+  expect(refused.body).toMatchObject({
+    stage: 'VALIDATION',
+    conflicts: [
+      {
+        date: MUTATION_DAY,
+        shiftKind: 'DAY',
+        reason: 'SHIFT_CONFIGURATION_MISSING',
+      },
+    ],
+  });
+  expect(await planningState(pool, f.tenant.companyId)).toEqual(before);
+  const lease = await send('post', `${dutyPath(f)}/edit-lease`).expect(200);
+  const leased = await planningState(pool, f.tenant.companyId);
+  const legacyNoop = await send(
+    'patch',
+    dutyPath(f),
+    { assignments: [{ employeeId: f.mira.employeeId, dutyRole: 'EMPLOYEE' }] },
+    { 'Expected-Version': '1', 'Edit-Lease-Token': lease.body.leaseToken },
+  );
+  expect(legacyNoop.status).toBe(200);
+  const legacy = await send(
+    'patch',
+    dutyPath(f),
+    { assignments: [] },
+    { 'Expected-Version': '1', 'Edit-Lease-Token': lease.body.leaseToken },
+  );
+  expect(legacy.status).toBe(409);
+  expect(legacy.body.code).toBe('SHIFT_CONFIGURATION_MISSING');
+  expect(await planningState(pool, f.tenant.companyId)).toEqual(leased);
+});
+
+it.each(['missing', 'closed'] as const)(
+  'A2 and SP-12 both permit genuine corrective reduction under a %s calendar without guessing policy',
+  async (kind) => {
+    await insertMembership(
+      pool,
+      f.tenant.companyId,
+      f.dutyId,
+      f.jonas.employeeId,
+    );
+    if (kind === 'missing')
+      await pool.query(
+        'DELETE FROM project_operating_calendars WHERE project_id=$1',
+        [f.project.projectId],
+      );
+    else
+      await pool.query(
+        'UPDATE project_operating_calendars SET weekday_mask=1 WHERE project_id=$1',
+        [f.project.projectId],
+      );
+    const initial = await read();
+    expect(initial.body.days[19].operatingState).toBe(
+      kind === 'missing' ? 'MISSING' : 'CLOSED',
+    );
+    expect(initial.body.operatingCalendar.effective === null).toBe(
+      kind === 'missing',
+    );
+    const unchanged = await save(await draft());
+    expect(unchanged.status).toBe(200);
+    expect(unchanged.body.outcome).toBe('NO_OP');
+    const lease = await send('post', `${dutyPath(f)}/edit-lease`).expect(200);
+    const patch = await send(
+      'patch',
+      dutyPath(f),
+      {
+        assignments: [{ employeeId: f.jonas.employeeId, dutyRole: 'EMPLOYEE' }],
+      },
+      { 'Expected-Version': '1', 'Edit-Lease-Token': lease.body.leaseToken },
+    );
+    expect(patch.status).toBe(200);
+    await send('delete', `${dutyPath(f)}/edit-lease`, undefined, {
+      'Edit-Lease-Token': lease.body.leaseToken,
+    }).expect(204);
+    const correction = await draft(f.planId, f.jonas.employeeId);
+    paint(correction, MUTATION_DAY, 'OFF');
+    const result = await save(
+      correction,
+      randomUUID(),
+      f.admin,
+      f.planId,
+      f.jonas.employeeId,
+    );
+    expect(result.status).toBe(200);
+    expect(result.body.counts).toMatchObject({
+      createdDuties: 0,
+      changedDuties: 1,
+      removedMemberships: 1,
+    });
+    expect(
+      (
+        await pool.query(
+          'SELECT removed_at,concurrency_version FROM duties WHERE id=$1',
+          [f.dutyId],
+        )
+      ).rows[0],
+    ).toEqual({ removed_at: null, concurrency_version: '3' });
+  },
+);
+
+it('a legacy invalid preserved roster is readable and no-op capable, but both correction paths revalidate remaining staff', async () => {
+  await insertMembership(
+    pool,
+    f.tenant.companyId,
+    f.dutyId,
+    f.jonas.employeeId,
+  );
+  await pool.query("UPDATE employees SET status='DEACTIVATED' WHERE id=$1", [
+    f.jonas.employeeId,
+  ]);
+  const dto = await draft(),
+    before = await planningState(pool, f.tenant.companyId);
+  expect((await save(dto)).body.outcome).toBe('NO_OP');
+  paint(dto, MUTATION_DAY, 'OFF');
+  const a2 = await save(dto);
+  expect(a2.status).toBe(409);
+  expect(a2.body.conflicts[0].reason).toBe('PRESERVED_ROSTER_CONFLICT');
+  expect(JSON.stringify(a2.body)).not.toContain(f.jonas.employeeId);
+  expect(await planningState(pool, f.tenant.companyId)).toEqual(before);
+  const lease = await send('post', `${dutyPath(f)}/edit-lease`).expect(200),
+    leased = await planningState(pool, f.tenant.companyId);
+  const legacy = await send(
+    'patch',
+    dutyPath(f),
+    { assignments: [{ employeeId: f.jonas.employeeId, dutyRole: 'EMPLOYEE' }] },
+    { 'Expected-Version': '1', 'Edit-Lease-Token': lease.body.leaseToken },
+  );
+  expect(legacy.status).toBe(409);
+  expect(legacy.body.code).toBe('EMPLOYEE_INACTIVE');
+  expect(await planningState(pool, f.tenant.companyId)).toEqual(leased);
+});
+
+it('actual HTTP logout revokes receipt access while another principal cannot retrieve or replay the original receipt', async () => {
+  const dto = await draft();
+  paint(dto, '2027-01-01', 'DAY');
+  const key = randomUUID(),
+    saved = await save(dto, key);
+  expect(saved.status).toBe(200);
+  const own = await lookup(key);
+  expect(own.status).toBe(200);
+  expect(own.body).toEqual({ state: 'COMPLETED', result: saved.body });
+  const before = await planningState(pool, f.tenant.companyId);
+  const other = await lookup(key, f.admin2);
+  expect(other.status).toBe(200);
+  expect(other.body).toEqual({ state: 'UNKNOWN' });
+  const otherAttempt = await save(dto, key, f.admin2);
+  expect(otherAttempt.status).toBe(409);
+  expect(otherAttempt.body.code).toBe('PLAN_CONCURRENT_MODIFICATION');
+  await request(app!.getHttpServer())
+    .post('/api/v1/auth/logout')
+    .set('Origin', ORIGIN)
+    .set('Cookie', f.admin.cookie)
+    .set('X-CSRF-Token', f.admin.csrf)
+    .expect(204);
+  for (const result of [await lookup(key), await save(dto, key)]) {
+    expect(result.status).toBe(401);
+    expect(result.body.code).toBe('SESSION_REVOKED');
+    expect(result.headers['cache-control']).toBe('no-store');
+    expect(result.body.result).toBeUndefined();
+    expect(result.body.conflicts).toBeUndefined();
+  }
+  expect(await planningState(pool, f.tenant.companyId)).toEqual(before);
+});
+
+it('receipt lookup rechecks a previously authorized principal’s live role without exposing a retained receipt', async () => {
+  const key = randomUUID(),
+    saved = await save(await draft(), key, f.admin2);
+  expect(saved.status).toBe(200);
+  await pool.query("UPDATE accounts SET role='EMPLOYEE' WHERE id=$1", [
+    f.second.accountId,
+  ]);
+  const before = await planningState(pool, f.tenant.companyId),
+    result = await lookup(key, f.admin2);
+  expect(result.status).toBe(403);
+  expect(result.body.code).toBe('ACTION_FORBIDDEN');
+  expect(result.headers['cache-control']).toBe('no-store');
+  expect(result.body.result).toBeUndefined();
+  expect(result.body.conflicts).toBeUndefined();
+  expect(await planningState(pool, f.tenant.companyId)).toEqual(before);
+});
+
+class ReceiptBoundaryFault extends DatabaseService {
+  constructor(readonly fault: 'codec' | 'sql') {
+    super();
+  }
+  override withTransaction<T>(work: (c: PoolClient) => Promise<T>): Promise<T> {
+    return super.withTransaction((c) =>
+      work(
+        new Proxy(c, {
+          get: (target, key) => {
+            if (key === 'query')
+              return async (sql: string, params?: unknown[]) => {
+                if (
+                  this.fault === 'sql' &&
+                  sql.includes("SET state='COMPLETED'")
+                ) {
+                  const corrupted = [...params!];
+                  corrupted[4] = 'null';
+                  return target.query(sql, corrupted); // Real 0015 CHECK rejection, not a mock SQL error.
+                }
+                const result = await target.query(sql, params);
+                if (
+                  this.fault === 'codec' &&
+                  sql.startsWith(
+                    'SELECT gen_random_uuid() AS id,to_char(clock_timestamp()',
+                  )
+                )
+                  result.rows[0].at = 'invalid-stored-instant';
+                return result;
+              };
+            const value: unknown = Reflect.get(target, key);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        }),
+      ),
+    );
+  }
+}
+it.each(['codec', 'sql'] as const)(
+  'receipt %s boundary failure rolls back all already-written duty/member/audit changes',
+  async (fault) => {
+    await boot({ database: new ReceiptBoundaryFault(fault) });
+    const dto = await draft();
+    paint(dto, '2027-01-01', 'DAY');
+    paint(dto, '2027-01-02', 'DAY');
+    paint(dto, MUTATION_DAY, 'OFF');
+    const before = await planningState(pool, f.tenant.companyId),
+      key = randomUUID(),
+      result = await save(dto, key);
+    expect(result.status).toBe(500);
+    expect(result.body.code).toBe('INTERNAL_ERROR');
+    expect(result.body.conflicts).toBeUndefined();
+    expect(await planningState(pool, f.tenant.companyId)).toEqual(before);
+    expect((await lookup(key)).body).toEqual({ state: 'NOT_COMPLETED' });
+    expect(
+      (
+        await pool.query(
+          'SELECT state,result_json,completed_at FROM idempotency_records WHERE company_id=$1',
+          [f.tenant.companyId],
+        )
+      ).rows,
+    ).toEqual([{ state: 'FAILED', result_json: null, completed_at: null }]);
+  },
+);
+
+it('an actual Calendar admin write after a MISSING read invalidates even an A2 no-op baseline', async () => {
+  await pool.query(
+    'DELETE FROM project_operating_calendars WHERE project_id=$1',
+    [f.project.projectId],
+  );
+  const dto = await draft();
+  expect(dto.expectedCalendar).toBeNull();
+  const update = await send(
+    'patch',
+    `/api/v1/projects/${f.project.projectId}/operating-calendar`,
+    {
+      bootstrap: true,
+      effectiveFromMonth: MUTATION_MONTH,
+      operatingWeekdays: [1, 2, 3, 4, 5, 6, 7],
+      expectedExactVersion: null,
+      expectedEffective: null,
+      expectedNextEffectiveFromMonth: null,
+    },
+  );
+  expect(update.status).toBe(200);
+  const before = await planningState(pool, f.tenant.companyId),
+    result = await save(dto);
+  expect(result.status).toBe(409);
+  expect(result.body).toMatchObject({
+    code: 'PLAN_CONCURRENT_MODIFICATION',
+    atomic: true,
+    stage: 'PRECONDITION',
+    conflicts: [],
+  });
+  expect(await planningState(pool, f.tenant.companyId)).toEqual(before);
+});
