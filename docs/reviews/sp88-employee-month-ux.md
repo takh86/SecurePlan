@@ -1,5 +1,12 @@
 # #88 Employee-month planning — UX preparation (preview, stacked on #87)
 
+> **Update 2026-11-03 (integration branch on main):** this is the reviewed #91 handoff, ported
+> unchanged. Its pre-contract parts are superseded by the adopted A2-GATE-1 contract and
+> [`sp88-a2-employee-month-ui.md`](sp88-a2-employee-month-ui.md): the `EmployeeMonthCommand` /
+> `EmployeeMonthSave` seam (sections 3, 4 and 7) is replaced by the A2 client and save protocol,
+> and a stored duty on a closed weekday is now kept without blocking the save (the server
+> validates only changed duties). Draft PR #91 itself is unchanged.
+
 Date: 2026-11-02, revised the same day after the Tech Lead review of PR #91
 ([comment](https://github.com/takh86/SecurePlan/pull/91#issuecomment-6588190627), CHANGES REQUESTED).
 Branch `agent/claude/sp88-employee-month-ux`, created from the PR #87 head `662985e`; the Draft
