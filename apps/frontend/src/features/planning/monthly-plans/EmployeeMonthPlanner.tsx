@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { SHIFT_TYPE_LABELS } from '../../../shared/shift/shift-view';
 import { formatDate, formatMonthLabel, type DateOnly, type MonthKey } from '../../../shared/time/month';
 import { StatusBadge } from '../../../shared/ui/StatusBadge';
@@ -9,11 +9,14 @@ import type { Project } from '../../projects/project-types';
 import {
   CORRECTION_TEXT,
   DAY_ISSUE_TEXT,
+  KEPT_ON_BLOCKED_DAY_TEXT,
+  NEW_DUTY_TEXT,
   PAINT_MODES,
   PAINT_MODE_LABELS,
   RESTRICTION_TEXT,
   SLOT_KINDS,
   UNKNOWN_CALENDAR,
+  calendarBlock,
   calendarWeeks,
   changeRestriction,
   changeText,
@@ -24,12 +27,12 @@ import {
   dayStatus,
   daySlots,
   dayText,
+  draftBlock,
   emptyDraft,
   isClosed,
   issuesAfterEdit,
   keepChoice,
-  monthBase,
-  monthCommand,
+  keptOnBlockedDay,
   monthSummary,
   paint,
   paintRestriction,
@@ -45,34 +48,66 @@ import {
   type DayPlan,
   type DayStatus,
   type EmployeeMonthDraft,
-  type EmployeeMonthSave,
-  type EmployeeMonthSaveOutcome,
+  type MonthBase,
+  type OtherMember,
   type PaintMode,
   type PlannerContext,
   type ProjectCalendar,
   type RebaseReport,
+  type SlotBase,
 } from './employee-month-draft';
-import { DUTY_ROLE_LABELS, DUTY_ROLES, type Duty, type DutyRole, type MonthlyPlan } from './monthly-plan-types';
+import type { EmployeeMonthApi, SaveResult } from './employee-month-api';
+import {
+  REFUSAL_TITLE,
+  classifyLookupError,
+  classifySaveError,
+  newSaveAttempt,
+  readDrift,
+  refusalText,
+  savedText,
+  type SaveAttempt,
+  type SaveRefusal,
+} from './employee-month-save';
+import { DUTY_ROLE_LABELS, DUTY_ROLES, type DutyRole, type MonthlyPlan } from './monthly-plan-types';
 import { spokenDate, type MatrixRow } from './planning-matrix';
 
-/** Where a save attempt stands; the draft itself is never dropped by any of them. */
+/**
+ * Where a save stands. The draft itself is never dropped by any of them; an
+ * attempt (route, key and exact body) stays frozen until its outcome is known.
+ */
 type Phase =
   | { kind: 'editing' }
-  | { kind: 'saving' }
-  /** Lost or unreadable answer: nothing is claimed, a re-read must come first. */
-  | { kind: 'unknown' }
-  /** Waiting for the re-read after a confirmed save or an unknown outcome. */
-  | { kind: 'verifying'; after: 'saved' | 'unknown' };
+  | { kind: 'saving'; attempt: SaveAttempt }
+  /** No or unreadable answer: the command may have committed. Ask the server first. */
+  | { kind: 'unknown'; attempt: SaveAttempt; lookupFailed: boolean }
+  | { kind: 'checking'; attempt: SaveAttempt }
+  /** The server still runs this key's command. */
+  | { kind: 'running'; attempt: SaveAttempt }
+  /** Proven not completed: the same key and body may be sent again after an explicit decision. */
+  | { kind: 'not-completed'; attempt: SaveAttempt }
+  /** No evidence either way (UNKNOWN): a fresh read and a new decision are required. */
+  | { kind: 'unresolved' }
+  /** A definite refusal: nothing was saved. */
+  | { kind: 'refused'; refusal: SaveRefusal }
+  /** Waiting for the re-read, after a committed save (`result`) or an explicit reconciliation. */
+  | { kind: 'verifying'; result: SaveResult | null }
+  /** The plan or person is gone (404) or the action is not allowed (403). */
+  | { kind: 'terminal'; reason: 'gone' | 'forbidden' };
+
+/** Phases a newer read does not end: a request is running or an attempt is unresolved. */
+const HELD: ReadonlySet<Phase['kind']> = new Set(['saving', 'checking', 'unknown', 'running', 'not-completed', 'terminal']);
+/** Phases in which the draft cannot be edited (until a re-read, it shows what was sent or committed). */
+const LOCKED: ReadonlySet<Phase['kind']> = new Set(['saving', 'checking', 'unknown', 'running', 'not-completed', 'unresolved', 'verifying', 'terminal']);
+/** Phases with an unresolved attempt: leaving would lose track of its outcome. */
+const UNRESOLVED: ReadonlySet<Phase['kind']> = new Set(['unknown', 'running', 'not-completed', 'unresolved']);
 
 type PlannerState = {
-  /** The duty read the draft is based on. */
-  duties: readonly Duty[];
+  /** The server state the draft is on (a new `base` prop moves it). */
+  base: MonthBase;
   draft: EmployeeMonthDraft;
   phase: Phase;
-  /** Findings of the last rejected save, by day (until the day is edited). */
+  /** Findings of the last refusal, by day (until the day is edited). */
   issues: readonly DayIssue[];
-  /** True while the last save was rejected and nothing was saved. */
-  rejected: boolean;
   /** Polite status line: the last date change, a re-read or a save. */
   message: string | null;
 };
@@ -82,20 +117,28 @@ type PlannerProps = {
   project: Project;
   month: MonthKey;
   person: MatrixRow;
-  duties: readonly Duty[];
+  /**
+   * The server state to plan on: the plan's duties (preview) or the A2
+   * employee-month read (with `base.source`). A new object moves the draft onto it.
+   */
+  base: MonthBase;
+  /** Other members of a slot's duty, context only (null = not known here). */
+  othersOf?: (slot: SlotBase) => readonly OtherMember[] | null;
   nameOf: (employeeId: string) => string;
   /**
-   * The atomic employee-month save (#88). Absent until its contract is approved
-   * and implemented: the planner is then a preview and cannot save.
+   * The A2 save client (#88, contract A2-GATE-1). Absent in the preview: the
+   * planner then cannot save. Requires a `base` built from the A2 read.
    */
-  save?: EmployeeMonthSave;
-  /** Open #88 decision: may a choice target a date/kind that has no duty yet? */
+  api?: Pick<EmployeeMonthApi, 'save' | 'saveResult'>;
+  /** Whether a choice may target a date/kind without a duty (settled by A2; preview switch). */
   newDuties?: boolean;
-  /** Project operating days (#90). Absent until that contract exists: no date is treated as closed. */
+  /** Project operating days: from the A2 read; absent in the preview (no date is treated as closed). */
   calendar?: ProjectCalendar;
-  /** Re-reads the plan's duties (the draft is moved onto the new state). */
+  /** Re-reads the server state (the draft is moved onto the new `base`). */
   onReload: () => void;
   reloading: boolean;
+  /** The last re-read failed; the shown state is older. */
+  reloadFailed?: boolean;
   onEditStateChange: (state: EditState) => void;
 };
 
@@ -116,14 +159,7 @@ const MODE_HINT: Record<PaintMode | 'NONE', string> = {
   FREE: 'Ein Klick auf einen Tag setzt ihn auf Frei: nicht eingeplant, keine Abwesenheit.',
 };
 const SHORTCUTS: Record<string, PaintMode> = { t: 'DAY', n: 'NIGHT', f: 'FREE' };
-
-/** Anything but a well-formed outcome claims nothing: it is handled as unknown. */
-function knownOutcome(value: unknown): EmployeeMonthSaveOutcome {
-  const outcome = value as Partial<EmployeeMonthSaveOutcome> | null | undefined;
-  if (outcome?.kind === 'saved') return { kind: 'saved' };
-  if (outcome?.kind === 'rejected' && Array.isArray(outcome.issues)) return { kind: 'rejected', issues: outcome.issues };
-  return { kind: 'unknown' };
-}
+const PREVIEW_BLOCK = 'Vorschau: Das Speichern eines ganzen Monats ist hier noch nicht freigegeben. Es wird nichts gespeichert.';
 
 function plural(count: number, one: string, many: string): string {
   return count === 1 ? `1 ${one}` : `${count} ${many}`;
@@ -132,16 +168,16 @@ function plural(count: number, one: string, many: string): string {
 /**
  * Status line after the draft moved onto a newer read. It reports which wanted
  * states the server already shows, without claiming who produced them (another
- * admin may have made the same change).
+ * admin may have made the same change), and month-wide changes of the basis.
  */
-function reloadMessage(report: RebaseReport, phase: Phase, draft: EmployeeMonthDraft): string {
+function reloadMessage(report: RebaseReport, phase: Phase, draft: EmployeeMonthDraft, drift: readonly string[]): string {
   const remaining = draft.choices.size;
-  if (phase.kind === 'verifying' && phase.after === 'saved') {
-    return remaining === 0
-      ? 'Der Monat wurde gespeichert. Der aktuelle Stand ist geladen.'
-      : `Der Monat wurde gespeichert. ${plural(remaining, 'Änderung entspricht', 'Änderungen entsprechen')} nicht dem aktuellen Stand; bitte prüfen Sie sie.`;
+  if (phase.kind === 'verifying' && phase.result !== null) {
+    const parts = [savedText(phase.result), 'Der aktuelle Stand ist geladen.', ...drift];
+    if (remaining > 0) parts.push(`${plural(remaining, 'Änderung entspricht', 'Änderungen entsprechen')} nicht dem aktuellen Stand; bitte prüfen Sie sie.`);
+    return parts.join(' ');
   }
-  const parts = ['Der aktuelle Stand wurde geladen.'];
+  const parts = ['Der aktuelle Stand wurde geladen.', ...drift];
   const reached = report.reached.length;
   if (reached > 0) {
     parts.push(reached === 1 ? 'Eine Ihrer Änderungen ist darin bereits enthalten.' : `${reached} Ihrer Änderungen sind darin bereits enthalten.`);
@@ -159,36 +195,51 @@ function reloadMessage(report: RebaseReport, phase: Phase, draft: EmployeeMonthD
   return parts.join(' ');
 }
 
+function calendarHint(calendar: ProjectCalendar, base: MonthBase, month: MonthKey): string {
+  if (calendar.status === 'unknown') {
+    return 'Betriebstage des Projekts sind hier noch nicht hinterlegt: Die Ansicht sperrt keine Wochentage. Ob das Projekt an einem Tag in Betrieb ist, prüft der Server beim Speichern.';
+  }
+  if (calendar.status === 'missing') {
+    return `Für das Projekt sind im ${formatMonthLabel(month)} keine Betriebstage festgelegt: Neue Dienste sind nicht möglich, Sie können Tage nur auf Frei setzen. Betriebstage legen Sie unter „Projekte“ im Abschnitt „Betriebstage“ fest.`;
+  }
+  const weekdays = base.source?.calendar?.operatingWeekdays ?? [];
+  const names = weekdays.map((day) => WEEKDAYS[day - 1].short).join(', ');
+  return `Betriebstage des Projekts: ${names}. An anderen Tagen sind keine neuen Dienste möglich; bestehende Dienste bleiben, bis Sie sie auf Frei setzen.`;
+}
+
+const ownOthers = (slot: SlotBase) => slot.others;
+
 /**
  * Issue #88 employee-month planning for ONE person: the admin chooses a mode
  * (Tag, Nacht or Frei) and marks dates in a month calendar. Per date the
  * person has one shift or none; Tag and Nacht replace each other, and
  * repeating a mode changes nothing. Changes stay in a local draft until one
- * "Monat speichern". Other members of a duty are shown and never changed.
- * Without `save` this is a preview: "Monat speichern" stays unavailable and
- * nothing is written.
+ * "Monat speichern": the A2 command with the complete month and every
+ * precondition of the read (`api`). Other members of a duty are shown and
+ * never changed. Without `api` this is a preview that cannot save.
  */
 export function EmployeeMonthPlanner({
-  plan, project, month, person, duties, nameOf, save, newDuties = true, calendar = UNKNOWN_CALENDAR, onReload, reloading, onEditStateChange,
+  plan, project, month, person, base, othersOf = ownOthers, nameOf, api, newDuties = true, calendar = UNKNOWN_CALENDAR,
+  onReload, reloading, reloadFailed = false, onEditStateChange,
 }: PlannerProps) {
   const [state, setState] = useState<PlannerState>(() => ({
-    duties,
-    draft: emptyDraft(monthBase(duties, person.employeeId, month)),
+    base,
+    draft: emptyDraft(base),
     phase: { kind: 'editing' },
     issues: [],
-    rejected: false,
     message: null,
   }));
-  // A newer duty read moves the draft onto it during render ("adjust state on change").
-  if (state.duties !== duties) {
-    const moved = rebase(state.draft, monthBase(duties, person.employeeId, month));
-    const phase = state.phase;
+  // A newer server state moves the draft onto it during render ("adjust state on change").
+  if (state.base !== base) {
+    const moved = rebase(state.draft, base);
+    const drift = state.base.source && base.source ? readDrift(state.base.source, base.source) : [];
+    const held = HELD.has(state.phase.kind);
     setState({
       ...state,
-      duties,
+      base,
       draft: moved.draft,
-      phase: phase.kind === 'saving' ? phase : { kind: 'editing' },
-      message: phase.kind === 'saving' ? state.message : reloadMessage(moved.report, phase, moved.draft),
+      phase: held ? state.phase : { kind: 'editing' },
+      message: held ? state.message : reloadMessage(moved.report, state.phase, moved.draft, drift),
     });
   }
   const { draft, phase, issues } = state;
@@ -208,20 +259,38 @@ export function EmployeeMonthPlanner({
   const grid = useRef<HTMLTableElement>(null);
   const alertRef = useRef<HTMLHeadingElement>(null);
   const [focusAlert, setFocusAlert] = useState<object | null>(null);
+  /** One request at a time (double clicks, a lookup during a save). */
+  const busy = useRef(false);
   const ids = useId();
 
-  const editState: EditState = phase.kind === 'saving' ? 'saving' : draft.choices.size > 0 ? 'dirty' : 'clean';
+  // After a committed save every choice of the draft was part of the command: nothing is unsaved,
+  // even while the re-read is pending or failed.
+  const editState: EditState = phase.kind === 'saving' || phase.kind === 'checking'
+    ? 'saving'
+    : phase.kind === 'verifying' && phase.result !== null
+      ? 'clean'
+      : draft.choices.size > 0 || UNRESOLVED.has(phase.kind) ? 'dirty' : 'clean';
   useEffect(() => {
     onEditStateChange(editState);
   }, [editState, onEditStateChange]);
   useEffect(() => () => onEditStateChange('clean'), [onEditStateChange]);
+  // Reloading or closing the tab would drop the in-memory draft (or an unresolved outcome): the browser asks first.
+  useEffect(() => {
+    if (editState === 'clean') return undefined;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [editState]);
   useEffect(() => {
     if (focusAlert) alertRef.current?.focus();
   }, [focusAlert]);
 
   const days = draft.base.days;
   const activeDate = days[Math.min(active, days.length - 1)];
-  const locked = phase.kind === 'saving';
+  const locked = LOCKED.has(phase.kind);
+  const shownPlan = state.base.source?.plan ?? plan;
 
   function announce(message: string) {
     setState((current) => ({ ...current, message }));
@@ -276,15 +345,16 @@ export function EmployeeMonthPlanner({
 
   function discardAll() {
     setConfirmDiscard(false);
-    setState((current) => ({ ...current, draft: emptyDraft(current.draft.base), issues: [], rejected: false, message: 'Alle ungespeicherten Änderungen wurden verworfen.' }));
+    setState((current) => ({ ...current, draft: emptyDraft(current.draft.base), issues: [], message: 'Alle ungespeicherten Änderungen wurden verworfen.' }));
   }
 
+  /** Re-read; an unresolved attempt is given up only from not-completed/unresolved (after the lookup). */
   function reload() {
-    setState((current) => ({
-      ...current,
-      phase: current.phase.kind === 'unknown' ? { kind: 'verifying', after: 'unknown' } : current.phase,
-      message: null,
-    }));
+    setState((current) => {
+      const ends = current.phase.kind === 'not-completed' || current.phase.kind === 'unresolved'
+        || (current.phase.kind === 'refused' && current.phase.refusal.needsReload);
+      return { ...current, phase: ends ? { kind: 'verifying', result: null } : current.phase, message: null };
+    });
     onReload();
   }
 
@@ -298,50 +368,121 @@ export function EmployeeMonthPlanner({
     if (index >= 0) focusIndex(index);
   }
 
-  async function onSave() {
-    if (!save || phase.kind !== 'editing') return;
-    const command = monthCommand(draft, plan.id, calendar);
-    if (command === null) return;
-    setState((current) => ({ ...current, phase: { kind: 'saving' }, rejected: false, message: null }));
-    let outcome: EmployeeMonthSaveOutcome;
+  /** A receipt proves the commit (fresh or replayed); the current state is then re-read. */
+  function committed(result: SaveResult) {
+    setState((current) => ({ ...current, phase: { kind: 'verifying', result }, issues: [], message: `${savedText(result)} Der aktuelle Stand wird geladen …` }));
+    onReload();
+  }
+
+  /** Sends one attempt (a new one, or the same key and body after NOT_COMPLETED). Never retried here. */
+  async function send(attempt: SaveAttempt) {
+    if (!api || busy.current) return;
+    busy.current = true;
+    setState((current) => ({ ...current, phase: { kind: 'saving', attempt }, message: null }));
     try {
-      outcome = knownOutcome(await save(command));
-    } catch {
-      // An adapter failure proves nothing about the server: treat it as unknown.
-      outcome = { kind: 'unknown' };
+      committed(await api.save(attempt.planId, attempt.employeeId, attempt.key, attempt.body));
+      return;
+    } catch (error) {
+      const failure = classifySaveError(error);
+      setState((current) => {
+        switch (failure.kind) {
+          case 'unknown':
+            return { ...current, phase: { kind: 'unknown', attempt, lookupFailed: false } };
+          case 'refused':
+            return { ...current, phase: { kind: 'refused', refusal: failure.refusal }, issues: failure.refusal.issues };
+          case 'gone':
+          case 'forbidden':
+            return { ...current, phase: { kind: 'terminal', reason: failure.kind } };
+          default:
+            // 401: nothing was saved; the session boundary shows the login.
+            return { ...current, phase: { kind: 'editing' } };
+        }
+      });
+      setFocusAlert({});
+    } finally {
+      busy.current = false;
     }
-    if (outcome.kind === 'saved') {
-      setState((current) => ({ ...current, phase: { kind: 'verifying', after: 'saved' }, issues: [], message: 'Gespeichert. Der aktuelle Stand wird geladen …' }));
-      onReload();
+  }
+
+  async function onSave() {
+    if (!api || saveBlocked !== null || busy.current) return;
+    let attempt: SaveAttempt;
+    try {
+      attempt = newSaveAttempt(draft);
+    } catch {
       return;
     }
-    if (outcome.kind === 'rejected') {
-      setState((current) => ({ ...current, phase: { kind: 'editing' }, issues: outcome.issues, rejected: true }));
-    } else {
-      setState((current) => ({ ...current, phase: { kind: 'unknown' } }));
+    await send(attempt);
+  }
+
+  /** Asks the server for the outcome of the frozen attempt; never sends the save itself. */
+  async function lookup(attempt: SaveAttempt) {
+    if (!api || busy.current) return;
+    busy.current = true;
+    setState((current) => ({ ...current, phase: { kind: 'checking', attempt } }));
+    try {
+      const answer = await api.saveResult(attempt.planId, attempt.employeeId, attempt.key, attempt.body);
+      if (answer.state === 'COMPLETED') {
+        committed(answer.result);
+        return;
+      }
+      setState((current) => ({
+        ...current,
+        phase: answer.state === 'IN_PROGRESS'
+          ? { kind: 'running', attempt }
+          : answer.state === 'NOT_COMPLETED' ? { kind: 'not-completed', attempt } : { kind: 'unresolved' },
+      }));
+    } catch (error) {
+      const failure = classifyLookupError(error);
+      setState((current) => ({
+        ...current,
+        phase: failure === 'in-progress'
+          ? { kind: 'running', attempt }
+          : failure === 'gone' || failure === 'forbidden'
+            ? { kind: 'terminal', reason: failure }
+            : { kind: 'unknown', attempt, lookupFailed: true },
+      }));
+    } finally {
+      busy.current = false;
     }
     setFocusAlert({});
   }
 
-  const saveBlocked = !save
-    ? 'Vorschau: Das Speichern eines ganzen Monats ist noch nicht freigegeben. Es wird nichts gespeichert.'
+  const block = draftBlock(draft, calendar);
+  const saveBlocked = !api
+    ? PREVIEW_BLOCK
     : phase.kind === 'saving'
       ? 'Der Monat wird gespeichert …'
-      : phase.kind === 'unknown'
-        ? 'Prüfen Sie zuerst den aktuellen Stand.'
-        : phase.kind === 'verifying'
-          ? 'Der aktuelle Stand wird geladen …'
-          : draft.choices.size === 0
-            ? 'Es gibt keine ungespeicherten Änderungen.'
-            : draft.conflicts.size > 0
-              ? 'Entscheiden Sie zuerst über die inzwischen geänderten Dienste.'
-              : fixes.length > 0
-                ? `Korrigieren Sie zuerst ${plural(fixes.length, 'Tag', 'Tage')} unter „Korrektur nötig“.`
-                : null;
+      : phase.kind === 'checking'
+        ? 'Das Ergebnis wird abgefragt …'
+        : phase.kind === 'unknown'
+          ? 'Fragen Sie zuerst das Ergebnis des letzten Speicherns ab.'
+          : phase.kind === 'running'
+            ? 'Das letzte Speichern wird noch verarbeitet. Fragen Sie das Ergebnis erneut ab.'
+            : phase.kind === 'not-completed'
+              ? 'Entscheiden Sie zuerst, wie es mit dem nicht abgeschlossenen Speichern weitergeht.'
+              : phase.kind === 'unresolved'
+                ? 'Laden Sie zuerst den aktuellen Stand.'
+                : phase.kind === 'terminal'
+                  ? 'Dieser Monat kann hier nicht gespeichert werden.'
+                  : phase.kind === 'verifying'
+                    ? reloadFailed ? 'Laden Sie den aktuellen Stand erneut.' : 'Der aktuelle Stand wird geladen …'
+                    : reloading
+                      ? 'Der aktuelle Stand wird geladen …'
+                      : phase.kind === 'refused' && phase.refusal.needsReload
+                        ? 'Laden Sie zuerst den aktuellen Stand.'
+                        : block === 'NO_CHANGES'
+                          ? 'Es gibt keine ungespeicherten Änderungen.'
+                          : block === 'CONFLICTS'
+                            ? 'Entscheiden Sie zuerst über die inzwischen geänderten Dienste.'
+                            : block === 'CORRECTIONS'
+                              ? `Korrigieren Sie zuerst ${plural(fixes.length, 'Tag', 'Tage')} unter „Korrektur nötig“.`
+                              : null;
+  const reloadDisabled = reloading || ['saving', 'checking', 'unknown', 'running', 'terminal'].includes(phase.kind);
 
   return (
     <div className="month-planner">
-      {!save && (
+      {!api && (
         <aside className="preview-notice month-planner__preview" aria-label="Hinweis zur Vorschau">
           <p>
             <strong>Vorschau:</strong> Monat einer Person planen – noch ohne Speichern. Ihre Auswahl bleibt nur in
@@ -351,52 +492,22 @@ export function EmployeeMonthPlanner({
         </aside>
       )}
       <PersonFacts person={person} month={month} context={context} />
-      {calendar.status === 'unknown' && (
-        <p className="employees-card__hint">
-          Betriebstage des Projekts sind hier noch nicht hinterlegt: Die Ansicht sperrt keine Wochentage. Ob das
-          Projekt an einem Tag in Betrieb ist, prüft der Server beim Speichern.
-        </p>
-      )}
+      <p className="employees-card__hint">{calendarHint(calendar, state.base, month)}</p>
 
       {/* Always mounted, so screen readers announce new messages. */}
       <div role="status" aria-live="polite">
         {state.message && <p className="employees__notice">{state.message}</p>}
       </div>
-      {state.rejected && (
-        <div className="planning-editor__problem" role="alert">
-          <h4 ref={alertRef} tabIndex={-1}>Monat nicht gespeichert</h4>
-          <p>
-            Es wurde nichts gespeichert; Ihre Auswahl ist erhalten.{' '}
-            {issues.length === 0
-              ? 'Laden Sie den aktuellen Stand und prüfen Sie Ihre Auswahl.'
-              : `Bitte korrigieren Sie ${plural(new Set(issues.map((issue) => issue.date)).size, 'Tag', 'Tage')}:`}
-          </p>
-          {issues.length > 0 && (
-            <ul>
-              {issues.map((issue) => (
-                <li key={`${issue.date}|${issue.kind ?? ''}|${issue.reason}`}>
-                  <button type="button" className="month-planner__link" onClick={() => focusDate(issue.date)}>
-                    {formatDate(issue.date)}{issue.kind ? `, ${SHIFT_TYPE_LABELS[issue.kind]}` : ''}
-                  </button>
-                  : {DAY_ISSUE_TEXT[issue.reason]}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-      {(phase.kind === 'unknown' || (phase.kind === 'verifying' && phase.after === 'unknown')) && (
-        <div className="planning-editor__problem" role="alert">
-          <h4 ref={alertRef} tabIndex={-1}>Ergebnis unbekannt</h4>
-          <p>
-            Die Antwort des Servers ist nicht angekommen. Ob der Monat gespeichert wurde, ist unklar. Ihre Auswahl
-            bleibt erhalten. Prüfen Sie den aktuellen Stand, bevor Sie erneut speichern.
-          </p>
-          <button type="button" className="employees-button" disabled={reloading} onClick={reload}>
-            Aktuellen Stand prüfen
-          </button>
-        </div>
-      )}
+      <SaveAlert
+        phase={phase}
+        issues={issues}
+        reloading={reloading}
+        alertRef={alertRef}
+        onFocusDate={focusDate}
+        onLookup={(attempt) => void lookup(attempt)}
+        onResend={(attempt) => void send(attempt)}
+        onReload={reload}
+      />
 
       <div className="month-planner__layout">
         <div className="month-planner__main">
@@ -419,7 +530,7 @@ export function EmployeeMonthPlanner({
             <section className="month-planner__fixes" aria-labelledby={`${ids}-fixes`}>
               <h4 id={`${ids}-fixes`}>Korrektur nötig ({fixes.length})</h4>
               <p>
-                Diese Tage verstoßen gegen „ein Dienst pro Tag“{calendar.status === 'known' ? ' oder die Betriebstage des Projekts' : ''}.
+                Diese Tage verstoßen gegen „ein Dienst pro Tag“{calendar.status !== 'unknown' ? ' oder die Betriebstage des Projekts' : ''}.
                 Es wird nichts automatisch geändert; der Monat kann erst nach Ihrer Korrektur gespeichert werden.
               </p>
               <ul>
@@ -467,6 +578,7 @@ export function EmployeeMonthPlanner({
             locked={locked}
             plannerId={ids}
             nameOf={nameOf}
+            othersOf={othersOf}
             onRole={onRole}
             onSet={(date, value) => editDay(date, (current) => setDay(current, date, value))}
             onRevert={(date) => editDay(date, (current) => revertDay(current, date))}
@@ -527,12 +639,7 @@ export function EmployeeMonthPlanner({
           {draft.conflicts.size > 0 && ` · ${plural(draft.conflicts.size, 'Tag', 'Tage')} prüfen`}
           {fixes.length > 0 && ` · ${plural(fixes.length, 'Tag', 'Tage')} korrigieren`}
         </p>
-        <button
-          type="button"
-          className="employees-button"
-          disabled={reloading || locked}
-          onClick={reload}
-        >
+        <button type="button" className="employees-button" disabled={reloadDisabled} onClick={reload}>
           Aktuellen Stand laden
         </button>
         <button
@@ -545,7 +652,7 @@ export function EmployeeMonthPlanner({
           {phase.kind === 'saving' ? 'Monat wird gespeichert …' : 'Monat speichern'}
         </button>
         {saveBlocked !== null && <p id={`${ids}-save-blocked`} className="month-planner__save-note">{saveBlocked}</p>}
-        {plan.status === 'PUBLISHED' && (
+        {shownPlan.status === 'PUBLISHED' && (
           <p className="month-planner__save-note">
             Der Plan ist veröffentlicht: Gespeicherte Änderungen gelten sofort, ohne erneutes Veröffentlichen.
           </p>
@@ -553,6 +660,125 @@ export function EmployeeMonthPlanner({
       </div>
     </div>
   );
+}
+
+type SaveAlertProps = {
+  phase: Phase;
+  issues: readonly DayIssue[];
+  reloading: boolean;
+  alertRef: RefObject<HTMLHeadingElement | null>;
+  onFocusDate: (date: DateOnly) => void;
+  onLookup: (attempt: SaveAttempt) => void;
+  onResend: (attempt: SaveAttempt) => void;
+  onReload: () => void;
+};
+
+function Problem({ title, alertRef, children }: { title: string; alertRef: RefObject<HTMLHeadingElement | null>; children: ReactNode }) {
+  return (
+    <div className="planning-editor__problem" role="alert">
+      <h4 ref={alertRef} tabIndex={-1}>{title}</h4>
+      {children}
+    </div>
+  );
+}
+
+const RECONCILE = 'Aktuellen Stand laden und Auswahl prüfen';
+
+/** The one alert of a save: refusal, unknown outcome and its lookup, or a terminal state. */
+function SaveAlert({ phase, issues, reloading, alertRef, onFocusDate, onLookup, onResend, onReload }: SaveAlertProps) {
+  switch (phase.kind) {
+    case 'refused': {
+      const { refusal } = phase;
+      return (
+        <Problem title={REFUSAL_TITLE[refusal.stage]} alertRef={alertRef}>
+          <p>{refusalText(refusal)}</p>
+          {issues.length > 0 && (
+            <ul>
+              {issues.map((issue) => (
+                <li key={`${issue.date}|${issue.kind}`}>
+                  <button type="button" className="month-planner__link" onClick={() => onFocusDate(issue.date)}>
+                    {formatDate(issue.date)}, {SHIFT_TYPE_LABELS[issue.kind]}
+                  </button>
+                  : {DAY_ISSUE_TEXT[issue.reason]}
+                </li>
+              ))}
+            </ul>
+          )}
+          {refusal.correlationId && <p className="employee-form__hint">Referenz: {refusal.correlationId}</p>}
+        </Problem>
+      );
+    }
+    case 'unknown':
+    case 'checking':
+      return (
+        <Problem title="Ergebnis unbekannt" alertRef={alertRef}>
+          <p>
+            Die Antwort des Servers ist nicht angekommen. Ob der Monat gespeichert wurde, ist unklar; Ihre Auswahl
+            bleibt erhalten. Fragen Sie zuerst das Ergebnis ab – es wird dabei nichts erneut gespeichert.
+          </p>
+          {phase.kind === 'unknown' && phase.lookupFailed && (
+            <p>Die Abfrage ist fehlgeschlagen. Versuchen Sie es erneut.</p>
+          )}
+          <button
+            type="button"
+            className="employees-button employees-button--primary"
+            disabled={phase.kind === 'checking'}
+            onClick={() => onLookup(phase.attempt)}
+          >
+            {phase.kind === 'checking' ? 'Ergebnis wird abgefragt …' : 'Ergebnis abfragen'}
+          </button>
+        </Problem>
+      );
+    case 'running':
+      return (
+        <Problem title="Speichern läuft noch" alertRef={alertRef}>
+          <p>Der Server verarbeitet das Speichern noch. Fragen Sie das Ergebnis in einem Moment erneut ab.</p>
+          <button type="button" className="employees-button employees-button--primary" onClick={() => onLookup(phase.attempt)}>
+            Ergebnis erneut abfragen
+          </button>
+        </Problem>
+      );
+    case 'not-completed':
+      return (
+        <Problem title="Monat nicht gespeichert" alertRef={alertRef}>
+          <p>
+            Der Server bestätigt: Das letzte Speichern wurde nicht abgeschlossen, es wurde nichts gespeichert. Sie
+            können dieselbe Auswahl unverändert erneut speichern – der Server prüft sie dann vollständig neu – oder
+            zuerst den aktuellen Stand laden und Ihre Auswahl prüfen.
+          </p>
+          <div className="employee-form__actions">
+            <button type="button" className="employees-button employees-button--primary" onClick={() => onResend(phase.attempt)}>
+              Unverändert erneut speichern
+            </button>
+            <button type="button" className="employees-button" disabled={reloading} onClick={onReload}>{RECONCILE}</button>
+          </div>
+        </Problem>
+      );
+    case 'unresolved':
+      return (
+        <Problem title="Ergebnis nicht feststellbar" alertRef={alertRef}>
+          <p>
+            Ob der Monat gespeichert wurde, lässt sich nicht mehr feststellen. Ihre Auswahl ist erhalten. Laden Sie
+            den aktuellen Stand und prüfen Sie Ihre Auswahl, bevor Sie erneut speichern.
+          </p>
+          <button type="button" className="employees-button employees-button--primary" disabled={reloading} onClick={onReload}>
+            {RECONCILE}
+          </button>
+        </Problem>
+      );
+    case 'terminal':
+      return (
+        <Problem title={phase.reason === 'gone' ? 'Monat nicht mehr verfügbar' : 'Aktion nicht erlaubt'} alertRef={alertRef}>
+          <p>
+            {phase.reason === 'gone'
+              ? 'Der Monatsplan oder die Person ist nicht mehr verfügbar. Es wurde nichts gespeichert.'
+              : 'Sie dürfen diesen Monat nicht speichern. Es wurde nichts gespeichert. Laden Sie die Seite neu.'}
+          </p>
+        </Problem>
+      );
+    default:
+      return null;
+  }
 }
 
 function PersonFacts({ person, month, context }: { person: MatrixRow; month: MonthKey; context: PlannerContext }) {
@@ -611,6 +837,13 @@ function shortState(after: ReturnType<typeof wanted>, status: DayStatus): string
   if (after === 'BOTH') return 'Tag + Nacht';
   if (after === null) return status === 'unchanged' ? '–' : 'Frei';
   return PAINT_MODE_LABELS[after.kind];
+}
+
+/** Text of existing work kept on a date the calendar does not open, or null. */
+function keptText(draft: EmployeeMonthDraft, date: DateOnly, calendar: ProjectCalendar): string | null {
+  if (!keptOnBlockedDay(draft, date, calendar)) return null;
+  const blocked = calendarBlock(calendar, date);
+  return blocked === null ? null : KEPT_ON_BLOCKED_DAY_TEXT[blocked];
 }
 
 /**
@@ -687,6 +920,7 @@ function MonthCalendar({ caption, draft, context, mode, issues, active, locked, 
                 const conflict = draft.conflicts.get(date) ?? null;
                 const found = issues.filter((issue) => issue.date === date);
                 const fix = correctionOf(draft, date, context.calendar);
+                const kept = keptText(draft, date, context.calendar);
                 const closed = isClosed(context.calendar, date);
                 const restriction = mode === null ? null : paintRestriction(context, draft, date, mode);
                 const unavailable = SLOT_KINDS.some((kind) => slots[kind].unavailable);
@@ -696,13 +930,14 @@ function MonthCalendar({ caption, draft, context, mode, issues, active, locked, 
                 const name = `${spokenDate(date)}: ${after === 'BOTH' ? 'Tagdienst und Nachtdienst, Korrektur nötig' : dayText(after)}`;
                 const description = [
                   status !== 'unchanged' ? `Geändert, bisher ${dayText(before)}, noch nicht gespeichert` : null,
-                  withoutDuty(slots, after) ? 'Dienst noch nicht angelegt' : null,
+                  withoutDuty(slots, after) ? NEW_DUTY_TEXT : null,
                   unavailable ? 'Hinweis: nicht verfügbar' : null,
                   closed ? 'Projekt an diesem Tag nicht in Betrieb' : null,
+                  kept,
                   fix ? `Korrektur nötig: ${CORRECTION_TEXT[fix]}` : null,
                   restriction && mode ? `${PAINT_MODE_LABELS[mode]} nicht möglich: ${RESTRICTION_TEXT[restriction]}` : null,
                   conflict ? conflictText(conflict, before) : null,
-                  ...found.map((issue) => `Nicht gespeichert: ${issue.kind ? `${SHIFT_TYPE_LABELS[issue.kind]}: ` : ''}${DAY_ISSUE_TEXT[issue.reason]}`),
+                  ...found.map((issue) => `Nicht gespeichert: ${SHIFT_TYPE_LABELS[issue.kind]}: ${DAY_ISSUE_TEXT[issue.reason]}`),
                 ].filter(Boolean).join('. ');
                 const classes = [
                   'month-calendar__day',
@@ -758,6 +993,7 @@ type DayDetailsProps = {
   locked: boolean;
   plannerId: string;
   nameOf: (employeeId: string) => string;
+  othersOf: (slot: SlotBase) => readonly OtherMember[] | null;
   onRole: (date: DateOnly, role: DutyRole) => void;
   onSet: (date: DateOnly, plan: DayPlan) => void;
   onRevert: (date: DateOnly) => void;
@@ -766,22 +1002,36 @@ type DayDetailsProps = {
 
 const byName = new Intl.Collator('de-DE', { sensitivity: 'base' });
 
+/** Other members of one slot, context only: they are never part of a change. */
+function othersText(kind: SlotBase['kind'], slot: SlotBase, others: readonly OtherMember[] | null, nameOf: (employeeId: string) => string): string {
+  const label = SHIFT_TYPE_LABELS[kind];
+  if (slot.dutyId === null) return `Noch kein ${label} angelegt.`;
+  if (others === null) return `${label}: weitere eingeplante Personen bleiben unverändert.`;
+  if (others.length === 0) return `${label}: keine weiteren Personen eingeplant.`;
+  const names = [...others]
+    .sort((a, b) => byName.compare(nameOf(a.employeeId), nameOf(b.employeeId)))
+    .map((other) => `${nameOf(other.employeeId)}${other.dutyRole === 'SHIFT_LEAD' ? ` (${DUTY_ROLE_LABELS.SHIFT_LEAD})` : ''}`);
+  return `${label}, weitere Personen (bleiben unverändert): ${names.join(', ')}`;
+}
+
 /**
  * The active date: wanted state, role, correction of stored data with both
  * shifts, other members of both duties (unchanged), conflicts and findings.
  */
-function DayDetails({ date, draft, context, issues, locked, plannerId, nameOf, onRole, onSet, onRevert, onResolve }: DayDetailsProps) {
+function DayDetails({ date, draft, context, issues, locked, plannerId, nameOf, othersOf, onRole, onSet, onRevert, onResolve }: DayDetailsProps) {
   const slots = daySlots(draft.base, date);
   const before = storedDay(draft.base, date);
   const after = wanted(draft, date);
   const status = dayStatus(before, after);
   const conflict = draft.conflicts.get(date) ?? null;
   const fix = correctionOf(draft, date, context.calendar);
+  const kept = keptText(draft, date, context.calendar);
   return (
     <section className="month-planner__day" aria-labelledby={`${plannerId}-day`}>
       <h4 id={`${plannerId}-day`}>Ausgewählter Tag: {spokenDate(date)}</h4>
       <p><strong>Geplant:</strong> {dayStateText(slots, before, after)}</p>
       {isClosed(context.calendar, date) && <p className="planning-day__hint">Das Projekt ist an diesem Tag nicht in Betrieb.</p>}
+      {kept && <p className="planning-day__hint">{kept}</p>}
       {fix && (
         <div className="planning-editor__problem">
           <p><StatusBadge tone="attention">Korrektur nötig</StatusBadge> {CORRECTION_TEXT[fix]}</p>
@@ -823,20 +1073,9 @@ function DayDetails({ date, draft, context, issues, locked, plannerId, nameOf, o
           })}
         </fieldset>
       )}
-      {SLOT_KINDS.map((kind) => {
-        const others = [...slots[kind].others].sort((a, b) => byName.compare(nameOf(a.employeeId), nameOf(b.employeeId)));
-        return (
-          <p key={kind} className="month-planner__others">
-            {slots[kind].dutyId === null
-              ? `Noch kein ${SHIFT_TYPE_LABELS[kind]} angelegt.`
-              : others.length === 0
-                ? `${SHIFT_TYPE_LABELS[kind]}: keine weiteren Personen eingeplant.`
-                : `${SHIFT_TYPE_LABELS[kind]}, weitere Personen (bleiben unverändert): ${others
-                  .map((other) => `${nameOf(other.employeeId)}${other.dutyRole === 'SHIFT_LEAD' ? ` (${DUTY_ROLE_LABELS.SHIFT_LEAD})` : ''}`)
-                  .join(', ')}`}
-          </p>
-        );
-      })}
+      {SLOT_KINDS.map((kind) => (
+        <p key={kind} className="month-planner__others">{othersText(kind, slots[kind], othersOf(slots[kind]), nameOf)}</p>
+      ))}
       {conflict && (
         <div className="planning-editor__problem">
           <p>{conflictText(conflict, before)}</p>
@@ -847,9 +1086,9 @@ function DayDetails({ date, draft, context, issues, locked, plannerId, nameOf, o
         </div>
       )}
       {issues.filter((issue) => issue.date === date).map((issue) => (
-        <p key={`${issue.kind ?? ''}|${issue.reason}`} className="planning-day__hint">
+        <p key={`${issue.kind}|${issue.reason}`} className="planning-day__hint">
           <StatusBadge tone="attention">Nicht gespeichert</StatusBadge>{' '}
-          {issue.kind ? `${SHIFT_TYPE_LABELS[issue.kind]}: ` : ''}{DAY_ISSUE_TEXT[issue.reason]}
+          {SHIFT_TYPE_LABELS[issue.kind]}: {DAY_ISSUE_TEXT[issue.reason]}
         </p>
       ))}
       {status !== 'unchanged' && !conflict && (

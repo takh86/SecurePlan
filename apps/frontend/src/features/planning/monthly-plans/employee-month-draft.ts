@@ -4,8 +4,9 @@
  * the employee-month workflow. One employee, every day of the plan month. The
  * admin paints dates with a mode (TAG, NACHT or FREI); the draft records what
  * the admin wants on top of the server state it was built on. It never writes
- * anything and defines no HTTP contract: `EmployeeMonthCommand` is only a
- * frontend seam that an adapter for the approved #88 contract will translate.
+ * anything. The base is either the plan's duty list (preview) or the A2
+ * employee-month read (`monthBaseFromRead`), whose exact slot tokens become
+ * the save preconditions (see `employee-month-save.ts`).
  *
  * Rules held by construction:
  * - ONE shift per employee, project and local duty date: a wanted day is TAG
@@ -16,14 +17,19 @@
  *   state only, never an absence record (sickness, leave).
  * - Other members of a duty are context only and never part of a change.
  * - An existing role (Schichtleitung) is kept unless the admin changes it.
- * - Project operating days (#90) come only from an authoritative calendar;
- *   without one no date is treated as closed and the server decides.
+ * - Project operating days come only from an authoritative calendar (A1, in
+ *   the A2 read): new or changed work needs an open date; a MISSING calendar
+ *   allows none. Existing work on such a date stays until the admin removes
+ *   it; removing is always offered. Without a calendar (preview) no date is
+ *   treated as closed and the server decides.
  */
 import { SHIFT_TYPE_LABELS } from '../../../shared/shift/shift-view';
 import type { DateOnly, MonthKey } from '../../../shared/time/month';
+import type { EmployeeMonthConflictReason } from '../../../shared/api/api-error';
 import type { Employee } from '../../employees/employee-types';
 import type { ShiftKind } from '../../projects/shift-configuration-api';
 import { eligibleForShift, employedOn } from './duty-eligibility';
+import type { EmployeeMonthRead, MonthSlot } from './employee-month-api';
 import { DUTY_ROLE_LABELS, type Duty, type DutyRole } from './monthly-plan-types';
 import { matrixDays } from './planning-matrix';
 
@@ -51,9 +57,15 @@ export type SlotBase = {
   version: number | null;
   /** The employee's current role in that duty. */
   role: Choice;
-  /** Neutral E-04 hint on the employee's membership (never a reason). */
+  /**
+   * Neutral E-04 hint (never a reason): preview = on the employee's membership;
+   * A2 read = the employee is unavailable on this date.
+   */
   unavailable: boolean;
-  /** Every other current member; a change of this employee preserves them. */
+  /**
+   * Every other current member (preview only; the A2 read never lists other
+   * people). A change of this employee preserves them.
+   */
   others: readonly OtherMember[];
 };
 
@@ -63,6 +75,8 @@ export type MonthBase = {
   /** Every calendar day of the month, in order. */
   days: readonly DateOnly[];
   slots: ReadonlyMap<SlotKey, SlotBase>;
+  /** The A2 read this base was built from: the only source of save preconditions. Absent in the preview. */
+  source?: EmployeeMonthRead;
 };
 
 /**
@@ -102,6 +116,62 @@ export function monthBase(duties: readonly Duty[], employeeId: string, month: Mo
     }
   }
   return { employeeId, month, days, slots };
+}
+
+function slotFromRead(date: DateOnly, kind: ShiftKind, slot: MonthSlot | null, unavailable: boolean): SlotBase {
+  return {
+    date,
+    kind,
+    dutyId: slot?.dutyId ?? null,
+    version: slot?.version ?? null,
+    role: slot?.assignment?.dutyRole ?? null,
+    unavailable,
+    others: [],
+  };
+}
+
+/**
+ * The base of the A2 workflow: one consistent server read of the whole month.
+ * Every slot keeps its exact duty ID and version (also empty duties and duties
+ * staffed only by others), because all of them are preconditions of the save.
+ */
+export function monthBaseFromRead(read: EmployeeMonthRead): MonthBase {
+  const unavailable = new Set(read.unavailableDates);
+  const slots = new Map<SlotKey, SlotBase>();
+  for (const day of read.days) {
+    const off = unavailable.has(day.date);
+    slots.set(slotKey(day.date, 'DAY'), slotFromRead(day.date, 'DAY', day.day, off));
+    slots.set(slotKey(day.date, 'NIGHT'), slotFromRead(day.date, 'NIGHT', day.night, off));
+  }
+  return {
+    employeeId: read.employeeId,
+    month: read.plan.monthStart.slice(0, 7),
+    days: read.days.map((day) => day.date),
+    slots,
+    source: read,
+  };
+}
+
+/** The authoritative operating days of an A2 read (CLOSED dates, or MISSING for the whole month). */
+export function calendarOfRead(read: EmployeeMonthRead): ProjectCalendar {
+  if (read.calendar === null) return MISSING_CALENDAR;
+  return { status: 'known', closed: new Set(read.days.filter((day) => day.operatingState === 'CLOSED').map((day) => day.date)) };
+}
+
+/**
+ * Other current members of a slot's duty from the page's duty read, as
+ * context only. Null when that read does not show this exact duty version:
+ * the A2 read never lists other people, and two reads of different times are
+ * never mixed into one statement.
+ */
+export function othersFromDuties(duties: readonly Duty[], slot: SlotBase, employeeId: string): readonly OtherMember[] | null {
+  if (slot.dutyId === null) return [];
+  const duty = duties.find((candidate) => candidate.id.toLowerCase() === slot.dutyId!.toLowerCase());
+  if (!duty || duty.version !== slot.version) return null;
+  const own = employeeId.toLowerCase();
+  return duty.assignments
+    .filter((member) => member.employeeId.toLowerCase() !== own)
+    .map(({ employeeId: other, dutyRole }) => ({ employeeId: other, dutyRole }));
 }
 
 export function slotOf(draft: Pick<EmployeeMonthDraft, 'base'>, key: SlotKey): SlotBase {
@@ -273,36 +343,74 @@ export function pendingChanges(draft: EmployeeMonthDraft): DayChange[] {
 }
 
 /**
- * Issue #90 (contract pending): the project's operating days in the plan
- * month, resolved by the server to company-local dates (a night counts on its
- * start date). Until that contract exists the calendar is `unknown`: the
- * client then treats no date as closed, assumes no weekend rule, and the
- * server decides.
+ * The project's operating days in the plan month (A1), resolved by the server
+ * to company-local dates (a night counts on its start date):
+ * - `known`: the effective calendar; `closed` are the dates outside its weekdays.
+ * - `missing`: no calendar applies to the month; no new work is possible on any date.
+ * - `unknown`: preview without the A2 read; no date is treated as closed and the server decides.
+ * Never an assumed Mon–Fri or seven-day week.
  */
 export type ProjectCalendar =
   | { status: 'unknown' }
+  | { status: 'missing' }
   | { status: 'known'; closed: ReadonlySet<DateOnly> };
 
 export const UNKNOWN_CALENDAR: ProjectCalendar = { status: 'unknown' };
+export const MISSING_CALENDAR: ProjectCalendar = { status: 'missing' };
 
 export function isClosed(calendar: ProjectCalendar, date: DateOnly): boolean {
   return calendar.status === 'known' && calendar.closed.has(date);
 }
 
+/** Why the calendar allows no new or changed work on a date (null = allowed or unknown). */
+export function calendarBlock(calendar: ProjectCalendar, date: DateOnly): 'CLOSED_DAY' | 'CALENDAR_MISSING' | null {
+  if (calendar.status === 'missing') return 'CALENDAR_MISSING';
+  return isClosed(calendar, date) ? 'CLOSED_DAY' : null;
+}
+
+/**
+ * True when the wanted shift of a date is new or changed work for the
+ * employee: another kind than stored, or another role. Keeping a stored shift
+ * (also the kept half of a stored Tag + Nacht) is no new work.
+ */
+export function isNewWork(draft: EmployeeMonthDraft, date: DateOnly): boolean {
+  const plan = wanted(draft, date);
+  if (plan === null || plan === 'BOTH') return false;
+  return daySlots(draft.base, date)[plan.kind].role !== plan.role;
+}
+
 /** Why a date needs a decision before the month can be saved. */
-export type CorrectionReason = 'BOTH_SHIFTS' | 'CLOSED_DAY';
+export type CorrectionReason = 'BOTH_SHIFTS' | 'CLOSED_DAY' | 'CALENDAR_MISSING';
 
 export const CORRECTION_TEXT: Record<CorrectionReason, string> = {
   BOTH_SHIFTS: 'Tagdienst und Nachtdienst gespeichert – pro Tag ist nur ein Dienst erlaubt. Wählen Sie Tag, Nacht oder Frei.',
-  CLOSED_DAY: 'Das Projekt ist an diesem Tag nicht in Betrieb. Setzen Sie den Tag auf Frei.',
+  CLOSED_DAY: 'Das Projekt ist an diesem Tag nicht in Betrieb. Nehmen Sie die Änderung zurück oder setzen Sie den Tag auf Frei.',
+  CALENDAR_MISSING: 'Für das Projekt sind in diesem Monat keine Betriebstage festgelegt. Nehmen Sie die Änderung zurück oder setzen Sie den Tag auf Frei.',
 };
 
+/**
+ * A date that blocks the save: stored Tag + Nacht without a decision, or a
+ * pending new/changed shift on a date the calendar does not open (the server
+ * would refuse the whole month). Existing work on such a date is no correction.
+ */
 export function correctionOf(draft: EmployeeMonthDraft, date: DateOnly, calendar: ProjectCalendar): CorrectionReason | null {
   const state = wanted(draft, date);
   if (state === 'BOTH') return 'BOTH_SHIFTS';
-  if (state !== null && isClosed(calendar, date)) return 'CLOSED_DAY';
-  return null;
+  if (!isNewWork(draft, date)) return null;
+  return calendarBlock(calendar, date);
 }
+
+/** Existing (unchanged) work on a date the calendar does not open: shown, kept, removable. */
+export function keptOnBlockedDay(draft: EmployeeMonthDraft, date: DateOnly, calendar: ProjectCalendar): boolean {
+  const state = wanted(draft, date);
+  if (state === null || isNewWork(draft, date)) return false;
+  return calendarBlock(calendar, date) !== null;
+}
+
+export const KEPT_ON_BLOCKED_DAY_TEXT: Record<'CLOSED_DAY' | 'CALENDAR_MISSING', string> = {
+  CLOSED_DAY: 'Bestehender Dienst an einem Tag, an dem das Projekt nicht in Betrieb ist. Er bleibt unverändert, bis Sie den Tag auf Frei setzen.',
+  CALENDAR_MISSING: 'Bestehender Dienst, obwohl für diesen Monat keine Betriebstage festgelegt sind. Er bleibt unverändert, bis Sie den Tag auf Frei setzen.',
+};
 
 export function corrections(draft: EmployeeMonthDraft, calendar: ProjectCalendar): { date: DateOnly; reason: CorrectionReason }[] {
   return draft.base.days.flatMap((date) => {
@@ -407,6 +515,7 @@ export function rebase(draft: EmployeeMonthDraft, fresh: MonthBase): { draft: Em
 export type ChangeRestriction =
   | 'PROJECT_INACTIVE'
   | 'CLOSED_DAY'
+  | 'CALENDAR_MISSING'
   | 'UNKNOWN_PERSON'
   | 'NOT_ASSIGNED'
   | 'INACTIVE'
@@ -417,6 +526,7 @@ export type ChangeRestriction =
 export const RESTRICTION_TEXT: Record<ChangeRestriction, string> = {
   PROJECT_INACTIVE: 'Projekt inaktiv: nur Frei möglich',
   CLOSED_DAY: 'Projekt an diesem Tag nicht in Betrieb',
+  CALENDAR_MISSING: 'keine Betriebstage festgelegt: nur Frei möglich',
   UNKNOWN_PERSON: 'Person nicht mehr vorhanden: nur Frei möglich',
   NOT_ASSIGNED: 'im Monat nicht dem Projekt zugeordnet: nur Frei möglich',
   INACTIVE: 'Person deaktiviert: nur Frei möglich',
@@ -431,9 +541,12 @@ export type PlannerContext = {
   /** Assigned to the plan's project for the plan month (A09). */
   assigned: boolean;
   projectActive: boolean;
-  /** Whether a choice may target a date/kind without a duty (open #88 decision). */
+  /**
+   * Whether a choice may target a date/kind without a duty. Settled by the A2
+   * contract (the save creates the canonical duty); the preview keeps the switch.
+   */
   newDuties: boolean;
-  /** Operating days (#90); `unknown` until the contract exists. */
+  /** Operating days: from the A2 read, or `unknown` in the preview. */
   calendar: ProjectCalendar;
 };
 
@@ -444,7 +557,8 @@ export type PlannerContext = {
 export function changeRestriction(context: PlannerContext, slot: SlotBase, choice: Choice): ChangeRestriction | null {
   if (choice === null || choice === slot.role) return null;
   if (!context.projectActive) return 'PROJECT_INACTIVE';
-  if (isClosed(context.calendar, slot.date)) return 'CLOSED_DAY';
+  const blocked = calendarBlock(context.calendar, slot.date);
+  if (blocked !== null) return blocked;
   if (context.employee === null) return 'UNKNOWN_PERSON';
   if (!context.assigned) return 'NOT_ASSIGNED';
   if (context.employee.status !== 'ACTIVE') return 'INACTIVE';
@@ -462,31 +576,31 @@ export function paintRestriction(context: PlannerContext, draft: EmployeeMonthDr
 }
 
 /**
- * A rejected save's finding for one date (and kind, if known). Frontend
- * categories named after the existing staffing codes; the #88/#90 contract
- * decides how the server reports them. Texts stay neutral (no absence reason).
+ * A refused save's finding for one date and shift: exactly the frozen A2
+ * reason enum (`AtomicConflict.conflicts[].reason`). Texts stay neutral: no
+ * absence reason, no lease holder, no other person (their problems are
+ * PRESERVED_ROSTER_CONFLICT).
  */
-export type DayIssueReason =
-  | 'EMPLOYEE_UNAVAILABLE'
-  | 'DUTY_ASSIGNMENT_CONFLICT'
-  | 'EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT'
-  | 'EMPLOYEE_NOT_EMPLOYED_FOR_DAY'
-  | 'ONE_SHIFT_PER_DAY'
-  | 'PROJECT_CLOSED_DAY'
-  | 'CHANGED_ON_SERVER'
-  | 'REJECTED';
+export type DayIssueReason = EmployeeMonthConflictReason;
 
-export type DayIssue = { date: DateOnly; kind: ShiftKind | null; reason: DayIssueReason };
+export type DayIssue = { date: DateOnly; kind: ShiftKind; reason: DayIssueReason };
 
 export const DAY_ISSUE_TEXT: Record<DayIssueReason, string> = {
-  EMPLOYEE_UNAVAILABLE: 'An diesem Tag nicht verfügbar.',
-  DUTY_ASSIGNMENT_CONFLICT: 'Überschneidet sich zeitlich mit einem anderen Dienst dieser Person.',
-  EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT: 'Nicht für diese Dienstart freigegeben.',
+  PLAN_CONCURRENT_MODIFICATION: 'Inzwischen geändert. Laden Sie den aktuellen Stand.',
+  ACTIVE_DUTY_EDIT: 'Dieser Dienst wird gerade bearbeitet. Speichern Sie später erneut.',
+  PRESERVED_ROSTER_CONFLICT: 'Mit der übrigen Besetzung dieses Dienstes nicht möglich. Klären Sie den Dienst in der Ansicht „Alle Personen“.',
+  PROJECT_INACTIVE: 'Das Projekt ist inaktiv.',
+  PROJECT_CALENDAR_MISSING: 'Für das Projekt sind keine Betriebstage festgelegt.',
+  PROJECT_CLOSED_WEEKDAY: 'Das Projekt ist an diesem Tag nicht in Betrieb.',
+  SHIFT_CONFIGURATION_MISSING: 'Für diese Dienstart sind im Monat keine Schichtzeiten festgelegt.',
+  DUTY_TIME_RANGE_INVALID: 'Die Schichtzeit lässt sich für diesen Tag nicht bilden.',
+  EMPLOYEE_INACTIVE: 'Die Person ist deaktiviert.',
   EMPLOYEE_NOT_EMPLOYED_FOR_DAY: 'An diesem Tag nicht beschäftigt.',
-  ONE_SHIFT_PER_DAY: 'Pro Tag ist nur ein Dienst möglich (Tag oder Nacht).',
-  PROJECT_CLOSED_DAY: 'Das Projekt ist an diesem Tag nicht in Betrieb.',
-  CHANGED_ON_SERVER: 'Inzwischen geändert. Laden Sie den aktuellen Stand.',
-  REJECTED: 'Diese Auswahl wurde nicht angenommen.',
+  EMPLOYEE_NOT_ASSIGNED_TO_PROJECT_MONTH: 'Im Monat nicht diesem Projekt zugeordnet.',
+  EMPLOYEE_NOT_ELIGIBLE_FOR_SHIFT: 'Nicht für diese Dienstart freigegeben.',
+  EMPLOYEE_UNAVAILABLE: 'An diesem Tag nicht verfügbar.',
+  EMPLOYEE_DAILY_SHIFT_CONFLICT: 'Pro Tag ist nur ein Dienst möglich (Tag oder Nacht).',
+  DUTY_ASSIGNMENT_CONFLICT: 'Überschneidet sich zeitlich mit einem anderen Dienst dieser Person.',
 };
 
 /** Issues that still apply after the admin changed one date (that date's findings are outdated). */
@@ -505,6 +619,9 @@ export function dayText(state: DayState): string {
   return `${KIND[state.kind]} (${ROLE[state.role]})`;
 }
 
+/** A wanted shift without a duty: the A2 save creates the canonical duty (P2). */
+export const NEW_DUTY_TEXT = 'Dienst wird beim Speichern angelegt';
+
 /** Whether the wanted shift of a date has no duty yet. */
 export function withoutDuty(slots: Record<ShiftKind, SlotBase>, plan: DayState): boolean {
   return plan !== null && plan !== 'BOTH' && slots[plan.kind].dutyId === null;
@@ -513,7 +630,7 @@ export function withoutDuty(slots: Record<ShiftKind, SlotBase>, plan: DayState):
 /** Summary line of one change, e.g. `Nachtdienst (Mitarbeitende) statt Tagdienst (Mitarbeitende)`. */
 export function changeText(change: Pick<DayChange, 'before' | 'after' | 'status' | 'slots'>): string {
   const { before, after } = change;
-  const suffix = withoutDuty(change.slots, after) ? ' – Dienst noch nicht angelegt' : '';
+  const suffix = withoutDuty(change.slots, after) ? ` – ${NEW_DUTY_TEXT}` : '';
   switch (change.status) {
     case 'added':
       return `neu: ${dayText(after)}${suffix}`;
@@ -534,7 +651,7 @@ export function dayStateText(slots: Record<ShiftKind, SlotBase>, before: DayStat
   const status = dayStatus(before, after);
   if (status === 'unchanged') parts.push(after === 'BOTH' ? 'Tagdienst und Nachtdienst gespeichert, Korrektur nötig' : dayText(after));
   else parts.push(`${dayText(after)}, bisher ${dayText(before)}, noch nicht gespeichert`);
-  if (withoutDuty(slots, after)) parts.push('Dienst noch nicht angelegt');
+  if (withoutDuty(slots, after)) parts.push(NEW_DUTY_TEXT);
   if (SLOT_KINDS.some((kind) => slots[kind].unavailable)) parts.push('Hinweis: nicht verfügbar');
   return parts.join('; ');
 }
@@ -572,59 +689,12 @@ export function calendarWeeks(days: readonly DateOnly[]): (DateOnly | null)[][] 
   return weeks;
 }
 
-/** Stored duty, version and the employee's role of one slot, as a choice was based on it. */
-export type SlotBasis = { dutyId: string | null; version: number | null; role: Choice };
+/** Why the month cannot be saved yet, from the draft alone (null = nothing in the draft blocks it). */
+export type DraftBlock = 'NO_CHANGES' | 'CONFLICTS' | 'CORRECTIONS';
 
-/**
- * Frontend seam for the future atomic save (#88). Per changed date it carries
- * the wanted plan (one shift with a role, or Frei) and the stored state of
- * both slots it was based on, so an adapter can build a desired-state or a
- * delta request. It is NOT an approved API shape and never lists other members.
- */
-export type EmployeeMonthDayChange = {
-  date: DateOnly;
-  to: DayPlan;
-  basedOn: Record<ShiftKind, SlotBasis>;
-};
-
-export type EmployeeMonthCommand = {
-  planId: string;
-  employeeId: string;
-  month: MonthKey;
-  days: readonly EmployeeMonthDayChange[];
-};
-
-function basis(slot: SlotBase): SlotBasis {
-  return { dutyId: slot.dutyId, version: slot.version, role: slot.role };
+export function draftBlock(draft: EmployeeMonthDraft, calendar: ProjectCalendar): DraftBlock | null {
+  if (draft.choices.size === 0) return 'NO_CHANGES';
+  if (draft.conflicts.size > 0) return 'CONFLICTS';
+  if (corrections(draft, calendar).length > 0) return 'CORRECTIONS';
+  return null;
 }
-
-/**
- * The command for one save, or null when nothing is pending, a conflict is
- * undecided or a date still needs a correction (both shifts, closed day).
- */
-export function monthCommand(draft: EmployeeMonthDraft, planId: string, calendar: ProjectCalendar): EmployeeMonthCommand | null {
-  if (draft.choices.size === 0 || draft.conflicts.size > 0 || corrections(draft, calendar).length > 0) return null;
-  return {
-    planId,
-    employeeId: draft.base.employeeId,
-    month: draft.base.month,
-    days: pendingChanges(draft).map(({ date, after, slots }) => ({
-      date,
-      to: after,
-      basedOn: { DAY: basis(slots.DAY), NIGHT: basis(slots.NIGHT) },
-    })),
-  };
-}
-
-/**
- * Outcome of one atomic save attempt as the editor needs it. `rejected`
- * guarantees that nothing was saved; `unknown` (lost or unreadable answer)
- * guarantees nothing and requires a re-read before another attempt.
- */
-export type EmployeeMonthSaveOutcome =
-  | { kind: 'saved' }
-  | { kind: 'rejected'; issues: readonly DayIssue[] }
-  | { kind: 'unknown' };
-
-/** Port to the future #88 adapter; the production route provides none yet. */
-export type EmployeeMonthSave = (command: EmployeeMonthCommand) => Promise<EmployeeMonthSaveOutcome>;

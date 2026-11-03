@@ -14,8 +14,12 @@ import {
   emptyDraft,
   issuesAfterEdit,
   keepChoice,
+  draftBlock,
+  isNewWork,
+  keptOnBlockedDay,
+  calendarOfRead,
   monthBase,
-  monthCommand,
+  monthBaseFromRead,
   monthSummary,
   paint,
   paintRestriction,
@@ -33,6 +37,7 @@ import {
   type ProjectCalendar,
 } from './employee-month-draft';
 import { JONAS_ID, LEA_ID, MIRA_ID, OSKAR_ID, duty, member, staff } from './monthly-planning.test-support';
+import { ALL_WEEK, MON_TO_FRI, readFixture } from './employee-month.test-support';
 
 /** `2026-12-DD`. */
 function dec(day: number): string {
@@ -142,7 +147,7 @@ describe('#88 employee-month draft — paint modes, one shift per date', () => {
     draft = paint(draft, dec(3), 'NIGHT');
     const [change] = pendingChanges(draft);
     expect(change).toMatchObject({ date: dec(3), status: 'switched', before: { kind: 'DAY' }, after: { kind: 'NIGHT', role: 'EMPLOYEE' } });
-    expect(changeText(change)).toBe('Nachtdienst (Mitarbeitende) statt Tagdienst (Mitarbeitende) – Dienst noch nicht angelegt');
+    expect(changeText(change)).toBe('Nachtdienst (Mitarbeitende) statt Tagdienst (Mitarbeitende) – Dienst wird beim Speichern angelegt');
     draft = paint(draft, dec(3), 'DAY');
     expect(draft.choices.size).toBe(0);
   });
@@ -198,8 +203,7 @@ describe('#88 employee-month draft — paint modes, one shift per date', () => {
             expect(wanted(draft, dec(3))).not.toBe('BOTH');
             expect(wanted(draft, dec(3))).toEqual(third === 'FREE' ? null : expect.objectContaining({ kind: third }));
             expectOneShiftPerDate(draft);
-            const command = monthCommand(draft, 'plan-1', UNKNOWN_CALENDAR);
-            for (const day of command?.days ?? []) expect(day.to === null || day.to.kind === third).toBe(true);
+            for (const change of pendingChanges(draft)) expect(change.after === null || change.after.kind === third).toBe(true);
           }
         }
       }
@@ -211,7 +215,7 @@ describe('#88 employee-month draft — paint modes, one shift per date', () => {
     expect(dayText(null)).toBe('Frei (nicht eingeplant)');
     expect(dayStateText(slots, null, null)).toBe('Frei (nicht eingeplant)');
     expect(dayStateText(slots, null, { kind: 'DAY', role: 'EMPLOYEE' }))
-      .toBe('Tagdienst (Mitarbeitende), bisher Frei (nicht eingeplant), noch nicht gespeichert; Dienst noch nicht angelegt');
+      .toBe('Tagdienst (Mitarbeitende), bisher Frei (nicht eingeplant), noch nicht gespeichert; Dienst wird beim Speichern angelegt');
     expect(`${dayText(null)} ${dayStateText(slots, null, null)}`).not.toMatch(/krank|Urlaub|abwesend|Abwesenheit/i);
   });
 
@@ -225,14 +229,14 @@ describe('#88 employee-month draft — paint modes, one shift per date', () => {
 describe('#88 employee-month draft — stored dates with both shifts', () => {
   const both = [dayDuty(3, { assignments: [member(MIRA_ID)] }), nightDuty(3, { assignments: [member(MIRA_ID, 'SHIFT_LEAD'), member(JONAS_ID)] })];
 
-  it('stays visible as "Korrektur nötig", is never changed on load and blocks the month command', () => {
+  it('stays visible as "Korrektur nötig", is never changed on load and blocks the save', () => {
     let draft = draftFor(both);
     expect(wanted(draft, dec(3))).toBe('BOTH');
     expect(draft.choices.size).toBe(0);
     expect(corrections(draft, UNKNOWN_CALENDAR)).toEqual([{ date: dec(3), reason: 'BOTH_SHIFTS' }]);
     expect(monthSummary(draft).both).toBe(1);
     draft = paint(draft, dec(10), 'DAY');
-    expect(monthCommand(draft, 'plan-1', UNKNOWN_CALENDAR)).toBeNull();
+    expect(draftBlock(draft, UNKNOWN_CALENDAR)).toBe('CORRECTIONS');
     // A newer read keeps it visible as well.
     expect(wanted(rebase(draft, monthBase(both, MIRA_ID, '2026-12')).draft, dec(3))).toBe('BOTH');
   });
@@ -244,14 +248,9 @@ describe('#88 employee-month draft — stored dates with both shifts', () => {
     const [change] = pendingChanges(night);
     expect(change.status).toBe('corrected');
     expect(changeText(change)).toBe('nur noch Nachtdienst (Schichtleitung); Tagdienst wird ausgetragen');
-    expect(monthCommand(night, 'plan-1', UNKNOWN_CALENDAR)!.days).toEqual([{
-      date: dec(3),
-      to: { kind: 'NIGHT', role: 'SHIFT_LEAD' },
-      basedOn: {
-        DAY: { dutyId: both[0].id, version: both[0].version, role: 'EMPLOYEE' },
-        NIGHT: { dutyId: both[1].id, version: both[1].version, role: 'SHIFT_LEAD' },
-      },
-    }]);
+    // Keeping the stored night (with its Schichtleitung) is no new work; the save is no longer blocked.
+    expect(isNewWork(night, dec(3))).toBe(false);
+    expect(draftBlock(night, UNKNOWN_CALENDAR)).toBeNull();
     const free = setDay(base, dec(3), null);
     expect(pendingChanges(free)[0].status).toBe('removed');
     expect(changeText(pendingChanges(free)[0])).toBe('Frei, bisher Tagdienst und Nachtdienst');
@@ -262,45 +261,16 @@ describe('#88 employee-month draft — stored dates with both shifts', () => {
   });
 });
 
-describe('#88 employee-month draft — the command never touches other members', () => {
-  it('lists per changed date the wanted plan and the stored state of both slots, never other members', () => {
-    const shared = dayDuty(3, { version: 4, assignments: [member(JONAS_ID, 'SHIFT_LEAD'), member(LEA_ID)] });
-    const night = nightDuty(4, { version: 2, assignments: [member(MIRA_ID), member(JONAS_ID)] });
-    let draft = draftFor([shared, night]);
-    draft = paint(draft, dec(3), 'DAY');
-    draft = paint(draft, dec(4), 'FREE');
-    const command = monthCommand(draft, 'plan-1', UNKNOWN_CALENDAR)!;
-    expect(command).toEqual({
-      planId: 'plan-1',
-      employeeId: MIRA_ID,
-      month: '2026-12',
-      days: [
-        {
-          date: dec(3),
-          to: { kind: 'DAY', role: 'EMPLOYEE' },
-          basedOn: { DAY: { dutyId: shared.id, version: 4, role: null }, NIGHT: { dutyId: null, version: null, role: null } },
-        },
-        {
-          date: dec(4),
-          to: null,
-          basedOn: { DAY: { dutyId: null, version: null, role: null }, NIGHT: { dutyId: night.id, version: 2, role: 'EMPLOYEE' } },
-        },
-      ],
-    });
-    expect(JSON.stringify(command)).not.toContain(JONAS_ID);
-    expect(JSON.stringify(command)).not.toContain(LEA_ID);
-  });
-
-  it('has nothing to save without changes or while a conflict is undecided', () => {
+describe('#88 employee-month draft — what blocks a save', () => {
+  it('has nothing to save without changes, and waits while a conflict is undecided', () => {
     const stored = dayDuty(3, { assignments: [] });
-    expect(monthCommand(draftFor([stored]), 'plan-1', UNKNOWN_CALENDAR)).toBeNull();
+    expect(draftBlock(draftFor([stored]), UNKNOWN_CALENDAR)).toBe('NO_CHANGES');
     const draft = paint(draftFor([stored]), dec(3), 'DAY');
+    expect(draftBlock(draft, UNKNOWN_CALENDAR)).toBeNull();
     const moved = rebase(draft, monthBase([{ ...stored, version: 2, assignments: [member(JONAS_ID)] }], MIRA_ID, '2026-12')).draft;
     expect(moved.conflicts.size).toBe(1);
-    expect(monthCommand(moved, 'plan-1', UNKNOWN_CALENDAR)).toBeNull();
-    expect(monthCommand(keepChoice(moved, dec(3)), 'plan-1', UNKNOWN_CALENDAR)!.days).toEqual([
-      expect.objectContaining({ basedOn: expect.objectContaining({ DAY: { dutyId: stored.id, version: 2, role: null } }) }),
-    ]);
+    expect(draftBlock(moved, UNKNOWN_CALENDAR)).toBe('CONFLICTS');
+    expect(draftBlock(keepChoice(moved, dec(3)), UNKNOWN_CALENDAR)).toBeNull();
   });
 });
 
@@ -349,9 +319,10 @@ describe('#88 employee-month draft — moving onto a newer server state', () => 
     expect(report.changedElsewhere).toEqual([dec(9)]);
     expect(correctionOf(moved, dec(9), UNKNOWN_CALENDAR)).toBe('BOTH_SHIFTS');
     draft = keepChoice(moved, dec(3));
-    expect(monthCommand(draft, 'plan-1', UNKNOWN_CALENDAR)).toBeNull();
+    expect(draftBlock(draft, UNKNOWN_CALENDAR)).toBe('CORRECTIONS');
     draft = paint(draft, dec(9), 'FREE');
-    expect(monthCommand(draft, 'plan-1', UNKNOWN_CALENDAR)!.days.map((day) => [day.date, day.to?.kind ?? null])).toEqual([[dec(3), 'DAY'], [dec(9), null]]);
+    expect(draftBlock(draft, UNKNOWN_CALENDAR)).toBeNull();
+    expect(pendingChanges(draft).map((change) => [change.date, change.after?.kind ?? null])).toEqual([[dec(3), 'DAY'], [dec(9), null]]);
   });
 
   it('ignores a change of a slot the choice does not write to', () => {
@@ -417,16 +388,39 @@ describe('#88 employee-month draft — static restrictions (UX aid only)', () =>
     expect(corrections(paintAll(free, 'DAY', [5, 6]), UNKNOWN_CALENDAR)).toEqual([]);
   });
 
-  it('with an authoritative calendar, offers only Frei on a closed date and flags stored duties there (#90 boundary)', () => {
+  it('with an authoritative calendar, offers no new work on a closed date but keeps stored duties there (A1)', () => {
     const calendar: ProjectCalendar = { status: 'known', closed: new Set([dec(3), dec(24)]) };
     const context = { ...ACTIVE, calendar };
     expect(paintRestriction(context, free, dec(24), 'DAY')).toBe('CLOSED_DAY');
     expect(paintRestriction(context, free, dec(24), 'NIGHT')).toBe('CLOSED_DAY');
     expect(paintRestriction(context, free, dec(23), 'NIGHT')).toBeNull();
+    // Stored work on a closed date: kept unchanged (no correction), Frei always offered,
+    // the same mode is no change, the other kind or another role is new work and not offered.
     expect(paintRestriction(context, planned, dec(3), 'FREE')).toBeNull();
-    expect(correctionOf(planned, dec(3), calendar)).toBe('CLOSED_DAY');
-    expect(monthCommand(paint(planned, dec(10), 'DAY'), 'plan-1', calendar)).toBeNull();
-    expect(monthCommand(paint(planned, dec(3), 'FREE'), 'plan-1', calendar)!.days).toHaveLength(1);
+    expect(paintRestriction(context, planned, dec(3), 'DAY')).toBeNull();
+    expect(paintRestriction(context, planned, dec(3), 'NIGHT')).toBe('CLOSED_DAY');
+    expect(changeRestriction(context, daySlots(planned.base, dec(3)).DAY, 'SHIFT_LEAD')).toBe('CLOSED_DAY');
+    expect(correctionOf(planned, dec(3), calendar)).toBeNull();
+    expect(keptOnBlockedDay(planned, dec(3), calendar)).toBe(true);
+    expect(draftBlock(paint(planned, dec(10), 'DAY'), calendar)).toBeNull();
+    expect(draftBlock(paint(planned, dec(3), 'FREE'), calendar)).toBeNull();
+    // A pending new shift on a date that a newer calendar closes blocks the save (the server would refuse the month).
+    const pending = paint(free, dec(24), 'DAY');
+    expect(correctionOf(pending, dec(24), { status: 'unknown' })).toBeNull();
+    expect(correctionOf(pending, dec(24), calendar)).toBe('CLOSED_DAY');
+    expect(draftBlock(pending, calendar)).toBe('CORRECTIONS');
+  });
+
+  it('with a MISSING calendar, offers new work on no date and never invents a week (A1)', () => {
+    const calendar: ProjectCalendar = { status: 'missing' };
+    const context = { ...ACTIVE, calendar };
+    for (const day of [1, 5, 6, 31]) {
+      expect(paintRestriction(context, free, dec(day), 'DAY')).toBe('CALENDAR_MISSING');
+      expect(paintRestriction(context, free, dec(day), 'NIGHT')).toBe('CALENDAR_MISSING');
+    }
+    expect(paintRestriction(context, planned, dec(3), 'FREE')).toBeNull();
+    expect(keptOnBlockedDay(planned, dec(3), calendar)).toBe(true);
+    expect(correctionOf(paint(free, dec(4), 'DAY'), dec(4), calendar)).toBe('CALENDAR_MISSING');
   });
 });
 
@@ -450,10 +444,57 @@ describe('#88 employee-month draft — day findings', () => {
   it('drops every finding of an edited date and keeps the others', () => {
     const issues = [
       { date: dec(3), kind: 'DAY' as const, reason: 'EMPLOYEE_UNAVAILABLE' as const },
-      { date: dec(3), kind: 'NIGHT' as const, reason: 'ONE_SHIFT_PER_DAY' as const },
-      { date: dec(4), kind: null, reason: 'PROJECT_CLOSED_DAY' as const },
+      { date: dec(3), kind: 'NIGHT' as const, reason: 'EMPLOYEE_DAILY_SHIFT_CONFLICT' as const },
+      { date: dec(4), kind: 'DAY' as const, reason: 'PROJECT_CLOSED_WEEKDAY' as const },
     ];
     expect(issuesAfterEdit(issues, dec(3))).toEqual([issues[2]]);
     expect(issuesAfterEdit(issues, dec(5))).toEqual(issues);
+  });
+});
+
+describe('#88 A2 base — built from the consistent employee-month read', () => {
+  it('keeps every slot token (also empty duties and duties staffed only by others) and only the own role', () => {
+    const read = readFixture({
+      calendar: MON_TO_FRI,
+      unavailable: [9],
+      day: { 3: { version: 4, role: null }, 4: { version: 2, role: 'SHIFT_LEAD' } },
+      night: { 4: { version: 1, role: null }, 9: { version: 7, role: 'EMPLOYEE' } },
+    });
+    const base = monthBaseFromRead(read);
+    expect(base.source).toBe(read);
+    expect(base.days).toHaveLength(31);
+    expect(base.slots.get(slotKey(dec(3), 'DAY'))).toMatchObject({ dutyId: read.days[2].day!.dutyId, version: 4, role: null, others: [] });
+    expect(base.slots.get(slotKey(dec(4), 'DAY'))).toMatchObject({ version: 2, role: 'SHIFT_LEAD' });
+    expect(base.slots.get(slotKey(dec(4), 'NIGHT'))).toMatchObject({ version: 1, role: null });
+    expect(base.slots.get(slotKey(dec(5), 'DAY'))).toMatchObject({ dutyId: null, version: null, role: null });
+    // Unavailability is a neutral per-date fact of this employee.
+    expect(base.slots.get(slotKey(dec(9), 'DAY'))!.unavailable).toBe(true);
+    expect(base.slots.get(slotKey(dec(9), 'NIGHT'))!.unavailable).toBe(true);
+    expect(base.slots.get(slotKey(dec(10), 'DAY'))!.unavailable).toBe(false);
+    expect(storedDay(base, dec(4))).toEqual({ kind: 'DAY', role: 'SHIFT_LEAD' });
+  });
+
+  it('shows a stored Tag + Nacht from the read as BOTH and never picks a winner', () => {
+    const base = monthBaseFromRead(readFixture({ day: { 7: { role: 'EMPLOYEE' } }, night: { 7: { role: 'SHIFT_LEAD' } } }));
+    expect(storedDay(base, dec(7))).toBe('BOTH');
+    expect(correctionOf(emptyDraft(base), dec(7), UNKNOWN_CALENDAR)).toBe('BOTH_SHIFTS');
+  });
+
+  it('takes the operating days only from the read: CLOSED dates, or MISSING for the whole month', () => {
+    const configured = calendarOfRead(readFixture({ calendar: MON_TO_FRI }));
+    // 5/6 December 2026 are a Saturday and a Sunday (example calendar Mon–Fri).
+    expect(configured).toEqual({ status: 'known', closed: new Set([dec(5), dec(6), dec(12), dec(13), dec(19), dec(20), dec(26), dec(27)]) });
+    expect(calendarOfRead(readFixture({ calendar: ALL_WEEK }))).toEqual({ status: 'known', closed: new Set() });
+    expect(calendarOfRead(readFixture({ calendar: null }))).toEqual({ status: 'missing' });
+  });
+
+  it('moves a draft onto a newer read and marks a slot whose token changed', () => {
+    const first = readFixture({ day: { 3: { dutyId: 'd0000000-0000-4000-8000-0000000000aa', version: 1, role: null } } });
+    const draft = paint(emptyDraft(monthBaseFromRead(first)), dec(3), 'DAY');
+    const newer = readFixture({ day: { 3: { dutyId: 'd0000000-0000-4000-8000-0000000000aa', version: 2, role: null } } });
+    const { draft: moved, report } = rebase(draft, monthBaseFromRead(newer));
+    expect(moved.base.source).toBe(newer);
+    expect(moved.conflicts.get(dec(3))).toMatchObject({ kind: 'others', shift: 'DAY' });
+    expect(report.conflicts).toEqual([dec(3)]);
   });
 });

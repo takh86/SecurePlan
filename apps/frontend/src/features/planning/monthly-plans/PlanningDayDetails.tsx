@@ -18,8 +18,10 @@ type DayDetailsProps = {
   nameOf: (employeeId: string) => string;
   onEdit: (duty: Duty) => void;
   onCreate: (kind: ShiftKind) => void;
-  /** Opens the person's employee-month planner (#88 preview); only for a person cell. */
+  /** Opens the person's employee-month planner (#88); only for a person cell. */
   onPlanMonth?: () => void;
+  /** True while that planner is a preview without saving. */
+  monthPreview?: boolean;
   onClose: () => void;
 };
 
@@ -35,7 +37,7 @@ function peopleCount(count: number): string {
  * possible action – edit an existing duty or create a missing one. Nothing is
  * changed here; every write happens in the duty editor or the create form.
  */
-export function PlanningDayDetails({ row, date, day, monthLabel, projectActive, timeZone, nameOf, onEdit, onCreate, onPlanMonth, onClose }: DayDetailsProps) {
+export function PlanningDayDetails({ row, date, day, monthLabel, projectActive, timeZone, nameOf, onEdit, onCreate, onPlanMonth, monthPreview = true, onClose }: DayDetailsProps) {
   const entries = row?.cells.get(date) ?? [];
   const unavailable = entries.some((entry) => entry.unavailable);
   return (
@@ -73,7 +75,7 @@ export function PlanningDayDetails({ row, date, day, monthLabel, projectActive, 
           )}
           {onPlanMonth && (
             <button type="button" className="employees-button planning-day__month" onClick={onPlanMonth}>
-              Monat von {row.name} planen (Vorschau)
+              Monat von {row.name} planen{monthPreview ? ' (Vorschau)' : ''}
             </button>
           )}
         </>

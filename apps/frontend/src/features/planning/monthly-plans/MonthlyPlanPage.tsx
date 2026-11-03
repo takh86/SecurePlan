@@ -20,7 +20,8 @@ import type { ProjectsApi } from '../../projects/projects-api';
 import type { ShiftConfigurationApi, ShiftKind } from '../../projects/shift-configuration-api';
 import { DutyCreateForm } from './DutyCreateForm';
 import { DutyEditor } from './DutyEditor';
-import { EmployeeMonthPlanner } from './EmployeeMonthPlanner';
+import { EmployeeMonthPreview, EmployeeMonthWorkspace } from './EmployeeMonthWorkspace';
+import type { EmployeeMonthApi } from './employee-month-api';
 import { formatInstant } from './duty-time';
 import { NO_EMPLOYEE_PLAN_VIEW, PLAN_CREATED_STATE, PLAN_STATUS, type Duty, type MonthlyPlan } from './monthly-plan-types';
 import { sortDuties, type MonthlyPlansApi } from './monthly-plans-api';
@@ -34,6 +35,12 @@ export type PlanPageApis = {
   employees: EmployeesApi;
   assignments: ProjectAssignmentsApi;
   shiftConfigurations: ShiftConfigurationApi;
+  /**
+   * #88 A2 employee-month Save (contract A2-GATE-1, backend Draft PR #95). Absent: the
+   * "Monat einer Person planen" view is a preview without saving. Production passes it
+   * only once the A2 routes are on main.
+   */
+  employeeMonths?: EmployeeMonthApi;
 };
 
 /**
@@ -391,7 +398,7 @@ export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot 
                         checked={planView.kind === 'person'}
                         onChange={() => requestView({ kind: 'person', employeeId: lastPerson ?? rows[0]?.employeeId ?? null })}
                       />
-                      Monat einer Person planen <StatusBadge tone="attention">Vorschau</StatusBadge>
+                      Monat einer Person planen{!apis.employeeMonths && <> <StatusBadge tone="attention">Vorschau</StatusBadge></>}
                     </label>
                   </fieldset>
                   {pendingView && (
@@ -415,18 +422,34 @@ export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot 
                       employeeId={planView.employeeId}
                       onPerson={(employeeId) => requestView({ kind: 'person', employeeId })}
                       planner={(person) => (
-                        <EmployeeMonthPlanner
-                          key={person.key}
-                          plan={plan}
-                          project={ready.project}
-                          month={month}
-                          person={person}
-                          duties={allDuties}
-                          nameOf={nameOf}
-                          onReload={reloadDuties}
-                          reloading={duties.state.status === 'loading'}
-                          onEditStateChange={setEditState}
-                        />
+                        apis.employeeMonths ? (
+                          <EmployeeMonthWorkspace
+                            key={person.key}
+                            api={apis.employeeMonths}
+                            plan={plan}
+                            project={ready.project}
+                            month={month}
+                            person={person}
+                            duties={allDuties}
+                            nameOf={nameOf}
+                            onReloadDuties={reloadDuties}
+                            dutiesReloading={duties.state.status === 'loading'}
+                            onEditStateChange={setEditState}
+                          />
+                        ) : (
+                          <EmployeeMonthPreview
+                            key={person.key}
+                            plan={plan}
+                            project={ready.project}
+                            month={month}
+                            person={person}
+                            duties={allDuties}
+                            nameOf={nameOf}
+                            onReloadDuties={reloadDuties}
+                            dutiesReloading={duties.state.status === 'loading'}
+                            onEditStateChange={setEditState}
+                          />
+                        )
                       )}
                     />
                   ) : (
@@ -493,6 +516,7 @@ export function MonthlyPlanPage({ planId, basePath, apis, timeZone, publishSlot 
                                 onEdit={(duty) => requestPanel({ mode: 'edit', dutyId: duty.id, employeeId: panel.employeeId })}
                                 onCreate={(kind) => requestPanel({ mode: 'create', date: panel.date, kind, employeeId: panel.employeeId })}
                                 onPlanMonth={panel.employeeId ? () => requestView({ kind: 'person', employeeId: panel.employeeId }) : undefined}
+                                monthPreview={!apis.employeeMonths}
                                 onClose={() => requestPanel(null)}
                               />
                             ) : panel.mode === 'edit' ? (
