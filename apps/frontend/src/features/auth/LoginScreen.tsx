@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState, type ComponentType, type FormEvent } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type ComponentType, type FormEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { ApiError } from '../../shared/api/api-error';
 import { ApiErrorAlert } from '../../shared/ui/ApiErrorAlert';
@@ -11,6 +11,7 @@ import {
   type IdentityContext,
 } from './auth-api';
 import { createSessionApi, type SessionApi } from './session-api';
+import { createSessionMemory, SessionMemoryContext, type SessionMemory } from './session-memory';
 import { openSessionChannel, type OpenSessionChannel, type SessionChannel, type SessionSignal } from './session-channel';
 import './LoginScreen.css';
 
@@ -48,6 +49,8 @@ export function LoginScreen({
   const [password, setPassword] = useState('');
   const [auth, setAuthState] = useState<AuthenticatedContext | null>(null);
   const [api, setApi] = useState<SessionApi | null>(null);
+  const [memory] = useState(createSessionMemory);
+  const [sessionMemory, setSessionMemory] = useState<SessionMemory | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const inFlight = useRef(false);
   // The session the UI belongs to right now; lets a late response for an
@@ -68,18 +71,27 @@ export function LoginScreen({
   // signing in again. A late 401 for an earlier session (a write still in flight
   // across logout or re-login) is ignored: it must neither end the current
   // session nor touch the login form.
-  function setAuth(next: AuthenticatedContext | null) {
+  const setAuth = useCallback(function adoptSession(next: AuthenticatedContext | null) {
+    memory.suspend();
+    setSessionMemory(next ? memory.activate(next.identity) : null);
     currentAuth.current = next;
     setAuthState(next);
-    setApi(next && createSessionApi(next.csrfToken, (cause) => {
+    const transport = next && createSessionApi(next.csrfToken, (cause) => {
       if (currentAuth.current !== next) return;
-      setAuth(null);
+      adoptSession(null);
       setPassword('');
       setError(cause);
       setState('logged-out');
       broadcast('signed-out');
-    }));
-  }
+    });
+    setApi(next && transport && {
+      request: (path, options) => {
+        // Old forms and late callbacks must never send using the new browser cookie.
+        if (currentAuth.current !== next) return Promise.reject(new Error('Session is no longer active'));
+        return transport.request(path, options);
+      },
+    });
+  }, [memory]);
 
   useEffect(() => {
     let mounted = true;
@@ -100,7 +112,7 @@ export function LoginScreen({
       },
     );
     return () => { mounted = false; };
-  }, []);
+  }, [setAuth]);
 
   // Stable across re-renders: a parent re-render (e.g. a location change) must not
   // restart the effects below and orphan a pending session check.
@@ -113,6 +125,8 @@ export function LoginScreen({
   const recheckSession = useEffectEvent((isCurrent: () => boolean) => {
     if (inFlight.current) return;
     inFlight.current = true;
+    memory.suspend();
+    currentAuth.current = null;
     flushSync(() => setState('checking'));
     void currentSession().then(
       (restored) => {
@@ -206,6 +220,7 @@ export function LoginScreen({
     setError(null);
     try {
       await logout(auth.csrfToken);
+      memory.clear();
       setAuth(null);
       setPassword('');
       setState('logged-out');
@@ -217,6 +232,7 @@ export function LoginScreen({
       // A 401 proves this session is no longer valid; otherwise preserve
       // the authenticated state and allow explicit retry.
       if (failure instanceof ApiError && failure.status === 401) {
+        memory.clear();
         setAuth(null);
         setState('logged-out');
         onSignedOut?.();
@@ -231,13 +247,15 @@ export function LoginScreen({
 
   if (showsProtectedUi && api) {
     return (
-      <AuthenticatedView
-        identity={auth.identity}
-        api={api}
-        logout={() => { void onLogout(); }}
-        logoutPending={state === 'logging-out'}
-        logoutError={error}
-      />
+      <SessionMemoryContext value={sessionMemory}>
+        <AuthenticatedView
+          identity={auth.identity}
+          api={api}
+          logout={() => { void onLogout(); }}
+          logoutPending={state === 'logging-out'}
+          logoutError={error}
+        />
+      </SessionMemoryContext>
     );
   }
 

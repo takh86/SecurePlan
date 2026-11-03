@@ -12,6 +12,7 @@ import { createShiftConfigurationApi } from '../../projects/shift-configuration-
 import '../../employees/Employees.css';
 import '../../projects/Projects.css';
 import { deviceTimeZone } from './duty-time';
+import { createEmployeeMonthApi } from './employee-month-api';
 import { InitialPublish } from './InitialPublish';
 import { createMonthlyPlansApi } from './monthly-plans-api';
 import { MonthlyPlanPage, type PlanPageApis, type PublishSlot } from './MonthlyPlanPage';
@@ -41,6 +42,7 @@ export function MonthlyPlanningSection({ route, api, clock = systemClock, timeZo
       employees: createEmployeesApi(api),
       assignments: createProjectAssignmentsApi(api),
       shiftConfigurations: createShiftConfigurationApi(api),
+      employeeMonths: createEmployeeMonthApi(api),
     }),
     [api],
   );

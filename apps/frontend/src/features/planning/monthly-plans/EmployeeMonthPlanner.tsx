@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useSessionMemory } from '../../auth/session-memory';
 import { SHIFT_TYPE_LABELS } from '../../../shared/shift/shift-view';
 import { formatDate, formatMonthLabel, type DateOnly, type MonthKey } from '../../../shared/time/month';
 import { StatusBadge } from '../../../shared/ui/StatusBadge';
@@ -222,13 +223,34 @@ export function EmployeeMonthPlanner({
   plan, project, month, person, base, othersOf = ownOthers, nameOf, api, newDuties = true, calendar = UNKNOWN_CALENDAR,
   onReload, reloading, reloadFailed = false, onEditStateChange,
 }: PlannerProps) {
-  const [state, setState] = useState<PlannerState>(() => ({
-    base,
-    draft: emptyDraft(base),
-    phase: { kind: 'editing' },
-    issues: [],
-    message: null,
-  }));
+  const memory = useSessionMemory();
+  const memoryKey = `employee-month:${plan.id.toLowerCase()}:${person.employeeId.toLowerCase()}`;
+  const [state, setState] = useState<PlannerState>(() => {
+    const retained = api ? memory?.read(memoryKey) as PlannerState | undefined : undefined;
+    if (retained) {
+      // A fresh authorized read is supplied by Workspace before this mounts.
+      // An interrupted request is uncertain: lookup must precede any recovery.
+      const phase = retained.phase;
+      return { ...retained, phase: phase.kind === 'saving' || phase.kind === 'checking'
+        ? { kind: 'unknown', attempt: phase.attempt, lookupFailed: false } : phase };
+    }
+    return {
+      base,
+      draft: emptyDraft(base),
+      phase: { kind: 'editing' },
+      issues: [],
+      message: null,
+    };
+  });
+  useLayoutEffect(() => {
+    if (!api || !memory) return;
+    if (state.draft.choices.size > 0 || UNRESOLVED.has(state.phase.kind)
+      || state.phase.kind === 'saving' || state.phase.kind === 'checking') memory.write(memoryKey, state);
+    else memory.remove(memoryKey);
+  }, [api, memory, memoryKey, state]);
+  // Normal navigation discards the confirmed draft. A suspended session has
+  // already revoked this capability, so its unmount cannot erase retained input.
+  useLayoutEffect(() => () => memory?.remove(memoryKey), [memory, memoryKey]);
   // A newer server state moves the draft onto it during render ("adjust state on change").
   if (state.base !== base) {
     const moved = rebase(state.draft, base);
@@ -394,8 +416,8 @@ export function EmployeeMonthPlanner({
           case 'forbidden':
             return { ...current, phase: { kind: 'terminal', reason: failure.kind } };
           default:
-            // 401: nothing was saved; the session boundary shows the login.
-            return { ...current, phase: { kind: 'editing' } };
+            // The boundary hides the form. Retain the exact intent for lookup after login.
+            return { ...current, phase: { kind: 'unknown', attempt, lookupFailed: false } };
         }
       });
       setFocusAlert({});
