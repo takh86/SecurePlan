@@ -23,6 +23,8 @@ function model(
       monthStart: month,
       duties: duties.map(([dutyDate, shiftKind], i) => ({
         dutyId: randomUUID(),
+        assignmentId: randomUUID(),
+        version: 1,
         dutyDate,
         shiftKind,
         startsAt: '2026-12-31T17:00:00Z',

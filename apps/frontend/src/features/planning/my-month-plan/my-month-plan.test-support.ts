@@ -13,11 +13,16 @@ export function personalPlan(): MyMonthlyPlansResponse {
     items: [
       {
         planId: '10000000-0000-4000-8000-000000000001',
-        project: { id: '20000000-0000-4000-8000-000000000001', name: 'Synthetic Nord' },
+        project: {
+          id: '20000000-0000-4000-8000-000000000001',
+          name: 'Synthetic Nord',
+        },
         monthStart: '2026-12-01',
         duties: [
           {
             dutyId: '30000000-0000-4000-8000-000000000001',
+            assignmentId: '60000000-0000-4000-8000-000000000001',
+            version: 1,
             dutyDate: '2026-12-31',
             shiftKind: 'NIGHT',
             startsAt: '2026-12-31T17:00:00Z',

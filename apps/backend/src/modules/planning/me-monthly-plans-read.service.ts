@@ -27,6 +27,8 @@ export type OwnPlanRow = {
   project_name: string | null;
   month_start: string | null;
   duty_id: string | null;
+  assignment_id: string | null;
+  version: string | null;
   duty_date: string | null;
   shift_kind: string | null;
   duty_function: string | null;
@@ -75,6 +77,9 @@ export function toMyMonthlyPlansResponse(
     if (row.duty_id === null) continue;
     const dutyId = id(row.duty_id);
     if (
+      !row.version ||
+      !/^[1-9][0-9]*$/.test(row.version) ||
+      !Number.isSafeInteger(Number(row.version)) ||
       duties.has(dutyId) ||
       !isCivilDate(row.duty_date) ||
       row.duty_date.slice(0, 7) !== monthStart.slice(0, 7) ||
@@ -90,6 +95,8 @@ export function toMyMonthlyPlansResponse(
     duties.add(dutyId);
     plan.duties.push({
       dutyId,
+      assignmentId: id(row.assignment_id),
+      version: Number(row.version),
       dutyDate: row.duty_date,
       shiftKind: row.shift_kind === 'TAG' ? 'DAY' : 'NIGHT',
       startsAt: row.starts_at,

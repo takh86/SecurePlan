@@ -23,7 +23,12 @@ import { DatabaseService } from './database/database.service.js';
 import { HealthController } from './database/health.controller.js';
 import { ThrottlerModule } from '@nestjs/throttler';
 
-import { PLANNING_MUTATION_HANDLER, PlanningMutationDispatcher } from './common/transactions/planning-mutation.js';
+import {
+  PLANNING_MUTATION_HANDLER,
+  PlanningMutationDispatcher,
+} from './common/transactions/planning-mutation.js';
+import { CancellationRequestsController } from './modules/cancellation-replacement/cancellation-requests.controller.js';
+import { CancellationRequestsService } from './modules/cancellation-replacement/cancellation-requests.service.js';
 import { AssignmentRemovalReconciler } from './modules/cancellation-replacement/assignment-removal-reconciler.js';
 import { BusinessAuditService } from './modules/audit/business-audit.service.js';
 import { WALL_CLOCK, systemWallClock } from './common/time/wall-clock.js';
@@ -66,6 +71,7 @@ import { MePlanningStatisticsService } from './modules/planning/me-planning-stat
     ]),
   ],
   controllers: [
+    CancellationRequestsController,
     AppController,
     HealthController,
     AuthController,
@@ -106,10 +112,12 @@ import { MePlanningStatisticsService } from './modules/planning/me-planning-stat
     AccountLifecycleService,
     { provide: ACTIVATION_DELIVERY, useFactory: createActivationDelivery },
     BusinessAuditService,
+    CancellationRequestsService,
     AssignmentRemovalReconciler,
     {
       provide: PLANNING_MUTATION_HANDLER,
-      useFactory: (handler: AssignmentRemovalReconciler) => handler.reconcile.bind(handler),
+      useFactory: (handler: AssignmentRemovalReconciler) =>
+        handler.reconcile.bind(handler),
       inject: [AssignmentRemovalReconciler],
     },
     PlanningMutationDispatcher,

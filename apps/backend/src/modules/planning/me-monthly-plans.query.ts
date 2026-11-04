@@ -8,7 +8,7 @@ export const MY_MONTHLY_PLANS_QUERY = String.raw`WITH owner AS (
   SELECT d.id AS duty_id, d.company_id, d.project_id,
          d.monthly_plan_id AS plan_id, d.planning_month,
          d.duty_date, d.shift_kind, d.starts_at, d.ends_at,
-         d.time_zone, pa.duty_function
+         d.time_zone, pa.duty_function, pa.id AS assignment_id, d.concurrency_version::text AS version
   FROM owner o
   JOIN public.plan_assignments pa
     ON pa.company_id = o.company_id AND pa.employee_id = o.employee_id
@@ -61,7 +61,7 @@ export const MY_MONTHLY_PLANS_QUERY = String.raw`WITH owner AS (
 SELECT o.employee_id AS internal_owner_id,
        vp.plan_id, vp.project_id, vp.project_name,
        to_char(vp.planning_month, 'YYYY-MM-DD') AS month_start,
-       od.duty_id, to_char(od.duty_date, 'YYYY-MM-DD') AS duty_date,
+       od.assignment_id, od.version, od.duty_id, to_char(od.duty_date, 'YYYY-MM-DD') AS duty_date,
        od.shift_kind, od.duty_function, od.time_zone,
        to_char(od.starts_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS starts_at,
        to_char(od.ends_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS ends_at

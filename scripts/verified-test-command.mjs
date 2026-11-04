@@ -14,7 +14,7 @@ try {
   } else if (command === 'scripts') {
     args = ['--test', 'scripts/activation-demo.test.mjs', 'scripts/check-public.test.mjs',
       'scripts/reissue-employee-activation.test.mjs', 'scripts/disposable-test-target.test.mjs',
-      'scripts/migration-safety.test.mjs'];
+      'scripts/migration-safety.test.mjs', 'scripts/cancellation-migration-compatibility.test.mjs'];
   } else { throw new Error('Unknown verified test command'); }
   // No env-file fallback. Children inherit only the explicitly verified connection.
   const child = spawn(process.execPath, args, { cwd, env: process.env, stdio: 'inherit' });
