@@ -96,11 +96,15 @@ async function pair(
   const company = options.company ?? f.tenant.companyId,
     duty = options.duty ?? f.dutyId;
   const status = options.status ?? 'OPEN';
+  // Terminal fixture metadata must share one database instant, including microseconds.
+  const {
+    rows: [clock],
+  } = await c.query<{ at: string }>('SELECT clock_timestamp()::text AS at');
   await c.query(
     `INSERT INTO public.cancellation_requests
-    (id,company_id,assignment_id,duty_id,employee_id,submission_version,status,decided_at,decided_by_account_id)
-    VALUES($1,$2,$3,$4,$5,1,$6,CASE WHEN $6 IN ('APPROVED','REJECTED') THEN clock_timestamp() END,
-      CASE WHEN $6 IN ('APPROVED','REJECTED') THEN $7::uuid END)`,
+    (id,company_id,assignment_id,duty_id,employee_id,submission_version,status,decided_at,decided_by_account_id,created_at,updated_at)
+    VALUES($1,$2,$3,$4,$5,1,$6,CASE WHEN $6 IN ('APPROVED','REJECTED') THEN $8::timestamptz END,
+      CASE WHEN $6 IN ('APPROVED','REJECTED') THEN $7::uuid END,$8::timestamptz,$8::timestamptz)`,
     [
       cancellation,
       company,
@@ -109,6 +113,7 @@ async function pair(
       options.employee ?? f.mira.employeeId,
       status,
       f.tenant.admin.accountId,
+      clock.at,
     ],
   );
   await c.query(
