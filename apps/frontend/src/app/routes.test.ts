@@ -45,11 +45,11 @@ describe('F1 — route table', () => {
       // SP-11 PR-2: create/read slice of the monthly plan (admin only).
       ['monthly-planning', 'COMPANY_ADMIN', true],
       ['my-month-plan', 'EMPLOYEE', undefined],
+      ['my-statistics', 'EMPLOYEE', undefined],
     ]);
     const planned = APP_ROUTES.filter((route) => route.availability === 'planned');
     expect(planned.map((route) => route.id)).toEqual([
       'cancellations',
-      'my-statistics',
     ]);
     for (const route of planned) expect(route.plannedScope, route.id).toBeTruthy();
   });
