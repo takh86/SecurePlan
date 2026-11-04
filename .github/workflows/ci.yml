@@ -5,7 +5,19 @@ on:
 permissions:
   contents: read
 jobs:
-  verify:
+  # The frontend suite needs no database, secrets or build output. It runs in
+  # parallel with the backend job instead of after it; `verify` requires both.
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test --workspace=frontend
+  backend:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql://secureplan:secureplan_local@127.0.0.1:5432/secureplan
@@ -70,7 +82,6 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
-      - run: npm run test --workspace=frontend
       - run: npm run db:migrate
       - run: npm run db:migrate
       - run: npm run db:verify
@@ -92,3 +103,20 @@ jobs:
           done
           cat /tmp/secureplan-backend.log
           exit 1
+  # `verify` is the required status check of the main-ci-gate ruleset. It must
+  # run even when a gate job fails (`always()`), because a skipped required
+  # check counts as passed. It passes only if every gate job succeeded; a
+  # failed, cancelled or skipped gate job fails it.
+  verify:
+    if: always()
+    needs: [frontend, backend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every gate job to succeed
+        env:
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+        run: |
+          echo "frontend=$FRONTEND_RESULT backend=$BACKEND_RESULT"
+          test "$FRONTEND_RESULT" = success
+          test "$BACKEND_RESULT" = success
