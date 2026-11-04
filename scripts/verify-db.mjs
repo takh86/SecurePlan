@@ -58,6 +58,18 @@ try {
     AND (SELECT count(*)=3 FROM pg_constraint WHERE conrelid='public.idempotency_records'::regclass
       AND conname IN ('fk_idempotency_records__context_plan','fk_idempotency_records__context_employee','ck_idempotency_records__employee_month') AND convalidated) AS valid`);
   if (!employeeMonth.rows[0]?.valid) throw new Error("Missing employee-month receipt integrity catalogue");
+  const workflow = await client.query(`SELECT
+    EXISTS (SELECT 1 FROM schema_migrations WHERE name='0016_cr03_reconciliation.sql')
+    AND (SELECT count(*)=2 FROM pg_class WHERE oid IN
+      ('public.cancellation_requests'::regclass,'public.replacement_needs'::regclass)
+      AND relkind='r' AND relpersistence='p' AND NOT relrowsecurity AND NOT relforcerowsecurity)
+    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.plan_assignments'::regclass
+      AND conname='uq_plan_assignments__historical_identity' AND contype='u' AND convalidated)
+    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.cancellation_requests'::regclass
+      AND conname='fk_cancellation_requests__required_need' AND contype='f'
+      AND condeferrable AND condeferred AND convalidated) AS valid`);
+  if (!workflow.rows[0]?.valid) throw new Error("Missing CR-03 workflow integrity catalogue");
+  console.log("CR-03 historical identity and deferred workflow cardinality verified.");
   console.log("PostgreSQL connection and foundation migration verified.");
   console.log("SP-10 migration, revision and unique indexes verified.");
   console.log("SP-11 planning relations and live unique indexes verified.");

@@ -1,3 +1,4 @@
+import { PLANNING_RELATIONS } from '../src/modules/planning/planning-schema.js';
 /**
  * E-10 post-migration catalog check against REAL PostgreSQL.
  *
@@ -65,7 +66,7 @@ async function catalogViolations(client: Queryable, classification = CENTRAL_CLA
       .filter(({ schema, name }) => schema !== 'public' || !classified.has(name))
       .map(({ schema, name, kind }) =>
         `${schema === 'public' ? 'unclassified relation' : 'relation outside schema public'}: ${schema}.${name} (relkind ${kind})`),
-    ...classification.nonPlanning
+    ...[...classification.nonPlanning, ...PLANNING_RELATIONS]
       .filter((name) => !inPublic.has(name))
       .map((name) => `classified relation missing: public.${name}`),
   ];

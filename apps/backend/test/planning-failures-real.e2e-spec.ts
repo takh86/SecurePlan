@@ -244,7 +244,7 @@ describe.each(['plan', 'duty'] as const)('%s: real PostgreSQL technical failures
   it.each([
     ['RLS', 'ALTER TABLE public.plan_assignments ENABLE ROW LEVEL SECURITY'],
     ['forced RLS', 'ALTER TABLE public.duties FORCE ROW LEVEL SECURITY'],
-    ['unlogged table', 'ALTER TABLE public.plan_assignments SET UNLOGGED'],
+    ['unlogged table', 'ALTER TABLE public.project_operating_calendars SET UNLOGGED'],
     ['inherited child', 'CREATE TABLE public.sp79_child () INHERITS (public.duties)'],
     ['temporary shadow', 'CREATE TEMP TABLE duties (LIKE public.duties) ON COMMIT DROP'],
     ['suppressing trigger', `CREATE FUNCTION public.sp79_suppress() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$;

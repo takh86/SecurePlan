@@ -23,6 +23,8 @@ import { DatabaseService } from './database/database.service.js';
 import { HealthController } from './database/health.controller.js';
 import { ThrottlerModule } from '@nestjs/throttler';
 
+import { PLANNING_MUTATION_HANDLER, PlanningMutationDispatcher } from './common/transactions/planning-mutation.js';
+import { AssignmentRemovalReconciler } from './modules/cancellation-replacement/assignment-removal-reconciler.js';
 import { BusinessAuditService } from './modules/audit/business-audit.service.js';
 import { WALL_CLOCK, systemWallClock } from './common/time/wall-clock.js';
 import { AccountLifecycleService } from './modules/identity/account-lifecycle.service.js';
@@ -104,6 +106,13 @@ import { MePlanningStatisticsService } from './modules/planning/me-planning-stat
     AccountLifecycleService,
     { provide: ACTIVATION_DELIVERY, useFactory: createActivationDelivery },
     BusinessAuditService,
+    AssignmentRemovalReconciler,
+    {
+      provide: PLANNING_MUTATION_HANDLER,
+      useFactory: (handler: AssignmentRemovalReconciler) => handler.reconcile.bind(handler),
+      inject: [AssignmentRemovalReconciler],
+    },
+    PlanningMutationDispatcher,
     EmployeesService,
     // SP-08: projects (name + status).
     ProjectsService,

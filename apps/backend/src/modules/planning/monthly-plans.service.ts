@@ -11,7 +11,7 @@
  * Writes follow LOCK-01-L1 (T1): A accounts (lockAccountsPrefix, actor SHARE)
  * -> C company SHARE -> E employees (sorted, NO KEY UPDATE) -> P project SHARE
  * -> M monthly assignments (sorted, SHARE) -> L plan SHARE -> D UPDATE/inserts
- * -> A2 memberships UPDATE/inserts -> Q lease UPDATE -> Z audit. Every check
+ * -> A2 memberships UPDATE/inserts -> Q lease UPDATE -> W1/W2 reconciliation -> Z audit. Every check
  * after a lock is a NEW statement (READ COMMITTED sees
  * what the writers it waited for committed). The parent locks also protect
  * absent rows: assignment, employment, absence and deactivation writers hold
@@ -27,6 +27,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import type { PoolClient } from 'pg';
+import { PlanningMutationDispatcher } from '../../common/transactions/planning-mutation.js';
 import { DatabaseService } from '../../database/database.service.js';
 import { requireRow } from '../../auth/authorization/require-row.js';
 import type { TenantContext } from '../../auth/authorization/tenant-context.js';
@@ -132,6 +133,7 @@ export class MonthlyPlansService implements OnModuleInit {
     private readonly audit: BusinessAuditService,
     private readonly availability: AvailabilityService,
     private readonly publishIdempotency: PublishIdempotencyService,
+    private readonly mutations: PlanningMutationDispatcher,
   ) {}
 
   /** T6: the application does not start if the resolver misses an approved D6 golden. */
@@ -742,6 +744,10 @@ export class MonthlyPlansService implements OnModuleInit {
          RETURNING ${MEMBERSHIP_COLUMNS}`,
         [tenant.companyId, dutyId, added, added.map((id) => roster.get(id))],
       )).rows;
+      await this.mutations.dispatch(client, {
+        companyId: tenant.companyId, actorAccountId: tenant.accountId, correlationId, cause: 'DUTY_PATCH',
+        changes: [{ dutyId, removedAssignmentIds: removedRows.map((member) => member.id) }],
+      });
       await this.audit.recordBusinessAction(client, {
         companyId: tenant.companyId, actorAccountId: tenant.accountId, action: 'DUTY_UPDATED',
         resourceType: 'DUTY', resourceId: dutyId, oldValues: dutyValues(plan.id, duty), newValues: dutyValues(plan.id, updated), correlationId,
@@ -784,6 +790,10 @@ export class MonthlyPlansService implements OnModuleInit {
         [tenant.companyId, dutyId, timestamp],
       );
       await client.query('UPDATE public.edit_leases SET released_at = $3::timestamptz WHERE company_id = $1 AND duty_id = $2', [tenant.companyId, dutyId, timestamp]);
+      await this.mutations.dispatch(client, {
+        companyId: tenant.companyId, actorAccountId: tenant.accountId, correlationId, cause: 'DUTY_DELETE',
+        changes: [{ dutyId, removedAssignmentIds: memberships.rows.map((member) => member.id) }],
+      });
       await this.audit.recordBusinessAction(client, {
         companyId: tenant.companyId, actorAccountId: tenant.accountId, action: 'DUTY_REMOVED', resourceType: 'DUTY', resourceId: dutyId,
         oldValues: dutyValues(plan.id, duty), newValues: { version: toDutyVersion(removed.rows[0].version), removedAt: timestamp }, correlationId,
