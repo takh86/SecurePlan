@@ -1,5 +1,7 @@
 ﻿export type MyDuty = {
   dutyId: string;
+  assignmentId: string;
+  version: number;
   dutyDate: string;
   shiftKind: 'DAY' | 'NIGHT';
   startsAt: string;

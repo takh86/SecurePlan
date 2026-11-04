@@ -1,4 +1,5 @@
-﻿import { useId, useMemo } from 'react';
+﻿import { useId, useMemo, useState } from 'react';
+import { CancellationAction } from './CancellationAction';
 import { Link, Navigate, useNavigate, useParams } from 'react-router';
 import type { IdentityContext } from '../../auth/auth-api';
 import type { SessionApi } from '../../auth/session-api';
@@ -11,13 +12,21 @@ import {
   zonedDutyTime,
 } from '../../../shared/time/civil-time';
 import { StatusBadge } from '../../../shared/ui/StatusBadge';
-import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/ViewStates';
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from '../../../shared/ui/ViewStates';
 import { MY_MONTH_PLAN_PATH, myMonthPlanPath } from './my-month-plan-paths';
 import { createMyMonthPlanSource } from './my-month-plan-api';
 import type { MyDuty, MyMonthlyPlansResponse } from './my-month-plan-types';
 import './MyMonthPlanPage.css';
 
-type Props = { api: SessionApi; identity: IdentityContext; requestSessionRevalidation: () => void };
+type Props = {
+  api: SessionApi;
+  identity: IdentityContext;
+  requestSessionRevalidation: () => void;
+};
 
 export function MyMonthPlanPage(props: Props) {
   const { month: parameter } = useParams();
@@ -30,7 +39,13 @@ export function MyMonthPlanPage(props: Props) {
         <Link to={MY_MONTH_PLAN_PATH}>Zum aktuellen Monatsplan</Link>
       </div>
     );
-  return <ValidMonthPlan {...props} month={month} />;
+  return (
+    <ValidMonthPlan
+      key={`${props.identity.companyId}:${props.identity.accountId}:${props.identity.role}`}
+      {...props}
+      month={month}
+    />
+  );
 }
 
 function ValidMonthPlan({
@@ -44,13 +59,27 @@ function ValidMonthPlan({
     [api, identity, requestSessionRevalidation],
   );
   const { state, retry } = useReadSource(source, month);
+  const [notice, setNotice] = useState('');
+  const cancellation = {
+    api,
+    identity,
+    revalidate: requestSessionRevalidation,
+    onStale: () => {
+      setNotice(
+        'Der Dienst hat sich geändert. Der Monatsplan wird neu geladen. Bitte prüfen und bestätigen Sie den Dienst erneut.',
+      );
+      retry();
+    },
+  };
   const headingId = useId();
   const navigate = useNavigate();
   if (!month) {
     if (state.status === 'ready')
       return (
         <Navigate
-          to={myMonthPlanPath(state.data.context.currentCompanyMonth.slice(0, 7))}
+          to={myMonthPlanPath(
+            state.data.context.currentCompanyMonth.slice(0, 7),
+          )}
           replace
         />
       );
@@ -115,6 +144,7 @@ function ValidMonthPlan({
             Aktualisieren
           </button>
         </div>
+        {notice && <p role="alert">{notice}</p>}
         {state.status === 'loading' ? (
           <LoadingState label="Monatsplan wird geladen …" />
         ) : state.status === 'error' ? (
@@ -122,16 +152,23 @@ function ValidMonthPlan({
         ) : (
           <>
             {state.data.response ? (
-              <MonthPlanContent response={state.data.response} monthLabel={monthLabel} />
+              <MonthPlanContent
+                response={state.data.response}
+                monthLabel={monthLabel}
+                cancellation={cancellation}
+              />
             ) : (
-              <ErrorState error={new Error('Invalid plan response')} onRetry={retry} />
+              <ErrorState
+                error={new Error('Invalid plan response')}
+                onRetry={retry}
+              />
             )}
           </>
         )}
       </section>
       <p className="my-plan__note">
-        Angezeigt werden Ihre geplanten Dienste laut veröffentlichtem Monatsplan, keine erfassten
-        Arbeitszeiten.
+        Angezeigt werden Ihre geplanten Dienste laut veröffentlichtem
+        Monatsplan, keine erfassten Arbeitszeiten.
       </p>
     </div>
   );
@@ -140,9 +177,14 @@ function ValidMonthPlan({
 function MonthPlanContent({
   response,
   monthLabel,
+  cancellation,
 }: {
   response: MyMonthlyPlansResponse;
   monthLabel: string;
+  cancellation: Pick<
+    Parameters<typeof CancellationAction>[0],
+    'api' | 'identity' | 'onStale' | 'revalidate'
+  >;
 }) {
   if (response.items.length === 0)
     return (
@@ -165,13 +207,24 @@ function MonthPlanContent({
     <ul className="my-plan__duties">
       {duties.map(({ duty, project }) => (
         <li key={duty.dutyId}>
-          <DutyCard duty={duty} project={project} />
+          <DutyCard duty={duty} project={project} cancellation={cancellation} />
         </li>
       ))}
     </ul>
   );
 }
-function DutyCard({ duty, project }: { duty: MyDuty; project: string }) {
+function DutyCard({
+  duty,
+  project,
+  cancellation,
+}: {
+  duty: MyDuty;
+  project: string;
+  cancellation: Pick<
+    Parameters<typeof CancellationAction>[0],
+    'api' | 'identity' | 'onStale' | 'revalidate'
+  >;
+}) {
   const titleId = useId();
   const start = zonedDutyTime(duty.startsAt, duty.timeZone),
     end = zonedDutyTime(duty.endsAt, duty.timeZone);
@@ -181,15 +234,24 @@ function DutyCard({ duty, project }: { duty: MyDuty; project: string }) {
         <h3 id={titleId}>{planDateLabel(duty.dutyDate)}</h3>
         <StatusBadge tone="neutral">Geplant</StatusBadge>
       </div>
-      <p className="duty-card__type">{duty.shiftKind === 'DAY' ? 'Tagdienst' : 'Nachtdienst'}</p>
+      <p className="duty-card__type">
+        {duty.shiftKind === 'DAY' ? 'Tagdienst' : 'Nachtdienst'}
+      </p>
       <p>
         Dienstzeit: <time dateTime={duty.startsAt}>{start.time}</time>
-        {start.date !== duty.dutyDate && ` (${planDateLabel(start.date)})`} –{' '}
+        {start.date !== duty.dutyDate &&
+          ` (${planDateLabel(start.date)})`} –{' '}
         <time dateTime={duty.endsAt}>{end.time}</time>
         {end.date !== duty.dutyDate && ` (${planDateLabel(end.date)})`}
       </p>
       <p>Zeitzone: {duty.timeZone}</p>
       <p className="duty-card__project">Projekt: {project}</p>
+      <CancellationAction
+        key={`${duty.assignmentId}:${duty.version}`}
+        {...cancellation}
+        duty={duty}
+        project={project}
+      />
     </article>
   );
 }

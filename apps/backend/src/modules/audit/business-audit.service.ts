@@ -60,6 +60,7 @@ export type BusinessAuditAction =
   /** SP-13 owner approval 2026-11-02: bounded first-publication transition only. */
   | 'MONTHLY_PLAN_PUBLISHED'
   /** SP16-D1 approved CR-03 prerequisite transition vocabulary. */
+  | 'CANCELLATION_CREATED'
   | 'CANCELLATION_OBSOLETED'
   | 'REPLACEMENT_NEED_CLOSED';
 

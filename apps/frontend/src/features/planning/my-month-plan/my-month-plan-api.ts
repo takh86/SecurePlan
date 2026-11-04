@@ -1,5 +1,9 @@
 ﻿import { ApiError } from '../../../shared/api/api-error';
-import { isCivilDate, isNamedTimeZone, isUtcSecond } from '../../../shared/time/civil-time';
+import {
+  isCivilDate,
+  isNamedTimeZone,
+  isUtcSecond,
+} from '../../../shared/time/civil-time';
 import type { ReadSource } from '../../../shared/data/data-source';
 import {
   parseBaseIdentity,
@@ -8,7 +12,11 @@ import {
   type MeIdentity,
 } from '../../auth/auth-api';
 import type { SessionApi } from '../../auth/session-api';
-import type { MyDuty, MyMonthlyPlan, MyMonthlyPlansResponse } from './my-month-plan-types';
+import type {
+  MyDuty,
+  MyMonthlyPlan,
+  MyMonthlyPlansResponse,
+} from './my-month-plan-types';
 
 function invalid(): never {
   throw new ApiError('invalid-response', 200, null, null);
@@ -30,12 +38,18 @@ function text(value: unknown): string {
 }
 function uuid(value: unknown): string {
   const result = text(value);
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result)) invalid();
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      result,
+    )
+  )
+    invalid();
   return result;
 }
 function array(value: unknown): unknown[] {
   if (!Array.isArray(value)) invalid();
-  for (let i = 0; i < value.length; i++) if (!Object.hasOwn(value, i)) invalid();
+  for (let i = 0; i < value.length; i++)
+    if (!Object.hasOwn(value, i)) invalid();
   return value;
 }
 /** Whole-response validation, including relational shape and strict server ordering. */
@@ -43,7 +57,8 @@ export function parseMyMonthlyPlans(
   value: unknown,
   requestedMonth: string,
 ): MyMonthlyPlansResponse {
-  if (!isCivilDate(requestedMonth) || !requestedMonth.endsWith('-01')) invalid();
+  if (!isCivilDate(requestedMonth) || !requestedMonth.endsWith('-01'))
+    invalid();
   const envelope = record(value, ['items']);
   const plans = new Set<string>(),
     projects = new Set<string>(),
@@ -71,6 +86,8 @@ export function parseMyMonthlyPlans(
     const ownDuties: MyDuty[] = array(plan.duties).map((rawDuty) => {
       const duty = record(rawDuty, [
         'dutyId',
+        'assignmentId',
+        'version',
         'dutyDate',
         'shiftKind',
         'startsAt',
@@ -80,6 +97,9 @@ export function parseMyMonthlyPlans(
       ]);
       const dutyId = uuid(duty.dutyId);
       if (
+        typeof duty.version !== 'number' ||
+        !Number.isSafeInteger(duty.version) ||
+        duty.version < 1 ||
         !isCivilDate(duty.dutyDate) ||
         duty.dutyDate.slice(0, 7) !== monthStart.slice(0, 7) ||
         (duty.shiftKind !== 'DAY' && duty.shiftKind !== 'NIGHT') ||
@@ -92,13 +112,19 @@ export function parseMyMonthlyPlans(
         invalid();
       const dutyOrder = `${duty.dutyDate}\0${duty.shiftKind}\0${dutyId.toLowerCase()}`;
       const slot = `${planId.toLowerCase()}\0${duty.dutyDate}\0${duty.shiftKind}`;
-      if (dutyOrder <= previousDuty || duties.has(dutyId.toLowerCase()) || slots.has(slot))
+      if (
+        dutyOrder <= previousDuty ||
+        duties.has(dutyId.toLowerCase()) ||
+        slots.has(slot)
+      )
         invalid();
       previousDuty = dutyOrder;
       duties.add(dutyId.toLowerCase());
       slots.add(slot);
       return {
         dutyId,
+        assignmentId: uuid(duty.assignmentId),
+        version: duty.version,
         dutyDate: duty.dutyDate,
         shiftKind: duty.shiftKind,
         startsAt: duty.startsAt,
@@ -116,7 +142,10 @@ export function parseMyMonthlyPlans(
   });
   return { items };
 }
-export type PersonalMonthRead = { context: MeIdentity; response: MyMonthlyPlansResponse | null };
+export type PersonalMonthRead = {
+  context: MeIdentity;
+  response: MyMonthlyPlansResponse | null;
+};
 export function createMyMonthPlanSource(
   api: SessionApi,
   principal: IdentityContext,
@@ -152,7 +181,10 @@ export function createMyMonthPlanSource(
         { signal },
       );
       signal.throwIfAborted();
-      return { context: current, response: parseMyMonthlyPlans(response, `${month}-01`) };
+      return {
+        context: current,
+        response: parseMyMonthlyPlans(response, `${month}-01`),
+      };
     },
   };
 }

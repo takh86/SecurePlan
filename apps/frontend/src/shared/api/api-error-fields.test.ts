@@ -80,7 +80,7 @@ describe('SP-07 — field errors and employee codes', () => {
       }
     }
     // Codes of later slices stay untrusted until a UI handles them.
-    expect((await parseApiError(problem(409, { code: 'CANCELLATION_ALREADY_EXISTS' }))).code).toBeNull();
+    expect((await parseApiError(problem(409, { code: 'CANCELLATION_NOT_WITHDRAWABLE' }))).code).toBeNull();
   });
 
   it('SP-13: trusts MONTHLY_PLAN_ALREADY_PUBLISHED only with its catalogued 409', async () => {
@@ -133,4 +133,12 @@ describe('SP-07 — field errors and employee codes', () => {
       expect(text.canRetry, code).toBe(false);
     }
   });
+});
+
+// SP16 now handles exactly these cancellation conflicts; future actions remain untrusted.
+it('SP16 accepts cancellation conflict codes only with their approved status', async () => {
+  for (const code of ['CANCELLATION_ALREADY_EXISTS', 'CANCELLATION_ASSIGNMENT_NOT_ACTIVE', 'CANCELLATION_PLAN_CHANGED']) {
+    expect((await parseApiError(problem(409, { code }))).code).toBe(code);
+    expect((await parseApiError(problem(400, { code }))).code).toBeNull();
+  }
 });

@@ -18,6 +18,7 @@ import { createStaff } from './helpers/planning-fixtures.js';
 let db: Awaited<ReturnType<typeof isolatedPlanningDatabase>>,
   f: DutyMutationFixture;
 let snapshot: Record<string, unknown>, ledgerConstraints: unknown;
+let d16Snapshot: Record<string, unknown>, d16LedgerConstraints: unknown;
 const tables = [
   'companies',
   'accounts',
@@ -30,6 +31,21 @@ const tables = [
 ];
 beforeAll(async () => {
   db = await isolatedPlanningDatabase(async (pool, file) => {
+    if (file === '0017_cancellation_idempotency.sql') {
+      d16Snapshot = {};
+      for (const table of tables)
+        d16Snapshot[table] = (
+          await pool.query(
+            `SELECT to_jsonb(t)::text AS bytes FROM public.${table} t ORDER BY to_jsonb(t)::text`,
+          )
+        ).rows;
+      d16LedgerConstraints = (
+        await pool.query(
+          "SELECT conname,pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='public.idempotency_records'::regclass ORDER BY conname",
+        )
+      ).rows;
+      return;
+    }
     if (file !== '0016_cr03_reconciliation.sql') return;
     f = await dutyMutationFixture(pool, []);
     await pool.query(
@@ -107,22 +123,10 @@ const need = (
 
 it('populated D15 upgrade preserves existing rows and ledger signatures byte-for-byte', async () => {
   for (const table of tables)
-    expect(
-      (
-        await db.pool.query(
-          `SELECT to_jsonb(t)::text AS bytes FROM public.${table} t ORDER BY to_jsonb(t)::text`,
-        )
-      ).rows,
-    ).toEqual(snapshot[table]);
-  expect(
-    (
-      await db.pool.query(
-        "SELECT conname,pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='public.idempotency_records'::regclass ORDER BY conname",
-      )
-    ).rows,
-  ).toEqual(ledgerConstraints);
+    expect(d16Snapshot[table]).toEqual(snapshot[table]);
+  expect(d16LedgerConstraints).toEqual(ledgerConstraints);
 });
-it('fresh D16 signs seven exact canonical tables and the unchanged D15 receipt schema', async () => {
+it('final D17 signs the same seven canonical tables and the extended receipt schema', async () => {
   expect(PLANNING_RELATIONS).toHaveLength(7);
   await probe(async (c) => {
     expect(await readPlanningSchema(c)).toMatchObject({ state: 'COMPLETE' });

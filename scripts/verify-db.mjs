@@ -69,6 +69,15 @@ try {
       AND conname='fk_cancellation_requests__required_need' AND contype='f'
       AND condeferrable AND condeferred AND convalidated) AS valid`);
   if (!workflow.rows[0]?.valid) throw new Error("Missing CR-03 workflow integrity catalogue");
+  const cancellationReceipt = await client.query(`SELECT
+    EXISTS(SELECT 1 FROM schema_migrations WHERE name='0017_cancellation_idempotency.sql')
+    AND EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.idempotency_records'::regclass
+      AND attname='result_cancellation_request_id' AND atttypid='uuid'::regtype AND NOT attnotnull AND NOT attisdropped)
+    AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.idempotency_records'::regclass
+      AND conname='fk_idempotency_records__cancellation_result' AND convalidated
+      AND confrelid='public.cancellation_requests'::regclass) AS valid`);
+  if (!cancellationReceipt.rows[0]?.valid) throw new Error("Missing typed cancellation receipt catalogue");
+  console.log("Typed cancellation receipt reference and migration verified.");
   console.log("CR-03 historical identity and deferred workflow cardinality verified.");
   console.log("PostgreSQL connection and foundation migration verified.");
   console.log("SP-10 migration, revision and unique indexes verified.");

@@ -37,6 +37,8 @@ describe('SP14 strict whole-response validation C3/U2-U3', () => {
     [['items', 0, 'monthStart'], '2026-11-01'],
     [['items', 0, 'monthStart'], '2026-12-02'],
     [[...duty, 'dutyId'], 'x'],
+    [[...duty, 'assignmentId'], 'x'],
+    ...[0, -1, 1.5, 9007199254740992, '1', null].map((value): [(string|number)[], unknown] => [[...duty, 'version'], value]),
     [[...duty, 'dutyDate'], '2026-02-30'],
     [[...duty, 'dutyDate'], '2026-11-30'],
     [[...duty, 'dutyDate'], '0000-01-01'],
@@ -218,7 +220,7 @@ describe('C3 complete nested semantic regressions', () => {
       for (const key of Object.keys(target))
         for (const invalid of [null, false, 12]) {
           const value = personalPlan();
-          edit(value, [...path, key], invalid);
+          edit(value, [...path, key], key === 'version' && invalid === 12 ? 0 : invalid);
           expect(() => parseMyMonthlyPlans(value, '2026-12-01')).toThrow();
         }
     }

@@ -246,6 +246,13 @@ describe('SP14 real HTTP + PG ownership H1-H26/C1-C4', () => {
           duties: [
             {
               dutyId: duty,
+              assignmentId: (
+                await pool.query(
+                  'SELECT id FROM plan_assignments WHERE company_id=$1 AND duty_id=$2 AND employee_id=$3',
+                  [a.companyId, duty, own.employeeId],
+                )
+              ).rows[0].id,
+              version: 1,
               dutyDate: '2026-12-31',
               shiftKind: 'NIGHT',
               startsAt: '2026-12-31T17:00:00Z',
