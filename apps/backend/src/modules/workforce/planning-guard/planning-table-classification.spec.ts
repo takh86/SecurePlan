@@ -9,7 +9,7 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PlanningSchemaError } from '../../planning/planning-schema.js';
+import { PLANNING_RELATIONS, PlanningSchemaError } from '../../planning/planning-schema.js';
 import { assertNoPlanningDependency } from '../project-assignments/planning-dependency-guard.js';
 import { assertNoSavedDutiesForConfiguration } from '../shift-configurations/shift-configuration-planning-guard.js';
 import {
@@ -139,6 +139,7 @@ describe('E-10 - every relation created by a migration is classified', () => {
     const files = migrations();
     expect(files.length).toBeGreaterThanOrEqual(9);
     const created = files.flatMap(({ ddl }) => ddl.relations.map(({ name }) => name));
+    for (const name of PLANNING_RELATIONS) expect(created, name).toContain(name);
     // The non-planning list must stay honest: every entry is really created by a migration.
     for (const name of KNOWN_NON_PLANNING_TABLES) expect(created, name).toContain(name);
   });

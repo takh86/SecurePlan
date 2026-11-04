@@ -965,7 +965,7 @@ for (const scenario of cases)
       });
     }
 
-it('multi-D/multi-A2/multi-Q command acquires all D before A2 before Q, with no late parent tier', async () => {
+it('multi-D/multi-A2/multi-Q command acquires D/A2/Q/W1/W2 before audit, with no late parent tier', async () => {
   const night = await insertDuty(pool, {
     companyId: f.tenant.companyId,
     projectId: f.project.projectId,
@@ -1013,11 +1013,19 @@ it('multi-D/multi-A2/multi-Q command acquires all D before A2 before Q, with no 
         (s) => s.includes('FOR UPDATE') && s.includes('FROM public.duties'),
       ),
   ).toEqual([]);
+  const w1 = sql.findIndex((s) => s.includes('FROM public.cancellation_requests') && s.includes('FOR UPDATE'));
+  const w2 = sql.findIndex((s) => s.includes('FROM public.replacement_needs') && s.includes('FOR UPDATE'));
+  const z = sql.findIndex((s) => s.includes('INSERT INTO audit_event'));
+  expect(w1).toBeGreaterThan(q);
+  expect(w2).toBeGreaterThan(w1);
+  expect(z).toBeGreaterThan(w2);
+  expect(sql[w1]).toContain('ORDER BY id FOR UPDATE');
+  expect(sql[w2]).toContain('ORDER BY id FOR UPDATE');
   expect(
     sql
       .slice(q + 1)
       .filter((s) => /FOR (?:SHARE|NO KEY UPDATE|KEY SHARE|UPDATE)/.test(s)),
-  ).toEqual([]);
+  ).toEqual([sql[w1], sql[w2]]);
 });
 it.each(['idle', 'absolute'] as const)(
   'fresh %s expiry after Q wait refuses even no-op and rolls back tentative D',

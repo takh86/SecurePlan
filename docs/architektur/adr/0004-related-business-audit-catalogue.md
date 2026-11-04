@@ -185,3 +185,20 @@ audit boundary rejects extra fields, invalid dates/sets/versions and a bootstrap
 marker on old values. No-op, refusal and read produce no success event. Calendar
 mutation and audit share one transaction. Existing retention/privileged-role
 limits above remain open; independent T4 implementation acceptance is separate.
+
+
+## CR-03 prerequisite supplement ? 2026-11-04
+
+[SP16-D1 approval](https://github.com/takh86/SecurePlan/issues/32#issuecomment-6630358320)
+and [owner kickoff](https://github.com/takh86/SecurePlan/issues/32#issuecomment-6630975690)
+authorize two reconciliation events: `CANCELLATION_OBSOLETED` on
+`CANCELLATION_REQUEST` and `REPLACEMENT_NEED_CLOSED` on `REPLACEMENT_NEED`.
+Each records only `{status: "OPEN"}` as old values and the resulting status
+(`OBSOLETE` or `CLOSED`) as new values. The existing envelope supplies the
+trusted tenant, actor, resource ID, correlation ID and database event time.
+
+Effective assignment removal, both workflow transitions, these mandatory
+audits and any command completion share the planning writer's transaction.
+A repeated handler call has no further effect or audit. Retained assignments
+and terminal cancellations remain unchanged. This prerequisite introduces no
+cancellation command, read resource, offer or decision API.

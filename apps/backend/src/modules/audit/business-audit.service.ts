@@ -58,7 +58,10 @@ export type BusinessAuditAction =
   | 'DUTY_MEMBERSHIP_UPDATED'
   | 'DUTY_MEMBERSHIP_REMOVED'
   /** SP-13 owner approval 2026-11-02: bounded first-publication transition only. */
-  | 'MONTHLY_PLAN_PUBLISHED';
+  | 'MONTHLY_PLAN_PUBLISHED'
+  /** SP16-D1 approved CR-03 prerequisite transition vocabulary. */
+  | 'CANCELLATION_OBSOLETED'
+  | 'REPLACEMENT_NEED_CLOSED';
 
 export type BusinessAuditEntry = {
   companyId: string;
@@ -66,7 +69,7 @@ export type BusinessAuditEntry = {
   action: BusinessAuditAction;
   resourceType:
     | 'EMPLOYEE' | 'ACCOUNT' | 'PROJECT' | 'PROJECT_ASSIGNMENT' | 'PROJECT_SHIFT_CONFIGURATION' | 'EMPLOYEE_AVAILABILITY'
-    | 'MONTHLY_PLAN' | 'DUTY' | 'DUTY_ASSIGNMENT' | 'PROJECT_OPERATING_CALENDAR';
+    | 'MONTHLY_PLAN' | 'DUTY' | 'DUTY_ASSIGNMENT' | 'PROJECT_OPERATING_CALENDAR' | 'CANCELLATION_REQUEST' | 'REPLACEMENT_NEED';
   resourceId: string;
   oldValues?: Readonly<Record<string, unknown>> | null;
   newValues?: Readonly<Record<string, unknown>> | null;

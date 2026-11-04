@@ -139,3 +139,22 @@ Tradeoff: whole-plan serialization and complete slot preconditions can refuse
 disjoint stale drafts. This is explicitly accepted; no silent roster merging.
 Implementation concurrency, failure-injection and independent security review
 remain acceptance gates; adoption alone does not prove them.
+
+
+## CR-03 prerequisite supplement ? 2026-11-04
+
+The [separately approved prerequisite](https://github.com/takh86/SecurePlan/issues/32#issuecomment-6630358320)
+extends the writer order to A ? C ? I (when present) ? E ? P ? M ? L ? D ?
+A2 ? Q ? W1 cancellation rows ? W2 replacement-need rows ? Z audit/completion.
+All IDs within a tier are sorted and locked at final strength. Batch saves
+finish every planning delta and acquire every W1 before every W2 before Z.
+The existing actor, employee, parent, duty, assignment and lease fences remain.
+
+A required neutral synchronous handler reconciles effective assignment removals
+on the existing transaction client. Planning owns assignment changes; the workflow
+owner writes only its cancellations and needs. Missing registration or workflow
+integrity failure aborts the command. Retained assignment date/shift/role changes
+and terminal cases are preserved. The schema signature now trusts seven exact
+canonical tables, while replacement offers and aliases remain unsupported.
+The employee-month receipt schema is unchanged at D16. No workflow endpoint is
+activated by this supplement.

@@ -137,11 +137,13 @@ describe('SP-11 — planning schema signature, real PostgreSQL', () => {
       [[...PLANNING_GUARD_TABLES]],
     );
     expect(found.rows).toEqual([
+      { schema: 'public', name: 'cancellation_requests', kind: 'r' },
       { schema: 'public', name: 'duties', kind: 'r' },
       { schema: 'public', name: 'edit_leases', kind: 'r' },
       { schema: 'public', name: 'monthly_plans', kind: 'r' },
       { schema: 'public', name: 'plan_assignments', kind: 'r' },
       { schema: 'public', name: 'project_operating_calendars', kind: 'r' },
+      { schema: 'public', name: 'replacement_needs', kind: 'r' },
     ]);
     await withClient(async (client) => {
       expect(await readPlanningSchema(client)).toMatchObject({ state: 'COMPLETE' });
@@ -250,7 +252,7 @@ describe('SP-11 — planning schema signature, real PostgreSQL', () => {
 
   it('unlogged tables and inheritance in either direction are INVALID even with canonical columns/constraints', async () => {
     for (const ddl of [
-      'ALTER TABLE public.plan_assignments SET UNLOGGED',
+      'ALTER TABLE public.project_operating_calendars SET UNLOGGED',
       'CREATE TABLE public.sp79_child () INHERITS (public.duties)',
       'CREATE TABLE public.sp79_parent (); ALTER TABLE public.plan_assignments INHERIT public.sp79_parent',
     ]) {
@@ -285,7 +287,7 @@ describe('SP-11 — planning schema signature, real PostgreSQL', () => {
       const role = `sp79_rls_${suffix()}`;
       await client.query(`CREATE ROLE ${role} NOLOGIN;
         GRANT USAGE ON SCHEMA public TO ${role};
-        GRANT SELECT ON public.monthly_plans, public.duties, public.plan_assignments TO ${role};
+        GRANT SELECT ON public.monthly_plans, public.duties, public.plan_assignments, public.cancellation_requests, public.replacement_needs, public.edit_leases, public.project_operating_calendars TO ${role};
         ALTER TABLE public.plan_assignments ENABLE ROW LEVEL SECURITY;
         ALTER TABLE public.plan_assignments FORCE ROW LEVEL SECURITY;
         CREATE POLICY sp79_deny ON public.plan_assignments USING (false);
@@ -320,6 +322,7 @@ describe('SP-11 — ABSENT schema and committed versus uncommitted DDL across se
       await sessionB.query(migration('0011_planning_foundation.sql'));
       await sessionB.query(migration('0012_duty_edit_leases.sql'));
       await sessionB.query(migration('0014_project_operating_calendars.sql'));
+      await sessionB.query(migration('0016_cr03_reconciliation.sql'));
       expect(await guardOutcomes(sessionA), 'uncommitted DDL is invisible').toEqual(ABSENT);
       await sessionB.query('COMMIT');
       expect(await guardOutcomes(sessionA), 'committed canonical schema, same open transaction').toEqual(OPEN);

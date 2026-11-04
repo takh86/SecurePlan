@@ -3,8 +3,9 @@ import type { PoolClient } from 'pg';
 import type { TenantContext } from '../../auth/authorization/tenant-context.js';
 import { assertSessionInTransaction } from '../../auth/session.service.js';
 import { requireRow } from '../../auth/authorization/require-row.js';
+import { PlanningMutationDispatcher, type PlanningAssignmentMutation } from '../../common/transactions/planning-mutation.js';
 import { DatabaseService } from '../../database/database.service.js';
-import { BusinessAuditService } from '../audit/business-audit.service.js';
+import { BusinessAuditService, type BusinessAuditEntry } from '../audit/business-audit.service.js';
 import { AvailabilityService } from '../workforce/availability/availability.service.js';
 import {
   dutyColumns,
@@ -56,6 +57,7 @@ export class EmployeeMonthService {
     private readonly availability: AvailabilityService,
     private readonly audit: BusinessAuditService,
     private readonly receipts: EmployeeMonthIdempotencyService,
+    private readonly mutations: PlanningMutationDispatcher,
   ) {}
 
   async read(t: TenantContext, planId: string, employeeId: string) {
@@ -481,6 +483,8 @@ export class EmployeeMonthService {
       updatedMemberships: 0,
     };
     const changes: SaveResult['changes'] = [];
+    const audits: BusinessAuditEntry[] = [];
+    const removals: PlanningAssignmentMutation['changes'][number][] = [];
     for (const x of changed.sort((a, b) => (a.duty.id < b.duty.id ? -1 : 1))) {
       const old = x.duty;
       const d = x.created
@@ -501,6 +505,7 @@ export class EmployeeMonthService {
         );
         removedAt = r.rows[0].removed_at;
         counts.removedMemberships++;
+        removals.push({ dutyId: d.id, removedAssignmentIds: [x.before.id] });
       } else if (x.before) {
         member = (
           await c.query<MembershipRow>(
@@ -540,7 +545,7 @@ export class EmployeeMonthService {
         actorAccountId: t.accountId,
         correlationId,
       };
-      await this.audit.recordBusinessAction(c, {
+      audits.push({
         ...base,
         action: x.created ? 'DUTY_CREATED' : 'DUTY_UPDATED',
         resourceType: 'DUTY',
@@ -548,7 +553,7 @@ export class EmployeeMonthService {
         ...(x.created ? {} : { oldValues: dutyValues(old) }),
         newValues: dutyValues(d),
       });
-      await this.audit.recordBusinessAction(c, {
+      audits.push({
         ...base,
         action: !x.before
           ? 'DUTY_MEMBERSHIP_ADDED'
@@ -568,6 +573,12 @@ export class EmployeeMonthService {
         ...readSlot(d, member)!,
       });
     }
+    // ALL planning deltas first; ALL W1/W2 locks before the first Z audit/completion.
+    await this.mutations.dispatch(c, {
+      companyId: t.companyId, actorAccountId: t.accountId, correlationId,
+      cause: 'EMPLOYEE_MONTH_SAVE', changes: removals,
+    });
+    for (const entry of audits) await this.audit.recordBusinessAction(c, entry);
     const moment = (
       await c.query<{ id: string; at: string }>(
         `SELECT gen_random_uuid() AS id,to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS at`,
