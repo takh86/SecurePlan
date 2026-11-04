@@ -149,6 +149,8 @@ function discoverTransitions(
 const VERIFIED_BASELINES: Readonly<Record<string, string>> = {
   // Node 24.21.0, local run 2026-11-04: 315 transitions.
   '78.3/2026c': '1cc593c4a75b19c622e939e43dc6af7c7f00dafa3c988a99839bb8e6079f2b5d',
+  // Node 24.22.1, exhaustive fallback in CI runs 41793178335 and 41793184944: 315 transitions.
+  '78.3/2026e': '1cc593c4a75b19c622e939e43dc6af7c7f00dafa3c988a99839bb8e6079f2b5d',
 };
 
 describe('D6 differential: production adapter vs. Intl oracle (Appendix-E matrix)', () => {
