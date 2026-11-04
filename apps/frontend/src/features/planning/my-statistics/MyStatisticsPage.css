@@ -1,0 +1,47 @@
+.statistics-cards {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+.statistics-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--sp-color-border);
+  border-radius: var(--sp-radius);
+  background: var(--sp-color-surface);
+  overflow-wrap: anywhere;
+}
+.statistics-card dt {
+  color: var(--sp-color-muted);
+  font-weight: 600;
+}
+.statistics-card dd {
+  margin: 8px 0 0;
+  color: var(--sp-color-ink);
+  font-size: 36px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+@media (min-width: 600px) {
+  .statistics-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.my-statistics .my-plan__controls input,
+.my-statistics .my-plan__controls button {
+  padding: 8px 12px;
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius-small);
+  background: var(--sp-color-surface);
+  color: var(--sp-color-ink);
+  font: inherit;
+}
+.my-statistics .my-plan__controls button {
+  color: var(--sp-color-brand-strong);
+  font-weight: 600;
+  cursor: pointer;
+}
+.my-statistics .my-plan__controls button:hover {
+  border-color: var(--sp-color-brand);
+}

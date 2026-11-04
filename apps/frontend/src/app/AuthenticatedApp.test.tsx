@@ -32,7 +32,16 @@ let apiRequests: RecordedRequest[] = [];
 function renderApp(role: TenantRole, path: string, overrides: { logoutPending?: boolean; logoutError?: Error | null } = {}) {
   const logout = vi.fn();
   // SP-07: the employees area reads through the session-bound API (empty company here).
-  const { api, requests } = fakeSessionApi(({ path }) => path === '/api/v1/me' ? { ...identityFor(role), companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01' } : path.startsWith('/api/v1/me/monthly-plans?') ? { items: [] } : page([]));
+  const { api, requests } = fakeSessionApi(({ path }) => {
+    if (path === '/api/v1/me') return {
+      ...identityFor(role), companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01',
+    };
+    if (path.startsWith('/api/v1/me/monthly-plans?')) return { items: [] };
+    if (path.startsWith('/api/v1/me/planning-statistics?')) return {
+      monthStart: path.split('monthStart=')[1], plannedWorkdays: 0, dayShiftCount: 0, nightShiftCount: 0,
+    };
+    return page([]);
+  });
   apiRequests = requests;
   render(
     <MemoryRouter initialEntries={[path]}>
@@ -129,7 +138,7 @@ describe('F1 — role-based routes (UI gating only; the server authorizes every 
     expect(links.map((link) => link.textContent)).toEqual([
       'Mein Monatsplan',
       'Absagen & Ersatz folgt',
-      'Meine Statistik folgt',
+      'Meine Statistik',
     ]);
     expect(links[0].getAttribute('aria-current')).toBe('page');
     expect(within(nav).queryByText('Arbeitsübersicht')).toBeNull();
@@ -150,11 +159,26 @@ describe('F1 — role-based routes (UI gating only; the server authorizes every 
   });
 
   it('renders placeholders for planned areas without data', () => {
-    renderApp('EMPLOYEE', '/meine-statistik');
-    expect(pageHeading().textContent).toBe('Meine Statistik');
+    renderApp('EMPLOYEE', '/absagen-und-ersatz');
+    expect(pageHeading().textContent).toBe('Absagen & Ersatz');
     expect(screen.getByText('Noch nicht verfügbar')).toBeTruthy();
     expect(screen.queryByText(/Demodaten/)).toBeNull();
     expect(screen.queryAllByRole('article')).toHaveLength(0);
+  });
+
+  it('SP15 employee statistics is live and uses company month through the session API', async () => {
+    renderApp('EMPLOYEE', '/meine-statistik');
+    await screen.findByText('Geplante Arbeitstage');
+    expect(currentPath()).toBe('/meine-statistik/2026-12');
+    expect(screen.getAllByRole('definition').map(el => el.textContent)).toEqual(['0', '0', '0']);
+    expect(apiRequests.map(r => r.path)).toEqual([
+      '/api/v1/me', '/api/v1/me/planning-statistics?monthStart=2026-12-01',
+    ]);
+  });
+  it('SP15 admin statistics deep link is denied before any feature read', () => {
+    renderApp('COMPANY_ADMIN', '/meine-statistik/2026-12');
+    expect(pageHeading().textContent).toBe('Kein Zugriff auf diese Ansicht');
+    expect(apiRequests).toEqual([]);
   });
 
   it('shows the account e-mail and role label but no internal identifiers', () => {

@@ -94,7 +94,8 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: '/meine-statistik',
     role: 'EMPLOYEE',
     title: 'Meine Statistik',
-    availability: 'planned',
+    availability: 'available',
+    acceptsMonth: true,
     plannedScope: 'Geplante Arbeitstage sowie Tag- und Nachtdienste auf Basis des veröffentlichten Plans.',
   },
 ];

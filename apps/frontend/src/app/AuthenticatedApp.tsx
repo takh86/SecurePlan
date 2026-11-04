@@ -4,6 +4,7 @@ import type { AuthenticatedSession } from '../features/auth/LoginScreen';
 import type { SessionApi } from '../features/auth/session-api';
 import { EmployeesSection } from '../features/employees/EmployeesSection';
 import { MonthlyPlanningSection } from '../features/planning/monthly-plans/MonthlyPlanningSection';
+import { MyStatisticsPage } from '../features/planning/my-statistics/MyStatisticsPage';
 import { MyMonthPlanPage } from '../features/planning/my-month-plan/MyMonthPlanPage';
 import { ProjectsSection } from '../features/projects/ProjectsSection';
 import { AppShell } from './AppShell';
@@ -52,6 +53,12 @@ function RouteView({ route, role, api, identity, requestSessionRevalidation }: {
       return (
         <PageFrame title={route.title} lead={route.lead}>
           <WorkQueuePage />
+        </PageFrame>
+      );
+    case 'my-statistics':
+      return (
+        <PageFrame title={route.title} lead={route.lead}>
+          <MyStatisticsPage api={api} identity={identity} requestSessionRevalidation={requestSessionRevalidation} />
         </PageFrame>
       );
     case 'my-month-plan':

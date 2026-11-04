@@ -51,6 +51,8 @@ import { EmployeeMonthIdempotencyService } from './modules/planning/employee-mon
 import { SessionContextService } from './modules/identity/session-context.service.js';
 import { MeMonthlyPlansController } from './modules/planning/me-monthly-plans.controller.js';
 import { MeMonthlyPlansReadService } from './modules/planning/me-monthly-plans-read.service.js';
+import { MePlanningStatisticsController } from './modules/planning/me-planning-statistics.controller.js';
+import { MePlanningStatisticsService } from './modules/planning/me-planning-statistics.service.js';
 
 @Module({
   imports: [
@@ -76,6 +78,7 @@ import { MeMonthlyPlansReadService } from './modules/planning/me-monthly-plans-r
     MonthlyPlansController,
     EmployeeMonthController,
     MeMonthlyPlansController,
+    MePlanningStatisticsController,
   ],
   providers: [
     AppService,
@@ -84,6 +87,7 @@ import { MeMonthlyPlansReadService } from './modules/planning/me-monthly-plans-r
     SessionService,
     SessionContextService,
     MeMonthlyPlansReadService,
+    MePlanningStatisticsService,
     // SP-06: the ONLY global guard; fixed Origin -> session -> CSRF -> role order.
     { provide: APP_GUARD, useClass: AccessControlGuard },
     LoginService,
