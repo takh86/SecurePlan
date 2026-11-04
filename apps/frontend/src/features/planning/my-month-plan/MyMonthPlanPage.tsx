@@ -1,4 +1,5 @@
 ﻿import { useId, useMemo, useState } from 'react';
+import { OwnCancellations } from './OwnCancellations';
 import { CancellationAction } from './CancellationAction';
 import { Link, Navigate, useNavigate, useParams } from 'react-router';
 import type { IdentityContext } from '../../auth/auth-api';
@@ -60,10 +61,12 @@ function ValidMonthPlan({
   );
   const { state, retry } = useReadSource(source, month);
   const [notice, setNotice] = useState('');
+  const [cancellationRevision, setCancellationRevision] = useState(0);
   const cancellation = {
     api,
     identity,
     revalidate: requestSessionRevalidation,
+    onCreated: () => setCancellationRevision((v) => v + 1),
     onStale: () => {
       setNotice(
         'Der Dienst hat sich geändert. Der Monatsplan wird neu geladen. Bitte prüfen und bestätigen Sie den Dienst erneut.',
@@ -140,7 +143,13 @@ function ValidMonthPlan({
               }}
             />
           </label>
-          <button type="button" onClick={retry}>
+          <button
+            type="button"
+            onClick={() => {
+              retry();
+              setCancellationRevision((v) => v + 1);
+            }}
+          >
             Aktualisieren
           </button>
         </div>
@@ -166,6 +175,13 @@ function ValidMonthPlan({
           </>
         )}
       </section>
+      <OwnCancellations
+        api={api}
+        identity={identity}
+        monthStart={`${month}-01`}
+        revision={cancellationRevision}
+        revalidate={requestSessionRevalidation}
+      />
       <p className="my-plan__note">
         Angezeigt werden Ihre geplanten Dienste laut veröffentlichtem
         Monatsplan, keine erfassten Arbeitszeiten.
@@ -183,7 +199,7 @@ function MonthPlanContent({
   monthLabel: string;
   cancellation: Pick<
     Parameters<typeof CancellationAction>[0],
-    'api' | 'identity' | 'onStale' | 'revalidate'
+    'api' | 'identity' | 'onStale' | 'revalidate' | 'onCreated'
   >;
 }) {
   if (response.items.length === 0)
@@ -222,7 +238,7 @@ function DutyCard({
   project: string;
   cancellation: Pick<
     Parameters<typeof CancellationAction>[0],
-    'api' | 'identity' | 'onStale' | 'revalidate'
+    'api' | 'identity' | 'onStale' | 'revalidate' | 'onCreated'
   >;
 }) {
   const titleId = useId();

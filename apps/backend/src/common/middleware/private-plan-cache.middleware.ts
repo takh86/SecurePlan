@@ -7,7 +7,7 @@ export function privatePlanCache(
   next: NextFunction,
 ): void {
   if (
-    !/^\/api\/v1\/(?:me(?:\/(?:monthly-plans|planning-statistics))?\/?|cancellation-requests(?:\/.*)?)$/i.test(
+    !/^\/api\/v1\/(?:me(?:\/(?:monthly-plans|planning-statistics|work-items))?\/?|cancellation-requests(?:\/.*)?)$/i.test(
       request.path,
     )
   ) {

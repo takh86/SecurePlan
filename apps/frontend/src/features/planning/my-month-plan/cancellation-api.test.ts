@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { parseWorkItems } from './cancellation-api';
 import { parseCancellation } from './cancellation-api';
 import { cancellation } from './cancellation.test-support';
 const parse = (value: unknown) =>
@@ -60,5 +61,57 @@ it.each(['OPEN_UNFILLED', 'RESOLVED', 'CLOSED', 'INVALID'])(
     (result.replacementNeed as unknown as Record<string, unknown>).status =
       status;
     expect(() => parse(result)).toThrow();
+  },
+);
+
+it('parses the exact bounded personal work-items envelope', () => {
+  expect(
+    parseWorkItems(
+      { cancellationRequests: [cancellation()], replacementOffers: [] },
+      '2026-12-01',
+    ).cancellationRequests,
+  ).toHaveLength(1);
+  expect(
+    parseWorkItems(
+      { cancellationRequests: [], replacementOffers: [] },
+      '2026-12-01',
+    ),
+  ).toEqual({ cancellationRequests: [], replacementOffers: [] });
+});
+it.each([
+  {},
+  { cancellationRequests: [] },
+  { cancellationRequests: [], replacementOffers: [], private: true },
+  {
+    cancellationRequests: [cancellation(), cancellation()],
+    replacementOffers: [],
+  },
+  {
+    cancellationRequests: [
+      {
+        ...cancellation(),
+        duty: { ...cancellation().duty, dutyDate: '2027-01-01' },
+      },
+    ],
+    replacementOffers: [],
+  },
+  {
+    cancellationRequests: [
+      {
+        ...cancellation(),
+        employee: { ...cancellation().employee, private: true },
+      },
+    ],
+    replacementOffers: [],
+  },
+  {
+    cancellationRequests: [cancellation()],
+    replacementOffers: [{ id: 'future' }],
+  },
+  { cancellationRequests: [null], replacementOffers: [] },
+])(
+  'rejects malformed, out-of-month, duplicate or future-slice work-items %j',
+  (value) => {
+    expect(() => parseWorkItems(value, '2026-12-01')).toThrow();
   },
 );

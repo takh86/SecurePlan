@@ -22,6 +22,7 @@ type Props = {
   project: string;
   onStale: () => void;
   revalidate: () => void;
+  onCreated?: () => void;
 };
 const cancellationLabels = {
   OPEN: 'Offen',
@@ -58,6 +59,7 @@ function BoundCancellationAction({
   project,
   onStale,
   revalidate,
+  onCreated,
 }: Props) {
   const [attempt, setAttempt] = useState<Attempt | null>(null),
     [state, setState] = useState<State>({ kind: 'confirm' });
@@ -137,6 +139,7 @@ function BoundCancellationAction({
         attempt.duty.dutyId,
       );
       setState({ kind: 'success', result });
+      onCreated?.();
     } catch (error) {
       if (!valid()) return;
       if (

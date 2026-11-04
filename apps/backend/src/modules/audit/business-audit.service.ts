@@ -61,6 +61,8 @@ export type BusinessAuditAction =
   | 'MONTHLY_PLAN_PUBLISHED'
   /** SP16-D1 approved CR-03 prerequisite transition vocabulary. */
   | 'CANCELLATION_CREATED'
+  /** SP-17 owner-authorized withdrawal, bounded to the effective state transition. */
+  | 'CANCELLATION_WITHDRAWN'
   | 'CANCELLATION_OBSOLETED'
   | 'REPLACEMENT_NEED_CLOSED';
 

@@ -151,3 +151,56 @@ export function parseCancellation(
     },
   };
 }
+
+export type MyWorkItems = {
+  cancellationRequests: CancellationResponse[];
+  replacementOffers: [];
+};
+/** Current slice deliberately accepts no offer data while the server schema excludes it. */
+export function parseWorkItems(
+  value: unknown,
+  monthStart: string,
+): MyWorkItems {
+  const root = record(value, ['cancellationRequests', 'replacementOffers']);
+  if (
+    !Array.isArray(root.cancellationRequests) ||
+    !Array.isArray(root.replacementOffers) ||
+    root.replacementOffers.length !== 0
+  )
+    invalid();
+  const seen = new Set<string>();
+  let owner: string | undefined;
+  const cancellationRequests = root.cancellationRequests.map(
+    (value: unknown) => {
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !('assignmentId' in value) ||
+        !('duty' in value)
+      )
+        invalid();
+      const duty = record(value.duty, [
+        'id',
+        'dutyDate',
+        'shiftKind',
+        'startsAt',
+        'endsAt',
+      ]);
+      const result = parseCancellation(
+        value,
+        id(value.assignmentId),
+        id(duty.id),
+      );
+      if (
+        result.duty.dutyDate.slice(0, 7) !== monthStart.slice(0, 7) ||
+        seen.has(result.id.toLowerCase()) ||
+        (owner !== undefined && owner !== result.employee.id.toLowerCase())
+      )
+        invalid();
+      seen.add(result.id.toLowerCase());
+      owner = result.employee.id.toLowerCase();
+      return result;
+    },
+  );
+  return { cancellationRequests, replacementOffers: [] };
+}

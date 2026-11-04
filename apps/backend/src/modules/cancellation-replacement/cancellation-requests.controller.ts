@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   Headers,
+  HttpCode,
   Param,
   Post,
   Req,
@@ -46,6 +48,22 @@ export class CancellationRequestsController {
     if (result.replayed) response.setHeader('Idempotency-Replayed', 'true');
     response.location(`/api/v1/cancellation-requests/${result.result.id}`);
     return result.result;
+  }
+  @Post(':requestId/withdraw')
+  @HttpCode(200)
+  @RequireRoles('EMPLOYEE')
+  withdraw(
+    @CurrentTenant() t: TenantContext,
+    @Param('requestId', ResourceIdPipe) id: string,
+    @CorrelationId() correlationId: string,
+    @Req() request: Request,
+  ) {
+    if (
+      request.headers['transfer-encoding'] !== undefined ||
+      Number(request.headers['content-length'] ?? 0) > 0
+    )
+      throw new BadRequestException({ code: 'INVALID_REQUEST_BODY' });
+    return this.cancellations.withdraw(t, id, correlationId);
   }
   @Get(':requestId')
   @RequireRoles('EMPLOYEE', 'COMPANY_ADMIN')

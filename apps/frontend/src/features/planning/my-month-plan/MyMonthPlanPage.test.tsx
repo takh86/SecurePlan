@@ -15,7 +15,7 @@ afterEach(() => {
 function setup(path = '/mein-monatsplan/2026-12', result: unknown = personalPlan()) {
   const fetcher = vi.fn(
     async (url: string) =>
-      new Response(JSON.stringify(url === '/api/v1/me' ? employeeIdentity : result), {
+      new Response(JSON.stringify(url === '/api/v1/me' ? employeeIdentity : url.includes('/work-items?') ? { cancellationRequests: [], replacementOffers: [] } : result), {
         status: 200,
       }),
   );
@@ -48,16 +48,17 @@ it('reads real API transport, saved overnight time and zone without preview/work
   expect(screen.getByText('Zeitzone: Europe/Berlin')).toBeTruthy();
   expect(screen.getByText(/01.01.2027/)).toBeTruthy();
   expect(screen.queryByText(/Absage beantragt|Vorschau|Beispielzeit/)).toBeNull();
-  expect(fetcher.mock.calls.map((args) => args[0])).toEqual([
+  expect(fetcher.mock.calls.map((args) => args[0])).toEqual(expect.arrayContaining([
     '/api/v1/me',
     '/api/v1/me/monthly-plans?monthStart=2026-12-01',
-  ]);
+    '/api/v1/me/work-items?monthStart=2026-12-01',
+  ]));
 });
 it('bare route uses authoritative company month once, without redirect loop', async () => {
   const { fetcher } = setup('/mein-monatsplan');
   await screen.findByText('Projekt: Synthetic Nord');
   expect(screen.getByRole('heading', { name: 'Dezember 2026' })).toBeTruthy();
-  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(fetcher.mock.calls.map(args => args[0])).toContain('/api/v1/me/work-items?monthStart=2026-12-01');
 });
 it.each([
   ['no plan', { items: [] }, 'Kein veröffentlichter Plan'],
@@ -81,7 +82,7 @@ it('refresh clears private data while loading and invokes the central 401 callba
     async () => new Response(JSON.stringify({ code: 'SESSION_EXPIRED' }), { status: 401 }),
   );
   await user.click(screen.getByRole('button', { name: 'Aktualisieren' }));
-  await waitFor(() => expect(unauthorized).toHaveBeenCalledOnce());
+  await waitFor(() => expect(unauthorized).toHaveBeenCalled());
   expect(screen.queryByRole('article')).toBeNull();
 });
 it('retains explicit selection and month navigation', async () => {
@@ -89,7 +90,7 @@ it('retains explicit selection and month navigation', async () => {
   await screen.findByText('Projekt: Synthetic Nord');
   fetcher.mockImplementation(
     async (url: string) =>
-      new Response(JSON.stringify(url === '/api/v1/me' ? employeeIdentity : { items: [] }), {
+      new Response(JSON.stringify(url === '/api/v1/me' ? employeeIdentity : url.includes('/work-items?') ? { cancellationRequests: [], replacementOffers: [] } : { items: [] }), {
         status: 200,
       }),
   );

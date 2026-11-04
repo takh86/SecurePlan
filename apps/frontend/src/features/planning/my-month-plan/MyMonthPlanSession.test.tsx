@@ -48,7 +48,7 @@ it('R1 current real transport401 unmounts private schedule at the session bounda
     vi.fn(async (path: string) =>
       expire
         ? new Response('{}', { status: 401 })
-        : json(path === '/api/v1/me' ? employeeIdentity : personalPlan()),
+        : json(path === '/api/v1/me' ? employeeIdentity : path.includes('/work-items?') ? {cancellationRequests:[],replacementOffers:[]} : personalPlan()),
     ),
   );
   mount();
@@ -65,6 +65,7 @@ it.each(['accountId', 'companyId', 'role'])(
       confirm = false,
       resolve!: (value: Response) => void;
     const api = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path.includes('/work-items?')) return json({cancellationRequests:[],replacementOffers:[]});
       if (path !== '/api/v1/me') return json(personalPlan());
       if (mismatch && !(init?.headers instanceof Headers)) {
         confirm = true;
@@ -107,7 +108,7 @@ it.each([200, 401])(
         return new Promise<Response>((done) => {
           release = done;
         });
-      return json(personalPlan());
+      return json(path.includes('/work-items?') ? {cancellationRequests:[],replacementOffers:[]} : personalPlan());
     });
     vi.stubGlobal('fetch', fetcher);
     mount((receive) => {
@@ -133,7 +134,7 @@ it.each([200, 401])(
 it('R7 authenticating in an already hidden document conceals immediately and revalidates on foreground', async () => {
   const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
   const fetcher = vi.fn(async (path: string) =>
-    json(path === '/api/v1/me' ? employeeIdentity : personalPlan()),
+    json(path === '/api/v1/me' ? employeeIdentity : path.includes('/work-items?') ? {cancellationRequests:[],replacementOffers:[]} : personalPlan()),
   );
   vi.stubGlobal('fetch', fetcher);
   mount();

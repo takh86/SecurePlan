@@ -180,3 +180,7 @@
   outline: 3px solid var(--sp-color-brand-strong);
   outline-offset: 3px;
 }
+
+.own-cancellations { margin-block: 1.5rem; min-width: 0; }
+.own-cancellations > button { min-height: 44px; max-width: 100%; }
+.own-cancellations h3:focus { outline: 3px solid var(--sp-color-brand-strong); outline-offset: 3px; }

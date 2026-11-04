@@ -27,6 +27,7 @@ import {
   PLANNING_MUTATION_HANDLER,
   PlanningMutationDispatcher,
 } from './common/transactions/planning-mutation.js';
+import { MeWorkItemsController } from './modules/cancellation-replacement/me-work-items.controller.js';
 import { CancellationRequestsController } from './modules/cancellation-replacement/cancellation-requests.controller.js';
 import { CancellationRequestsService } from './modules/cancellation-replacement/cancellation-requests.service.js';
 import { AssignmentRemovalReconciler } from './modules/cancellation-replacement/assignment-removal-reconciler.js';
@@ -72,6 +73,7 @@ import { MePlanningStatisticsService } from './modules/planning/me-planning-stat
   ],
   controllers: [
     CancellationRequestsController,
+    MeWorkItemsController,
     AppController,
     HealthController,
     AuthController,
