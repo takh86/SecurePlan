@@ -449,7 +449,7 @@ try {
     await api(employeePage, 'GET', '/me/monthly-plans?monthStart=2026-12-01')
   ).body.items[0].duties;
   const card = (day) =>
-    employeePage.getByRole('article').filter({
+    employeePage.locator('.my-plan__month').getByRole('article').filter({
       has: employeePage.getByRole('heading', {
         name: new RegExp(`${day}.12.2026`),
       }),

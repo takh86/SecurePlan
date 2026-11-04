@@ -80,7 +80,7 @@ describe('SP-07 — field errors and employee codes', () => {
       }
     }
     // Codes of later slices stay untrusted until a UI handles them.
-    expect((await parseApiError(problem(409, { code: 'CANCELLATION_NOT_WITHDRAWABLE' }))).code).toBeNull();
+    expect((await parseApiError(problem(409, { code: 'CANCELLATION_ALREADY_RESOLVED' }))).code).toBeNull();
   });
 
   it('SP-13: trusts MONTHLY_PLAN_ALREADY_PUBLISHED only with its catalogued 409', async () => {
@@ -140,5 +140,12 @@ it('SP16 accepts cancellation conflict codes only with their approved status', a
   for (const code of ['CANCELLATION_ALREADY_EXISTS', 'CANCELLATION_ASSIGNMENT_NOT_ACTIVE', 'CANCELLATION_PLAN_CHANGED']) {
     expect((await parseApiError(problem(409, { code }))).code).toBe(code);
     expect((await parseApiError(problem(400, { code }))).code).toBeNull();
+  }
+});
+
+it('SP17 trusts withdrawal conflict only at its approved 409 status', async () => {
+  expect((await parseApiError(problem(409, { code: 'CANCELLATION_NOT_WITHDRAWABLE' }))).code).toBe('CANCELLATION_NOT_WITHDRAWABLE');
+  for (const status of [400, 401, 403, 404, 500]) {
+    expect((await parseApiError(problem(status, { code: 'CANCELLATION_NOT_WITHDRAWABLE' }))).code).toBeNull();
   }
 });

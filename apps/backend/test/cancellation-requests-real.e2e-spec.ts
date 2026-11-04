@@ -50,7 +50,15 @@ class ObservedDatabase extends DatabaseService {
     phase: 'before' | 'after';
     work: (c: PoolClient) => Promise<void>;
   };
-  fail?: 'cancellation' | 'need' | 'completion' | 'deferred' | 'lostAck';
+  fail?:
+    | 'cancellation'
+    | 'need'
+    | 'completion'
+    | 'deferred'
+    | 'lostAck'
+    | 'withdrawStatus'
+    | 'withdrawNeed'
+    | 'withdrawLostAck';
   dutyPids: number[] = [];
   override async withTransaction<T>(
     work: (c: PoolClient) => Promise<T>,
@@ -84,6 +92,10 @@ class ObservedDatabase extends DatabaseService {
                     )) ||
                   (failure === 'need' &&
                     sql.startsWith('INSERT INTO public.replacement_needs')) ||
+                  (failure === 'withdrawStatus' &&
+                    sql.includes("SET status='WITHDRAWN'")) ||
+                  (failure === 'withdrawNeed' &&
+                    sql.includes("SET status='CLOSED'")) ||
                   (failure === 'completion' &&
                     sql.includes("SET state='COMPLETED'"))
                 ) {
@@ -100,7 +112,11 @@ class ObservedDatabase extends DatabaseService {
                     [values![0]],
                   );
                 }
-                if (sql.includes("SET state='COMPLETED'")) completed = true;
+                if (
+                  sql.includes("SET state='COMPLETED'") ||
+                  sql.includes("SET status='WITHDRAWN'")
+                )
+                  completed = true;
                 await runHook('after');
                 return result;
               };
@@ -110,7 +126,10 @@ class ObservedDatabase extends DatabaseService {
         }),
       ),
     );
-    if (completed && this.fail === 'lostAck') {
+    if (
+      completed &&
+      (this.fail === 'lostAck' || this.fail === 'withdrawLostAck')
+    ) {
       this.fail = undefined;
       throw new Error('synthetic lost commit acknowledgement');
     }
@@ -928,4 +947,529 @@ it('an expired completed technical key cannot bypass the OPEN business uniquenes
   );
   await code(post(key), 409, 'CANCELLATION_ALREADY_EXISTS');
   expect((await rows()).requests).toHaveLength(1);
+});
+
+const withdraw = (id: string, session: SyntheticSession | null = employee) => {
+  const op = request(app.getHttpServer())
+    .post(`${BASE}/${id}/withdraw`)
+    .set('Origin', ORIGIN);
+  if (session)
+    op.set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf);
+  return op;
+};
+const ownItems = (
+  session: SyntheticSession | null = employee,
+  query = 'monthStart=2027-01-01',
+) => {
+  const op = request(app.getHttpServer()).get(`/api/v1/me/work-items?${query}`);
+  return session ? op.set('Cookie', session.cookie) : op;
+};
+async function withdrawalAudits() {
+  return (
+    await pool.query(
+      `SELECT action,resource_type,resource_id,old_values,new_values,actor_account_id,correlation_id
+     FROM audit_event WHERE company_id=$1 AND action IN ('CANCELLATION_WITHDRAWN','REPLACEMENT_NEED_CLOSED') ORDER BY action`,
+      [f.tenant.companyId],
+    )
+  ).rows;
+}
+async function planningBytes() {
+  return (
+    await pool.query(
+      `SELECT to_jsonb(d)::text AS duty,to_jsonb(a)::text AS assignment
+     FROM duties d JOIN plan_assignments a ON a.company_id=d.company_id AND a.duty_id=d.id
+     WHERE d.id=$1 ORDER BY a.id`,
+      [f.dutyId],
+    )
+  ).rows;
+}
+async function withdrawalCommand(id: string) {
+  const session = (
+    await pool.query<{ id: string }>(
+      'SELECT id FROM sessions WHERE token_hash=$1',
+      [hash(employee.rawToken)],
+    )
+  ).rows[0];
+  const t: TenantContext = {
+    companyId: f.tenant.companyId,
+    accountId: f.mira.account.accountId,
+    sessionId: session.id,
+    role: 'EMPLOYEE',
+  };
+  return app
+    .get(CancellationRequestsService)
+    .withdraw(t, id, randomUUID())
+    .then(
+      (body) => ({
+        status: 200,
+        body: body as { id?: string; status?: string; code?: string },
+      }),
+      (error: unknown) => ({
+        status:
+          typeof error === 'object' && error !== null && 'getStatus' in error
+            ? (error as { getStatus: () => number }).getStatus()
+            : 500,
+        body: (typeof error === 'object' &&
+        error !== null &&
+        'getResponse' in error
+          ? (error as { getResponse: () => unknown }).getResponse()
+          : {}) as { id?: string; status?: string; code?: string },
+      }),
+    );
+}
+async function observeBlockedBy(pid: number) {
+  for (let i = 0; i < 2000; i++) {
+    const q = await pool.query(
+      'SELECT pid FROM pg_stat_activity WHERE $1::int=ANY(pg_blocking_pids(pid))',
+      [pid],
+    );
+    if (q.rowCount) return Number(q.rows[0].pid);
+  }
+  throw new Error('Expected observable PostgreSQL blocking');
+}
+it('SP17 withdraws exactly one OPEN pair with two bounded audits; duty, assignment, statistics and creation receipt are byte-preserved', async () => {
+  const created = await post().expect(201),
+    id = created.body.id as string;
+  const before = await planningBytes(),
+    ledger = (await rows()).ledger;
+  const stats = (
+    await request(app.getHttpServer())
+      .get('/api/v1/me/planning-statistics?monthStart=2027-01-01')
+      .set('Cookie', employee.cookie)
+      .expect(200)
+  ).body;
+  const correlation = randomUUID();
+  const result = await withdraw(id)
+    .set('X-Correlation-ID', correlation)
+    .expect(200);
+  expect(result.body).toEqual({
+    ...created.body,
+    status: 'WITHDRAWN',
+    replacementNeed: { ...created.body.replacementNeed, status: 'CLOSED' },
+  });
+  expect(await planningBytes()).toEqual(before);
+  expect((await rows()).ledger).toEqual(ledger);
+  expect((await rows()).requests).toHaveLength(1);
+  expect((await rows()).needs).toHaveLength(1);
+  expect(
+    (
+      await request(app.getHttpServer())
+        .get('/api/v1/me/planning-statistics?monthStart=2027-01-01')
+        .set('Cookie', employee.cookie)
+        .expect(200)
+    ).body,
+  ).toEqual(stats);
+  const audits = await withdrawalAudits();
+  const serverCorrelation = result.headers['x-correlation-id'] as string;
+  expect(serverCorrelation).not.toBe(correlation);
+  expect(audits).toHaveLength(2);
+  expect(audits).toEqual([
+    {
+      action: 'CANCELLATION_WITHDRAWN',
+      resource_type: 'CANCELLATION_REQUEST',
+      resource_id: id,
+      old_values: { status: 'OPEN' },
+      new_values: { status: 'WITHDRAWN' },
+      actor_account_id: f.mira.account.accountId,
+      correlation_id: serverCorrelation,
+    },
+    {
+      action: 'REPLACEMENT_NEED_CLOSED',
+      resource_type: 'REPLACEMENT_NEED',
+      resource_id: created.body.replacementNeed.id,
+      old_values: { status: 'OPEN' },
+      new_values: { status: 'CLOSED' },
+      actor_account_id: f.mira.account.accountId,
+      correlation_id: serverCorrelation,
+    },
+  ]);
+  expect(result.headers['cache-control']).toBe('private, no-store');
+});
+it('SP17 own discovery survives reload, includes current terminal states, and conceals all coworker/foreign cases', async () => {
+  const created = await post().expect(201);
+  for (let i = 0; i < 2; i++)
+    expect((await ownItems().expect(200)).body).toEqual({
+      cancellationRequests: [created.body],
+      replacementOffers: [],
+    });
+  expect((await ownItems(coworker).expect(200)).body).toEqual({
+    cancellationRequests: [],
+    replacementOffers: [],
+  });
+  expect(
+    (await ownItems(foreignEmployee).expect(200)).body.cancellationRequests,
+  ).toEqual([]);
+  expect(
+    (await ownItems(employee, 'monthStart=2027-02-01').expect(200)).body
+      .cancellationRequests,
+  ).toEqual([]);
+  await withdraw(created.body.id).expect(200);
+  expect(
+    (await ownItems().expect(200)).body.cancellationRequests[0].status,
+  ).toBe('WITHDRAWN');
+  const freshSession = await createSyntheticSession(
+    realSessionService(pool),
+    f.mira.account,
+  );
+  expect(
+    (await ownItems(freshSession).expect(200)).body.cancellationRequests[0].id,
+  ).toBe(created.body.id);
+});
+it.each(['patch', 'delete'] as const)(
+  'SP17 own discovery remains accurate after CR03 %s removes the original assignment',
+  async (kind) => {
+    const created = await post().expect(201);
+    await mutation(kind, await lease()).expect(kind === 'patch' ? 200 : 204);
+    const result = await ownItems().expect(200);
+    expect(result.body.cancellationRequests).toEqual([
+      {
+        ...created.body,
+        status: 'OBSOLETE',
+        replacementNeed: { ...created.body.replacementNeed, status: 'CLOSED' },
+      },
+    ]);
+    await code(withdraw(created.body.id), 409, 'CANCELLATION_NOT_WITHDRAWABLE');
+    expect(await withdrawalAudits()).toHaveLength(1); // reconciliation's need-close only
+  },
+);
+it.each([
+  'coworker',
+  'foreign',
+  'unknown',
+  'malformed',
+  'admin',
+  'anonymous',
+] as const)('SP17 conceals or rejects withdrawal by %s', async (kind) => {
+  const created = await post().expect(201);
+  const id =
+    kind === 'unknown'
+      ? randomUUID()
+      : kind === 'malformed'
+        ? 'bad-id'
+        : (created.body.id as string);
+  const session =
+    kind === 'coworker'
+      ? coworker
+      : kind === 'foreign'
+        ? foreignEmployee
+        : kind === 'admin'
+          ? f.admin
+          : kind === 'anonymous'
+            ? null
+            : employee;
+  const expected = kind === 'admin' ? 403 : kind === 'anonymous' ? 401 : 404;
+  await withdraw(id, session).expect(expected);
+  expect((await rows()).requests[0].status).toBe('OPEN');
+  expect(await withdrawalAudits()).toEqual([]);
+});
+it.each(['APPROVED', 'REJECTED', 'OBSOLETE'] as const)(
+  'SP17 refuses %s without changing terminal workflow',
+  async (status) => {
+    const created = await post().expect(201),
+      id = created.body.id as string;
+    if (status === 'OBSOLETE')
+      await mutation('delete', await lease()).expect(204);
+    else {
+      const c = await pool.connect();
+      try {
+        await c.query('BEGIN');
+        await c.query(
+          `UPDATE cancellation_requests SET status=$2,decided_at=statement_timestamp(),updated_at=statement_timestamp(),decided_by_account_id=$3 WHERE id=$1`,
+          [id, status, f.tenant.admin.accountId],
+        );
+        await c.query(
+          'UPDATE replacement_needs SET status=$2 WHERE cancellation_request_id=$1',
+          [id, status === 'APPROVED' ? 'OPEN_UNFILLED' : 'CLOSED'],
+        );
+        await c.query('COMMIT');
+      } finally {
+        await c.query('ROLLBACK');
+        c.release();
+      }
+    }
+    const before = await rows(),
+      auditBefore = await withdrawalAudits();
+    await code(withdraw(id), 409, 'CANCELLATION_NOT_WITHDRAWABLE');
+    expect(await rows()).toEqual(before);
+    expect(await withdrawalAudits()).toEqual(auditBefore);
+  },
+);
+it('SP17 repeated withdrawal and lost-ack recovery preserve identity and never duplicate audits, even after a new case exists', async () => {
+  const key = randomUUID(),
+    created = await post(key).expect(201),
+    id = created.body.id as string;
+  db.fail = 'withdrawLostAck';
+  await withdraw(id).expect(500);
+  const audits = await withdrawalAudits();
+  expect(audits).toHaveLength(2);
+  const replay = await withdraw(id).expect(200);
+  expect(replay.body.status).toBe('WITHDRAWN');
+  expect(replay.body.id).toBe(id);
+  await withdraw(id).expect(200);
+  expect(await withdrawalAudits()).toEqual(audits);
+  const next = await post().expect(201);
+  expect(next.body.id).not.toBe(id);
+  await withdraw(id).expect(200);
+  expect((await get(next.body.id).expect(200)).body.status).toBe('OPEN');
+  const creationReplay = await post(key).expect(201);
+  expect(creationReplay.headers['idempotency-replayed']).toBe('true');
+  expect(creationReplay.body.status).toBe('WITHDRAWN');
+  expect((await rows()).audits).toHaveLength(2);
+  expect(await withdrawalAudits()).toEqual(audits);
+});
+it('SP17 consistent withdrawn retry remains authorized after historical assignment removal', async () => {
+  const created = await post().expect(201);
+  await withdraw(created.body.id).expect(200);
+  await mutation('delete', await lease()).expect(204);
+  await withdraw(created.body.id).expect(200);
+  expect(await withdrawalAudits()).toHaveLength(2);
+});
+it.each(['withdrawStatus', 'withdrawNeed'] as const)(
+  'SP17 %s failure rolls back both states and audits and permits retry',
+  async (failure) => {
+    const created = await post().expect(201),
+      before = await rows();
+    db.fail = failure;
+    await withdraw(created.body.id).expect(500);
+    expect(await rows()).toEqual(before);
+    expect(await withdrawalAudits()).toEqual([]);
+    await withdraw(created.body.id).expect(200);
+  },
+);
+it.each(['CANCELLATION_WITHDRAWN', 'REPLACEMENT_NEED_CLOSED'] as const)(
+  'SP17 mandatory %s audit failure rolls back all state and prior audit',
+  async (action) => {
+    const created = await post().expect(201),
+      before = await rows();
+    await boot(new FailingAudit(action));
+    await withdraw(created.body.id).expect(500);
+    expect(await rows()).toEqual(before);
+    expect(await withdrawalAudits()).toEqual([]);
+    await boot();
+    await withdraw(created.body.id).expect(200);
+  },
+);
+it.each(['OPEN', 'WITHDRAWN'] as const)(
+  'SP17 fails closed on inconsistent %s pair, never repairs it by withdrawal',
+  async (status) => {
+    const created = await post().expect(201);
+    if (status === 'WITHDRAWN') await withdraw(created.body.id).expect(200);
+    await pool.query(
+      'UPDATE replacement_needs SET status=$2 WHERE cancellation_request_id=$1',
+      [created.body.id, status === 'OPEN' ? 'CLOSED' : 'OPEN'],
+    );
+    const before = await rows(),
+      audits = await withdrawalAudits();
+    await withdraw(created.body.id).expect(500);
+    await ownItems().expect(500);
+    expect(await rows()).toEqual(before);
+    expect(await withdrawalAudits()).toEqual(audits);
+  },
+);
+it('SP17 missing need is a technical failure under a deferred fixture deletion, with no success audit', async () => {
+  const created = await post().expect(201),
+    id = created.body.id as string;
+  const p = pause('ORDER BY id FOR UPDATE', 'before');
+  db.hook!.work = async (c) => {
+    await c.query(
+      'DELETE FROM replacement_needs WHERE cancellation_request_id=$1',
+      [id],
+    );
+  };
+  await withdraw(id).expect(500);
+  p.release();
+  expect((await rows()).needs).toHaveLength(1);
+  expect(await withdrawalAudits()).toEqual([]);
+});
+it.each([false, true])(
+  'SP17 two withdrawals block on D; first rollback=%s yields exactly one transition',
+  async (rollback) => {
+    const created = await post().expect(201),
+      id = created.body.id as string;
+    const p = pause('SELECT id FROM public.duties');
+    if (rollback) db.fail = 'withdrawNeed';
+    const first = withdrawalCommand(id);
+    pending.push(first);
+    await p.entered;
+    const waiter = pause('SELECT id FROM public.duties', 'before');
+    const second = withdrawalCommand(id);
+    pending.push(second);
+    await waiter.entered;
+    const pid = waiter.pid();
+    waiter.release();
+    await waitUntilBlockedBy(pool, pid, p.pid());
+    p.release();
+    expect((await first).status).toBe(rollback ? 500 : 200);
+    expect((await second).status).toBe(200);
+    expect((await rows()).requests[0].status).toBe('WITHDRAWN');
+    expect(await withdrawalAudits()).toHaveLength(2);
+  },
+);
+it.each(['patch', 'delete'] as const)(
+  'SP17 withdrawal wins before CR03 %s without obsoleting the terminal case',
+  async (kind) => {
+    const created = await post().expect(201),
+      token = await lease();
+    const p = pause('SELECT id FROM public.duties');
+    const first = withdraw(created.body.id).then((r) => r);
+    pending.push(first);
+    await p.entered;
+    const edit = mutation(kind, token).then((r) => r);
+    pending.push(edit);
+    await observeBlockedBy(p.pid());
+    p.release();
+    expect((await first).status).toBe(200);
+    expect((await edit).status).toBe(kind === 'patch' ? 200 : 204);
+    expect((await rows()).requests[0].status).toBe('WITHDRAWN');
+    expect((await rows()).needs[0].status).toBe('CLOSED');
+    expect(await withdrawalAudits()).toHaveLength(2);
+  },
+);
+it.each(
+  (['patch', 'delete'] as const).flatMap((kind) =>
+    [false, true].map((rollback) => ({ kind, rollback })),
+  ),
+)(
+  'SP17 CR03 $kind wins before withdrawal, rollback=$rollback',
+  async ({ kind, rollback }) => {
+    const created = await post().expect(201),
+      token = await lease();
+    const p = pause('UPDATE public.plan_assignments', 'after', rollback);
+    const edit = mutation(kind, token).then((r) => r);
+    pending.push(edit);
+    await p.entered;
+    const second = withdraw(created.body.id).then((r) => r);
+    pending.push(second);
+    await observeBlockedBy(p.pid());
+    p.release();
+    expect((await edit).status).toBe(
+      rollback ? 500 : kind === 'patch' ? 200 : 204,
+    );
+    const result = await second;
+    expect([result.status, result.body.code ?? null]).toEqual(
+      rollback ? [200, null] : [409, 'CANCELLATION_NOT_WITHDRAWABLE'],
+    );
+    expect((await rows()).requests[0].status).toBe(
+      rollback ? 'WITHDRAWN' : 'OBSOLETE',
+    );
+    expect((await rows()).needs[0].status).toBe('CLOSED');
+  },
+);
+it.each(['revoked', 'expired'] as const)(
+  'SP17 session %s during observed lock wait prevents withdrawal',
+  async (kind) => {
+    const created = await post().expect(201),
+      before = await rows();
+    const c = await pool.connect();
+    clients.push(c);
+    await c.query('BEGIN');
+    // Revocation writers acquire A UPDATE; expiry can occur while D is held.
+    if (kind === 'revoked')
+      await c.query('SELECT id FROM accounts WHERE id=$1 FOR UPDATE', [
+        f.mira.account.accountId,
+      ]);
+    else
+      await c.query('SELECT id FROM duties WHERE id=$1 FOR UPDATE', [f.dutyId]);
+    const p = pause(
+      kind === 'revoked'
+        ? 'SELECT a.role, a.email'
+        : 'SELECT id FROM public.duties',
+      'before',
+    );
+    const response = withdraw(created.body.id).then((r) => r);
+    pending.push(response);
+    await p.entered;
+    const pid = p.pid();
+    p.release();
+    await waitUntilBlockedBy(pool, pid, await backendPid(c));
+    if (kind === 'revoked')
+      await c.query(
+        'UPDATE sessions SET revoked_at=clock_timestamp() WHERE account_id=$1',
+        [f.mira.account.accountId],
+      );
+    else
+      await pool.query(
+        "UPDATE sessions SET created_at=clock_timestamp()-interval '10 hours',last_seen_at=clock_timestamp()-interval '9 hours' WHERE account_id=$1",
+        [f.mira.account.accountId],
+      );
+    await c.query('COMMIT');
+    const result = await response;
+    expect([result.status, result.body.code]).toEqual([
+      401,
+      kind === 'revoked' ? 'SESSION_REVOKED' : 'SESSION_EXPIRED',
+    ]);
+    expect(await rows()).toEqual(before);
+    expect(await withdrawalAudits()).toEqual([]);
+  },
+);
+it('SP17 authenticates and validates bodyless withdrawal, no-store read/head and negative parser/query paths', async () => {
+  const created = await post().expect(201),
+    id = created.body.id as string;
+  const ops = [
+    withdraw(id).unset('Origin'),
+    withdraw(id).set('Origin', 'https://foreign.invalid'),
+    withdraw(id).unset('X-CSRF-Token'),
+    withdraw(id).send({}),
+    withdraw(id).type('json').send('{'),
+    ownItems(null),
+    ownItems(f.admin),
+    ownItems(employee, ''),
+    ownItems(
+      employee,
+      'monthStart=2027-01-01&employeeId=' + f.jonas.employeeId,
+    ),
+    ownItems(employee, 'monthStart=2027-01-01&monthStart=2027-01-01'),
+    ownItems(employee, 'monthStart=2027-02-30'),
+    ownItems(employee, 'monthStart=2027-01-02'),
+  ];
+  for (const op of ops) {
+    const result = await op;
+    expect(result.status).toBeGreaterThanOrEqual(400);
+    expect(result.headers['cache-control']).toBe('private, no-store');
+    expect(result.headers.vary).toContain('Cookie');
+    expect(result.headers.etag).toBeUndefined();
+  }
+  for (const method of ['get', 'head'] as const) {
+    const result = await request(app.getHttpServer())
+      [method]('/api/v1/me/work-items?monthStart=2027-01-01')
+      .set('Cookie', employee.cookie)
+      .set('If-None-Match', '*')
+      .expect(200);
+    expect(result.headers['cache-control']).toBe('private, no-store');
+    expect(result.headers.etag).toBeUndefined();
+  }
+  expect((await rows()).requests[0].status).toBe('OPEN');
+  expect(await withdrawalAudits()).toEqual([]);
+});
+
+it('SP17 two real HTTP sessions serialize at the account guard and return the same withdrawn resource once', async () => {
+  const created = await post().expect(201);
+  const otherSession = await createSyntheticSession(
+    realSessionService(pool),
+    f.mira.account,
+  );
+  const barrier = pause('SELECT id FROM public.duties');
+  const first = withdraw(created.body.id).then((r) => r);
+  pending.push(first);
+  await barrier.entered;
+  const second = withdraw(created.body.id, otherSession).then((r) => r);
+  pending.push(second);
+  const blockedPid = await observeBlockedBy(barrier.pid());
+  const activity = await pool.query<{ query: string }>(
+    'SELECT query FROM pg_stat_activity WHERE pid=$1',
+    [blockedPid],
+  );
+  expect(activity.rows[0].query).toContain('FOR UPDATE OF a');
+  barrier.release();
+  const results = await Promise.all([first, second]);
+  expect(results.map((result) => result.status)).toEqual([200, 200]);
+  expect(results.map((result) => result.body.id)).toEqual([
+    created.body.id,
+    created.body.id,
+  ]);
+  expect(results.map((result) => result.body.status)).toEqual([
+    'WITHDRAWN',
+    'WITHDRAWN',
+  ]);
+  expect(await withdrawalAudits()).toHaveLength(2);
 });

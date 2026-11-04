@@ -23,8 +23,10 @@ import { assertEmployeeMonthReceiptSchema } from '../planning/employee-month-rec
 import {
   assertCancellationEligible,
   cancellationContext,
+  cancellationAssignmentsForMonth,
   lockCancellationContext,
 } from '../planning/cancellation-context.js';
+import { assertMyPlanMonth } from '../planning/me-monthly-plans-read.service.js';
 import { PLANNING_WRITER_TIMEOUTS } from '../planning/planning-locks.js';
 import { BusinessAuditService } from '../audit/business-audit.service.js';
 import type { CancellationResponse } from './cancellation.types.js';
@@ -143,6 +145,160 @@ export class CancellationRequestsService {
         t.role === 'EMPLOYEE' ? await currentEmployee(c, t) : undefined;
       if (employee) await currentEmployee(c, t, employee.id);
       return this.resource(c, t, id, employee?.id);
+    });
+  }
+  /** Month-scoped, current-owner discovery, including historical/obsolete cases. */
+  ownWorkItems(t: TenantContext, monthStart: string) {
+    assertMyPlanMonth(monthStart);
+    return this.database.withTransaction(async (c) => {
+      await this.enter(c, t);
+      const employee = await currentEmployee(c, t);
+      await currentEmployee(c, t, employee.id);
+      const assignments = await cancellationAssignmentsForMonth(
+        c,
+        t.companyId,
+        employee.id,
+        monthStart,
+      );
+      const ids = (
+        await c.query<{ id: string }>(
+          `SELECT id FROM public.cancellation_requests
+         WHERE company_id=$1 AND employee_id=$2 AND assignment_id=ANY($3::uuid[])
+         ORDER BY created_at,id`,
+          [t.companyId, employee.id, assignments],
+        )
+      ).rows;
+      const cancellationRequests: CancellationResponse[] = [];
+      for (const row of ids) {
+        const result = await this.resource(c, t, row.id, employee.id);
+        // A concurrent retained-assignment date change may move it out of this month.
+        if (result.duty.dutyDate.slice(0, 7) === monthStart.slice(0, 7))
+          cancellationRequests.push(result);
+      }
+      await assertSessionInTransaction(c, t);
+      // The exact schema guard rejects replacement_offers until its reviewed slice.
+      return { cancellationRequests, replacementOffers: [] };
+    });
+  }
+
+  /** Resource identity is the retry fence; no receipt or planning mutation is needed. */
+  withdraw(
+    t: TenantContext,
+    id: string,
+    correlationId: string,
+  ): Promise<CancellationResponse> {
+    return this.database.withTransaction(async (c) => {
+      await this.enter(c, t); // A/C; unused tiers I/M/Q acquire no locks
+      const employee = await currentEmployee(c, t);
+      const found = (
+        await c.query<{ assignment_id: string }>(
+          `SELECT assignment_id FROM public.cancellation_requests
+         WHERE company_id=$1 AND id=$2 AND employee_id=$3`,
+          [t.companyId, id, employee.id],
+        )
+      ).rows[0];
+      if (!found) throw new NotFoundException({ code: 'RESOURCE_NOT_FOUND' });
+      const discovered = await cancellationContext(
+        c,
+        t.companyId,
+        found.assignment_id,
+        employee.id,
+      );
+      await currentEmployee(c, t, employee.id); // E before P/L/D/A2
+      const context = await lockCancellationContext(c, t, discovered);
+      // Never filter W1 by an unlocked status. Wait, then inspect the current row.
+      const cases = (
+        await c.query<{
+          id: string;
+          assignment_id: string;
+          duty_id: string;
+          employee_id: string;
+          status: string;
+        }>(
+          `SELECT id,assignment_id,duty_id,employee_id,status FROM public.cancellation_requests
+         WHERE company_id=$1 AND id=$2 ORDER BY id FOR UPDATE`,
+          [t.companyId, id],
+        )
+      ).rows;
+      const needs = (
+        await c.query<{ id: string; duty_id: string; status: string }>(
+          `SELECT id,duty_id,status FROM public.replacement_needs
+         WHERE company_id=$1 AND cancellation_request_id=$2 ORDER BY id FOR UPDATE`,
+          [t.companyId, id],
+        )
+      ).rows;
+      await assertSessionInTransaction(c, t); // fresh clock after all lock waits
+      const live = await currentEmployee(c, t); // read only; no late E lock
+      const row = cases[0],
+        need = needs[0];
+      if (!row || row.employee_id !== live.id || live.id !== employee.id)
+        throw new NotFoundException({ code: 'RESOURCE_NOT_FOUND' });
+      if (
+        cases.length !== 1 ||
+        needs.length !== 1 ||
+        !need ||
+        row.assignment_id !== context.assignment_id ||
+        row.duty_id !== context.duty_id ||
+        need.duty_id !== row.duty_id
+      )
+        throw new Error('Inconsistent withdrawal context');
+      // Validate terminal pair integrity too, before returning a replay or conflict.
+      const validPair =
+        row.status === 'OPEN'
+          ? need.status === 'OPEN'
+          : row.status === 'APPROVED'
+            ? ['RESOLVED', 'OPEN_UNFILLED'].includes(need.status)
+            : ['WITHDRAWN', 'REJECTED', 'OBSOLETE'].includes(row.status) &&
+              need.status === 'CLOSED';
+      if (!validPair) throw new Error('Inconsistent withdrawal pair');
+      if (row.status === 'WITHDRAWN') return this.resource(c, t, id, live.id);
+      if (row.status !== 'OPEN')
+        throw new ConflictException({ code: 'CANCELLATION_NOT_WITHDRAWABLE' });
+      if (
+        context.state !== 'ACTIVE' ||
+        context.removed_at !== null ||
+        context.duty_removed_at !== null ||
+        context.plan_status !== 'PUBLISHED'
+      )
+        throw new Error('Open cancellation has invalid planning context');
+      const {
+        rows: [clock],
+      } = await c.query<{ at: string }>('SELECT clock_timestamp()::text AS at');
+      const changed = await c.query(
+        `UPDATE public.cancellation_requests SET status='WITHDRAWN',updated_at=$3::timestamptz
+         WHERE company_id=$1 AND id=$2 AND employee_id=$4 AND status='OPEN'`,
+        [t.companyId, id, clock.at, live.id],
+      );
+      const closed = await c.query(
+        `UPDATE public.replacement_needs SET status='CLOSED',updated_at=$3::timestamptz
+         WHERE company_id=$1 AND id=$2 AND cancellation_request_id=$4 AND status='OPEN'`,
+        [t.companyId, need.id, clock.at, id],
+      );
+      if (changed.rowCount !== 1 || closed.rowCount !== 1)
+        throw new Error('Withdrawal lost its conditional transition');
+      await assertSessionInTransaction(c, t);
+      const envelope = {
+        companyId: t.companyId,
+        actorAccountId: t.accountId,
+        correlationId,
+      };
+      await this.audit.recordBusinessAction(c, {
+        ...envelope,
+        action: 'CANCELLATION_WITHDRAWN',
+        resourceType: 'CANCELLATION_REQUEST',
+        resourceId: id,
+        oldValues: { status: 'OPEN' },
+        newValues: { status: 'WITHDRAWN' },
+      });
+      await this.audit.recordBusinessAction(c, {
+        ...envelope,
+        action: 'REPLACEMENT_NEED_CLOSED',
+        resourceType: 'REPLACEMENT_NEED',
+        resourceId: need.id,
+        oldValues: { status: 'OPEN' },
+        newValues: { status: 'CLOSED' },
+      });
+      return this.resource(c, t, id, live.id);
     });
   }
   async create(

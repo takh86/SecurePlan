@@ -101,3 +101,20 @@ export function assertCancellationEligible(
   if (Number(row.version) !== version)
     throw new ConflictException({ code: 'PLAN_CONCURRENT_MODIFICATION' });
 }
+
+/** Planning-owned historical membership projection for a bounded personal workflow read. */
+export async function cancellationAssignmentsForMonth(
+  c: PoolClient,
+  companyId: string,
+  employeeId: string,
+  monthStart: string,
+): Promise<string[]> {
+  return (
+    await c.query<{ assignment_id: string }>(
+      `SELECT a.id AS assignment_id FROM public.plan_assignments a
+     JOIN public.duties d ON d.company_id=a.company_id AND d.id=a.duty_id
+     WHERE a.company_id=$1 AND a.employee_id=$2 AND d.planning_month=$3::date ORDER BY a.id`,
+      [companyId, employeeId, monthStart],
+    )
+  ).rows.map((row) => row.assignment_id);
+}
