@@ -467,7 +467,7 @@ it('conceals foreign and irrelevant local resources, but gives contextual self-o
   expect((await detail(need, s)).status).toBe(404);
   expect((await post(randomUUID(), s)).status).toBe(404);
 });
-it.each(['list', 'detail', 'post'])(
+it.each(['list', 'post'])(
   'enforces authenticated employee role on %s',
   async (kind) => {
     const op = (s: SyntheticSession | null) =>
@@ -480,6 +480,10 @@ it.each(['list', 'detail', 'post'])(
     expect((await op(f.admin)).status).toBe(403);
   },
 );
+it('allows admin need detail while still requiring authentication', async () => {
+  expect((await detail(need, null)).status).toBe(401);
+  expect((await detail(need, f.admin)).status).toBe(200);
+});
 it.each([
   'monthStart=2027-01-02',
   'monthStart=2027-02-30',

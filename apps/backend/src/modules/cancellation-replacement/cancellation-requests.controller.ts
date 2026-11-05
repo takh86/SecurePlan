@@ -22,9 +22,11 @@ import { parseIdempotencyKey } from '../../common/http/idempotency-key.js';
 import { PlanningJsonGuard } from '../planning/planning-json.guard.js';
 import { CreateCancellationDto } from './cancellation.types.js';
 import { CancellationRequestsService } from './cancellation-requests.service.js';
+import { AdminWorkQueueService } from './admin-work-queue.service.js';
+import { assertEmptyGetBody, assertNoAdminQuery } from './admin-work-queue.types.js';
 @Controller('api/v1/cancellation-requests')
 export class CancellationRequestsController {
-  constructor(private readonly cancellations: CancellationRequestsService) {}
+  constructor(private readonly cancellations: CancellationRequestsService, private readonly admin: AdminWorkQueueService) {}
   @Post()
   @RequireRoles('EMPLOYEE')
   @UseGuards(PlanningJsonGuard)
@@ -70,7 +72,13 @@ export class CancellationRequestsController {
   get(
     @CurrentTenant() t: TenantContext,
     @Param('requestId', ResourceIdPipe) id: string,
+    @Req() request: Request,
   ) {
+    if (t.role === 'COMPANY_ADMIN') {
+      assertEmptyGetBody(request);
+      assertNoAdminQuery(request.query);
+      return this.admin.cancellation(t, id);
+    }
     return this.cancellations.get(t, id);
   }
 }

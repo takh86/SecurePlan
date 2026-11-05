@@ -1,5 +1,11 @@
 # API Design – öffentliche Übersicht
 
+SP19-P1 proposes the [administrative read API](admin-work-queue.openapi.json) for
+review: tenant-scoped work queue, cancellation and need context, and submitted
+offers. Eligibility indicators describe current criteria for submitting a new
+offer; they do not authorize selection or reassignment. React integration,
+administrative decisions and deployment are outside this backend slice.
+
 A1 implementation amendment (2026-11-03): [project operating calendar](project-operating-calendar.md).
 A2 adopted backend contract (2026-11-03): [employee-month Save](employee-month-save.md),
 [OpenAPI](employee-month-save.openapi.json). Owner approval and implementation evidence are separate.
