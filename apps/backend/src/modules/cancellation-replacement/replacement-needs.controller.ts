@@ -16,6 +16,8 @@ import { CorrelationId } from '../../common/http/correlation-id.decorator.js';
 import { ResourceIdPipe } from '../../common/http/resource-id.pipe.js';
 import { parseIdempotencyKey } from '../../common/http/idempotency-key.js';
 import { ReplacementOffersService } from './replacement-offers.service.js';
+import { AdminWorkQueueService } from './admin-work-queue.service.js';
+import { assertEmptyGetBody, assertNoAdminQuery, offersQuery } from './admin-work-queue.types.js';
 function noQuery(request: Request) {
   if (Object.keys(request.query).length)
     throw new BadRequestException({ code: 'UNKNOWN_FIELD' });
@@ -55,16 +57,32 @@ export class MeReplacementNeedsController {
 }
 @Controller('api/v1/replacement-needs')
 export class ReplacementNeedsController {
-  constructor(private readonly offers: ReplacementOffersService) {}
+  constructor(private readonly offers: ReplacementOffersService, private readonly admin: AdminWorkQueueService) {}
   @Get(':needId')
-  @RequireRoles('EMPLOYEE')
+  @RequireRoles('EMPLOYEE', 'COMPANY_ADMIN')
   detail(
     @CurrentTenant() t: TenantContext,
     @Param('needId', ResourceIdPipe) id: string,
     @Req() req: Request,
   ) {
+    if (t.role === 'COMPANY_ADMIN') {
+      assertEmptyGetBody(req);
+      assertNoAdminQuery(req.query);
+      return this.admin.need(t, id);
+    }
     noQuery(req);
     return this.offers.detail(t, id);
+  }
+  @Get(':needId/offers')
+  @RequireRoles('COMPANY_ADMIN')
+  adminOffers(
+    @CurrentTenant() t: TenantContext,
+    @Param('needId', ResourceIdPipe) id: string,
+    @Query() query: Record<string, unknown>,
+    @Req() request: Request,
+  ) {
+    assertEmptyGetBody(request);
+    return this.admin.offers(t, id, offersQuery(query));
   }
   @Post(':needId/offers')
   @RequireRoles('EMPLOYEE')

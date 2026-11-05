@@ -89,7 +89,15 @@ jobs:
       - run: npm run test:scripts
         env:
           NODE_ENV: development
-      - run: npm run test:e2e
+      # The shared disposable database also hosts lock and catalog-drift tests.
+      # Bound parallel files to avoid exhausting wait budgets on the CI runner.
+      - run: npm run test:e2e -- --maxWorkers=2
+      # This test commits temporary catalog drift. Run it after the shared
+      # database suite so concurrent test files cannot observe that drift.
+      - name: SP19 isolated planning-schema DDL wait
+        run: npm run test:e2e -- admin-work-queue-real.e2e-spec.ts -t "rereads the exact planning signature after an observed DDL wait"
+        env:
+          SECUREPLAN_SP19_ISOLATED_DDL: '1'
       - name: Backend runtime readiness
         shell: bash
         run: |

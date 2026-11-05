@@ -66,6 +66,8 @@ import { MeMonthlyPlansController } from './modules/planning/me-monthly-plans.co
 import { MeMonthlyPlansReadService } from './modules/planning/me-monthly-plans-read.service.js';
 import { MePlanningStatisticsController } from './modules/planning/me-planning-statistics.controller.js';
 import { MePlanningStatisticsService } from './modules/planning/me-planning-statistics.service.js';
+import { AdminWorkQueueController } from './modules/cancellation-replacement/admin-work-queue.controller.js';
+import { AdminWorkQueueService } from './modules/cancellation-replacement/admin-work-queue.service.js';
 
 @Module({
   imports: [
@@ -77,6 +79,7 @@ import { MePlanningStatisticsService } from './modules/planning/me-planning-stat
     ]),
   ],
   controllers: [
+    AdminWorkQueueController,
     MeReplacementNeedsController,
     ReplacementNeedsController,
     CancellationRequestsController,
@@ -122,6 +125,7 @@ import { MePlanningStatisticsService } from './modules/planning/me-planning-stat
     { provide: ACTIVATION_DELIVERY, useFactory: createActivationDelivery },
     BusinessAuditService,
     CancellationRequestsService,
+    AdminWorkQueueService,
     ReplacementOffersService,
     AssignmentRemovalReconciler,
     {
