@@ -20,6 +20,7 @@
     "db:migrate": "node --env-file=.env scripts/migrate.mjs",
     "db:verify": "node --env-file=.env scripts/verify-db.mjs",
     "start:backend": "node --env-file=.env apps/backend/dist/main.js",
+    "check:replacement-api": "node scripts/export-replacement-openapi.mjs --check",
     "check:public": "node scripts/check-public.mjs"
   },
   "engines": {

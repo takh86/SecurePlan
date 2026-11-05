@@ -1,3 +1,4 @@
+import { ownReplacementOffers } from './replacement-offers.store.js';
 import {
   ConflictException,
   Injectable,
@@ -177,8 +178,9 @@ export class CancellationRequestsService {
           cancellationRequests.push(result);
       }
       await assertSessionInTransaction(c, t);
-      // P1 prepares persistence only; employee offer reads belong to the next slice.
-      return { cancellationRequests, replacementOffers: [] };
+      const replacementOffers = await ownReplacementOffers(c, t.companyId, employee, monthStart);
+      await assertSessionInTransaction(c, t);
+      return { cancellationRequests, replacementOffers };
     });
   }
 

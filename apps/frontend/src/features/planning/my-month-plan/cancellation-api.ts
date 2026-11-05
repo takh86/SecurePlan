@@ -1,3 +1,4 @@
+import { parseOffers, type Offer } from '../../cancellation-replacement/open-duties/offer-api';
 import { ApiError } from '../../../shared/api/api-error';
 import { isCivilDate, isUtcSecond } from '../../../shared/time/civil-time';
 export type CancellationResponse = {
@@ -154,22 +155,22 @@ export function parseCancellation(
 
 export type MyWorkItems = {
   cancellationRequests: CancellationResponse[];
-  replacementOffers: [];
+  replacementOffers: Offer[];
 };
-/** Current slice deliberately accepts no offer data while the server schema excludes it. */
+/** Coordinated SP18 transition: retain both exact collection keys and validate offers. */
 export function parseWorkItems(
   value: unknown,
   monthStart: string,
+  employeeId?: string,
 ): MyWorkItems {
   const root = record(value, ['cancellationRequests', 'replacementOffers']);
   if (
     !Array.isArray(root.cancellationRequests) ||
-    !Array.isArray(root.replacementOffers) ||
-    root.replacementOffers.length !== 0
+    !Array.isArray(root.replacementOffers)
   )
     invalid();
   const seen = new Set<string>();
-  let owner: string | undefined;
+  let owner: string | undefined = employeeId?.toLowerCase();
   const cancellationRequests = root.cancellationRequests.map(
     (value: unknown) => {
       if (
@@ -202,5 +203,5 @@ export function parseWorkItems(
       return result;
     },
   );
-  return { cancellationRequests, replacementOffers: [] };
+  return { cancellationRequests, replacementOffers: parseOffers(root.replacementOffers, owner) };
 }

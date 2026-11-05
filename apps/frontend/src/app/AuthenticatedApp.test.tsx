@@ -137,6 +137,7 @@ describe('F1 — role-based routes (UI gating only; the server authorizes every 
     const links = within(nav).getAllByRole('link');
     expect(links.map((link) => link.textContent)).toEqual([
       'Mein Monatsplan',
+      'Offene Dienste',
       'Absagen & Ersatz folgt',
       'Meine Statistik',
     ]);

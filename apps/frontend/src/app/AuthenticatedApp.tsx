@@ -1,3 +1,4 @@
+import { OpenDutiesPage } from '../features/cancellation-replacement/open-duties/OpenDutiesPage';
 import { Navigate, Route, Routes } from 'react-router';
 import { WorkQueuePage } from '../features/cancellation-replacement/work-queue/WorkQueuePage';
 import type { AuthenticatedSession } from '../features/auth/LoginScreen';
@@ -43,6 +44,8 @@ function RouteView({ route, role, api, identity, requestSessionRevalidation }: {
   if (route.role !== role) return <AccessDeniedPage role={role} />;
   if (route.availability === 'planned') return <PlannedFeaturePage route={route} />;
   switch (route.id) {
+    case 'open-duties':
+      return <PageFrame title={route.title}><OpenDutiesPage api={api} identity={identity} requestSessionRevalidation={requestSessionRevalidation} /></PageFrame>;
     case 'employees':
       return <EmployeesSection route={route} api={api} />;
     case 'projects':
