@@ -27,7 +27,7 @@ const publishKey = randomUUID(),
 const ledger = async (pool: typeof db.pool, extended = false) =>
   (
     await pool.query(
-      `SELECT ${extended ? "to_jsonb(r)-'result_cancellation_request_id'" : 'to_jsonb(r)'} AS row FROM idempotency_records r ORDER BY id`,
+      `SELECT ${extended ? "to_jsonb(r)-'result_cancellation_request_id'-'result_replacement_offer_id'" : 'to_jsonb(r)'} AS row FROM idempotency_records r ORDER BY id`,
     )
   ).rows;
 beforeAll(async () => {
@@ -161,7 +161,7 @@ it('D16 and D17 preserve all historical receipt bytes, hashes, attempts and old 
   expect(d16).toEqual(old);
   expect(await ledger(db.pool, true)).toEqual(old);
 });
-it('exact seven-table guard and independent D17 receipt signature both pass real PG17', async () => {
+it('exact eight-table guard and independent D18 receipt signature both pass real PG17', async () => {
   await probe(async (c) => {
     await assertPlanningSchemaComplete(c);
     await assertEmployeeMonthReceiptSchema(c);

@@ -204,6 +204,14 @@ test('populated D15 -> D16 -> D17 through actual migration runner preserves rece
           .update(readFileSync(join(migrationDir, row.name)))
           .digest('hex'),
       );
+    const d17 = (await c.query('SELECT to_jsonb(r)::text AS bytes FROM idempotency_records r ORDER BY id')).rows;
+    copyFileSync(join(migrationDir, '0018_replacement_offers.sql'), join(scratch, 'apps/backend/migrations/0018_replacement_offers.sql'));
+    run();
+    assert.deepEqual((await c.query("SELECT (to_jsonb(r)-'result_replacement_offer_id')::text AS bytes FROM idempotency_records r ORDER BY id")).rows, d17);
+    const d18 = (await c.query('SELECT name,checksum FROM schema_migrations ORDER BY name')).rows;
+    assert.equal(d18.length, 18);
+    run();
+    assert.deepEqual((await c.query('SELECT name,checksum FROM schema_migrations ORDER BY name')).rows, d18);
     const verified = spawnSync(
       process.execPath,
       [fileURLToPath(new URL('./verify-db.mjs', import.meta.url))],
@@ -216,7 +224,7 @@ test('populated D15 -> D16 -> D17 through actual migration runner preserves rece
     assert.equal(
       verified.status,
       0,
-      'database verification after populated D17',
+      'database verification after populated D17 -> D18',
     );
   } finally {
     await c?.end();

@@ -77,6 +77,20 @@ try {
       AND conname='fk_idempotency_records__cancellation_result' AND convalidated
       AND confrelid='public.cancellation_requests'::regclass) AS valid`);
   if (!cancellationReceipt.rows[0]?.valid) throw new Error("Missing typed cancellation receipt catalogue");
+  const offers = await client.query(`SELECT
+    EXISTS(SELECT 1 FROM schema_migrations WHERE name='0018_replacement_offers.sql')
+    AND EXISTS(SELECT 1 FROM pg_class WHERE oid='public.replacement_offers'::regclass
+      AND relkind='r' AND relpersistence='p' AND NOT relrowsecurity AND NOT relforcerowsecurity)
+    AND (SELECT count(*)=2 FROM pg_index WHERE indexrelid IN
+      ('public.uq_replacement_offers__active_employee_need'::regclass,'public.uq_replacement_offers__selected_need'::regclass)
+      AND indisunique AND indisvalid AND indisready AND indislive AND indpred IS NOT NULL)
+    AND EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.idempotency_records'::regclass
+      AND attname='result_replacement_offer_id' AND atttypid='uuid'::regtype AND NOT attnotnull AND NOT attisdropped)
+    AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.idempotency_records'::regclass
+      AND conname='fk_idempotency_records__offer_result' AND convalidated
+      AND confrelid='public.replacement_offers'::regclass) AS valid`);
+  if (!offers.rows[0]?.valid) throw new Error("Missing replacement offer integrity catalogue");
+  console.log("Replacement offer history, partial uniqueness and typed receipt verified.");
   console.log("Typed cancellation receipt reference and migration verified.");
   console.log("CR-03 historical identity and deferred workflow cardinality verified.");
   console.log("PostgreSQL connection and foundation migration verified.");

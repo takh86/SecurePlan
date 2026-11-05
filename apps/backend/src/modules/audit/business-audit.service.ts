@@ -64,7 +64,10 @@ export type BusinessAuditAction =
   /** SP-17 owner-authorized withdrawal, bounded to the effective state transition. */
   | 'CANCELLATION_WITHDRAWN'
   | 'CANCELLATION_OBSOLETED'
-  | 'REPLACEMENT_NEED_CLOSED';
+  | 'REPLACEMENT_NEED_CLOSED'
+  /** SP18 D08 owner-ratified bounded offer lifecycle events. */
+  | 'REPLACEMENT_OFFER_CREATED'
+  | 'REPLACEMENT_OFFER_INVALIDATED';
 
 export type BusinessAuditEntry = {
   companyId: string;
@@ -72,7 +75,7 @@ export type BusinessAuditEntry = {
   action: BusinessAuditAction;
   resourceType:
     | 'EMPLOYEE' | 'ACCOUNT' | 'PROJECT' | 'PROJECT_ASSIGNMENT' | 'PROJECT_SHIFT_CONFIGURATION' | 'EMPLOYEE_AVAILABILITY'
-    | 'MONTHLY_PLAN' | 'DUTY' | 'DUTY_ASSIGNMENT' | 'PROJECT_OPERATING_CALENDAR' | 'CANCELLATION_REQUEST' | 'REPLACEMENT_NEED';
+    | 'MONTHLY_PLAN' | 'DUTY' | 'DUTY_ASSIGNMENT' | 'PROJECT_OPERATING_CALENDAR' | 'CANCELLATION_REQUEST' | 'REPLACEMENT_NEED' | 'REPLACEMENT_OFFER';
   resourceId: string;
   oldValues?: Readonly<Record<string, unknown>> | null;
   newValues?: Readonly<Record<string, unknown>> | null;
@@ -82,6 +85,9 @@ export type BusinessAuditEntry = {
 @Injectable()
 export class BusinessAuditService {
   async recordBusinessAction(client: Queryable, entry: BusinessAuditEntry): Promise<void> {
+    if (entry.action === 'REPLACEMENT_OFFER_CREATED' || entry.action === 'REPLACEMENT_OFFER_INVALIDATED') {
+      if (!offerAudit(entry)) throw new Error('Invalid bounded replacement offer audit');
+    }
     if (entry.action === 'PROJECT_OPERATING_CALENDAR_UPDATED') {
       if (entry.resourceType !== 'PROJECT_OPERATING_CALENDAR' || entry.actorAccountId === null
         || entry.newValues == null || !calendarValues(entry.newValues, true)
@@ -119,4 +125,24 @@ function calendarValues(value: Readonly<Record<string, unknown>>, allowBootstrap
     && Array.isArray(days) && days.length >= 1 && days.length <= 7
     && days.every((day: unknown, index: number) => Number.isInteger(day) && Number(day) >= 1 && Number(day) <= 7
       && (index === 0 || Number(days[index - 1]) < Number(day)));
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function exactKeys(value: Readonly<Record<string, unknown>>, keys: string): boolean {
+  return !Array.isArray(value) && Object.keys(value).sort().join(',') === keys;
+}
+function offerAudit(entry: BusinessAuditEntry): boolean {
+  const value = entry.newValues;
+  if (entry.resourceType !== 'REPLACEMENT_OFFER' || entry.actorAccountId === null
+    || ![entry.companyId, entry.actorAccountId, entry.resourceId, entry.correlationId].every((id) => UUID.test(id))
+    || value == null || typeof value.needId !== 'string' || !UUID.test(value.needId)) return false;
+  if (entry.action === 'REPLACEMENT_OFFER_CREATED') {
+    return entry.oldValues == null && exactKeys(value, 'employeeId,needId,status')
+      && value.status === 'OPEN' && typeof value.employeeId === 'string' && UUID.test(value.employeeId)
+      && Buffer.byteLength(JSON.stringify(value), 'utf8') < 512;
+  }
+  return exactKeys(value, 'cause,needId,status') && value.status === 'INVALIDATED'
+    && (value.cause === 'CANCELLATION_WITHDRAWN' || value.cause === 'ASSIGNMENT_REMOVED')
+    && entry.oldValues != null && exactKeys(entry.oldValues, 'status') && entry.oldValues.status === 'OPEN'
+    && Buffer.byteLength(JSON.stringify(value), 'utf8') < 512;
 }

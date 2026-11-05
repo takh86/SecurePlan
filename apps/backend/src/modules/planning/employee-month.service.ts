@@ -65,7 +65,7 @@ export class EmployeeMonthService {
       await c.query(
         'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY',
       );
-      await assertPlanningSchemaComplete(c);
+      await assertPlanningSchemaComplete(c, { beforeSnapshot: true });
       const plan = await visibleMonth(c, t, planId, employeeId);
       const context = await creationContext(c, t, plan);
       const duties = await liveDuties(c, t, planId),
