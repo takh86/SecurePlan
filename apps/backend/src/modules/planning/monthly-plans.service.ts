@@ -748,6 +748,8 @@ export class MonthlyPlansService implements OnModuleInit {
         companyId: tenant.companyId, actorAccountId: tenant.accountId, correlationId, cause: 'DUTY_PATCH',
         changes: [{ dutyId, removedAssignmentIds: removedRows.map((member) => member.id) }],
       });
+      // Workflow W3 waits must not outlive the actor session. Failure rolls back its audits too.
+      await assertSessionInTransaction(client, tenant);
       await this.audit.recordBusinessAction(client, {
         companyId: tenant.companyId, actorAccountId: tenant.accountId, action: 'DUTY_UPDATED',
         resourceType: 'DUTY', resourceId: dutyId, oldValues: dutyValues(plan.id, duty), newValues: dutyValues(plan.id, updated), correlationId,
@@ -794,6 +796,8 @@ export class MonthlyPlansService implements OnModuleInit {
         companyId: tenant.companyId, actorAccountId: tenant.accountId, correlationId, cause: 'DUTY_DELETE',
         changes: [{ dutyId, removedAssignmentIds: memberships.rows.map((member) => member.id) }],
       });
+      // Workflow W3 waits must not outlive the actor session. Failure rolls back its audits too.
+      await assertSessionInTransaction(client, tenant);
       await this.audit.recordBusinessAction(client, {
         companyId: tenant.companyId, actorAccountId: tenant.accountId, action: 'DUTY_REMOVED', resourceType: 'DUTY', resourceId: dutyId,
         oldValues: dutyValues(plan.id, duty), newValues: { version: toDutyVersion(removed.rows[0].version), removedAt: timestamp }, correlationId,

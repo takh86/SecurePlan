@@ -705,3 +705,57 @@ it('unrelated CR03 removal preserves a future resolved case and selected/nonsele
   expect(await offerAudits()).toEqual([]);
   expect(await workflowAudits()).toEqual([]);
 });
+
+it.each(['PATCH', 'DELETE', 'BATCH', 'WITHDRAW'] as const)(
+  '%s rechecks session expiry after an observed W3 wait and rolls back every transition',
+  async (method) => {
+    const ids = await committedPair(),
+      offers = await seedOffers(ids.need);
+    if (method === 'PATCH' || method === 'DELETE') await lease();
+    const body = method === 'BATCH' ? await saveDraft() : undefined;
+    const before = await planningState(pool, f.tenant.companyId),
+      wf = await workflow(),
+      originalOffers = await offerRows();
+    const holder = await pool.connect();
+    let flight: Promise<request.Response> | undefined;
+    try {
+      await holder.query('BEGIN');
+      const pid = await backendPid(holder);
+      await holder.query(
+        'SELECT id FROM replacement_offers WHERE id=$1 FOR UPDATE',
+        [offers[0].id],
+      );
+      flight =
+        method === 'PATCH'
+          ? patch({ assignments: [] }).then((r) => r)
+          : method === 'DELETE'
+            ? remove().then((r) => r)
+            : method === 'BATCH'
+              ? save(body!).then((r) => r)
+              : withdraw(ids.cancellation);
+      await observedWaiter(pid);
+      await pool.query(
+        "UPDATE sessions SET created_at=clock_timestamp()-interval '10 hours',last_seen_at=clock_timestamp()-interval '9 hours' WHERE company_id=$1 AND account_id=$2",
+        [
+          f.tenant.companyId,
+          method === 'WITHDRAW'
+            ? f.mira.account.accountId
+            : f.tenant.admin.accountId,
+        ],
+      );
+      await holder.query('COMMIT');
+      const result = await flight;
+      expect(result.status).toBe(401);
+      expect(result.body.code).toBe('SESSION_EXPIRED');
+      expect(await planningState(pool, f.tenant.companyId)).toEqual(before);
+      expect(await workflow()).toEqual(wf);
+      expect(await offerRows()).toEqual(originalOffers);
+      expect(await offerAudits()).toEqual([]);
+      expect(await workflowAudits()).toEqual([]);
+    } finally {
+      await holder.query('ROLLBACK');
+      await flight;
+      holder.release();
+    }
+  },
+);
