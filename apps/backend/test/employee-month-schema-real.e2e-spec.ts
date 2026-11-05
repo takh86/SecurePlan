@@ -107,6 +107,7 @@ it('0015 preserves pre-existing completed and in-progress INITIAL_PUBLISH rows b
       result_json: null,
       result_schema_version: null,
       result_cancellation_request_id: null,
+      result_replacement_offer_id: null,
     })),
   );
 });
@@ -191,7 +192,7 @@ it('legacy INITIAL_PUBLISH records retain original null context/receipt columns 
     expect(
       (
         await c.query(
-          'SELECT context_plan_id,context_employee_id,result_json,result_schema_version,result_cancellation_request_id FROM idempotency_records WHERE id=$1',
+          'SELECT context_plan_id,context_employee_id,result_json,result_schema_version,result_cancellation_request_id,result_replacement_offer_id FROM idempotency_records WHERE id=$1',
           [r.rows[0].id],
         )
       ).rows[0],
@@ -201,6 +202,7 @@ it('legacy INITIAL_PUBLISH records retain original null context/receipt columns 
       result_json: null,
       result_schema_version: null,
       result_cancellation_request_id: null,
+      result_replacement_offer_id: null,
     });
   } finally {
     await c.query('ROLLBACK');

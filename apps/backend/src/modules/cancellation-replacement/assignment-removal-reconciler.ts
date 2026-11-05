@@ -5,6 +5,8 @@ import type {
 } from '../../common/transactions/planning-mutation.js';
 import { BusinessAuditService } from '../audit/business-audit.service.js';
 
+import { lockReplacementOffers, assertUnresolvedOffers, invalidateOpenOffers, auditInvalidatedOffers } from './replacement-offer-invalidation.js';
+
 type Cancellation = { id: string; assignment_id: string; duty_id: string };
 type Need = {
   id: string;
@@ -36,7 +38,7 @@ export class AssignmentRemovalReconciler {
     }
     if (dutyByAssignment.size === 0) return;
     // The owning Planning writer already holds every D/A2/Q lock. D fences new cases.
-    // Acquire ALL W1 rows, then ALL W2 rows, before any transition or Z audit.
+    // Acquire ALL W1, then ALL W2, then ALL W3 rows before any transition or Z audit.
     const cancellations = (
       await client.query<Cancellation>(
         `SELECT id, assignment_id, duty_id FROM public.cancellation_requests
@@ -74,6 +76,8 @@ export class AssignmentRemovalReconciler {
     if (needs.length !== cancellations.length)
       throw new Error('Inconsistent workflow cardinality');
     if (cancellations.length === 0) return;
+    const offers = await lockReplacementOffers(client, mutation.companyId, needs.map((row) => row.id));
+    assertUnresolvedOffers(offers);
     // One database timestamp, without millisecond truncation in JavaScript.
     const {
       rows: [clock],
@@ -96,6 +100,7 @@ export class AssignmentRemovalReconciler {
     ) {
       throw new Error('Workflow changed under reconciliation locks');
     }
+    const invalidated = await invalidateOpenOffers(client, mutation.companyId, offers, clock.at);
     for (const cancellation of cancellations) {
       const need = needByCancellation.get(cancellation.id)!;
       const base = {
@@ -120,5 +125,9 @@ export class AssignmentRemovalReconciler {
         newValues: { status: 'CLOSED' },
       });
     }
+    await auditInvalidatedOffers(client, this.audit, {
+      companyId: mutation.companyId, actorAccountId: mutation.actorAccountId,
+      correlationId: mutation.correlationId, cause: 'ASSIGNMENT_REMOVED',
+    }, invalidated);
   }
 }

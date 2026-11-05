@@ -198,7 +198,7 @@ export async function removeSyntheticTenants(pool: TestPool, companyIds: string[
     // assignments (SP-09) and shift configurations (SP-08b) before projects
     // (SP-08) and employees (SP-07), employees before accounts.
     for (const table of [
-      'sessions', 'account_tokens', 'audit_event', 'idempotency_records', 'replacement_needs', 'cancellation_requests', 'edit_leases', 'plan_assignments', 'duties', 'monthly_plans',
+      'sessions', 'account_tokens', 'audit_event', 'idempotency_records', 'replacement_offers', 'replacement_needs', 'cancellation_requests', 'edit_leases', 'plan_assignments', 'duties', 'monthly_plans',
       'project_assignments', 'shift_configurations', 'project_operating_calendars', 'projects',
       'availability_batch_commands', 'employee_availability_days', 'employees', 'accounts',
     ]) {

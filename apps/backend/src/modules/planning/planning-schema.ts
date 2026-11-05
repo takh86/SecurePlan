@@ -5,8 +5,8 @@
  * catalog and classifies the planning schema as:
  * - COMPLETE: exactly public.monthly_plans, public.duties,
  *   public.plan_assignments, public.edit_leases, public.project_operating_calendars,
- *   public.cancellation_requests and public.replacement_needs exist as ordinary tables,
- *   with the columns, constraints and indexes of migrations 0011/0012/0014/0016 (compared by definition, index
+ *   public.cancellation_requests, public.replacement_needs and public.replacement_offers exist as ordinary tables,
+ *   with the columns, constraints and indexes of migrations 0011/0012/0014/0016/0018 (compared by definition, index
  *   names normalized away), and no other relation anywhere carries a planning
  *   name from the central classification (including temporary schemas).
  *   RLS, policies, user triggers/rules, inheritance/partitioning, unlogged
@@ -20,7 +20,7 @@
  * missing or altered table must never be read as "no dependency". The real
  * reason is logged server-side only.
  *
- * The definitions are PostgreSQL 17 deparse output of migrations 0011/0012/0014/0016. A later
+ * The definitions are PostgreSQL 17 deparse output of migrations 0011/0012/0014/0016/0018. A later
  * migration that changes these relations must update this signature in the
  * same change; until then the guards refuse to trust the altered schema.
  */
@@ -30,13 +30,23 @@ import { PLANNING_GUARD_TABLES } from '../workforce/planning-guard/planning-tabl
 
 type Queryable = Pick<PoolClient, 'query'>;
 
-export const PLANNING_RELATIONS = ['monthly_plans', 'duties', 'plan_assignments', 'edit_leases', 'project_operating_calendars', 'cancellation_requests', 'replacement_needs'] as const;
+export const PLANNING_RELATIONS = ['monthly_plans', 'duties', 'plan_assignments', 'edit_leases', 'project_operating_calendars', 'cancellation_requests', 'replacement_needs', 'replacement_offers'] as const;
 type PlanningRelation = (typeof PLANNING_RELATIONS)[number];
 
 export type PlanningSchemaState = 'ABSENT' | 'COMPLETE' | 'INVALID';
 
 /** `name type [NOT NULL] [DEFAULT expr]`, as rendered by format_type/pg_get_expr. */
 const EXPECTED_COLUMNS: Record<PlanningRelation, readonly string[]> = {
+  replacement_offers: [
+    "id uuid NOT NULL DEFAULT gen_random_uuid()",
+    "company_id uuid NOT NULL",
+    "need_id uuid NOT NULL",
+    "employee_id uuid NOT NULL",
+    "status text NOT NULL DEFAULT 'OPEN'::text",
+    "created_at timestamp with time zone NOT NULL DEFAULT clock_timestamp()",
+    "updated_at timestamp with time zone NOT NULL DEFAULT clock_timestamp()",
+    "decided_at timestamp with time zone"
+  ],
   cancellation_requests: [
     "id uuid NOT NULL DEFAULT gen_random_uuid()",
     "company_id uuid NOT NULL",
@@ -127,6 +137,15 @@ const EXPECTED_COLUMNS: Record<PlanningRelation, readonly string[]> = {
 
 /** `contype pg_get_constraintdef(oid)`; constraint names are deliberately ignored. */
 const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
+  replacement_offers: [
+    "c CHECK ((((status = 'OPEN'::text) AND (decided_at IS NULL)) OR ((status = ANY (ARRAY['SELECTED'::text, 'NOT_SELECTED'::text, 'INVALIDATED'::text, 'WITHDRAWN'::text])) AND (decided_at IS NOT NULL))))",
+    "c CHECK ((status = ANY (ARRAY['OPEN'::text, 'SELECTED'::text, 'NOT_SELECTED'::text, 'INVALIDATED'::text, 'WITHDRAWN'::text])))",
+    "c CHECK ((isfinite(created_at) AND isfinite(updated_at) AND (updated_at >= created_at) AND ((decided_at IS NULL) OR (isfinite(decided_at) AND (decided_at >= created_at) AND (decided_at <= updated_at)))))",
+    "f FOREIGN KEY (company_id, employee_id) REFERENCES public.employees(company_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+    "f FOREIGN KEY (company_id, need_id) REFERENCES public.replacement_needs(company_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+    "p PRIMARY KEY (id)",
+    "u UNIQUE (company_id, id)"
+  ],
   cancellation_requests: [
     "c CHECK ((isfinite(created_at) AND isfinite(updated_at) AND (updated_at >= created_at) AND ((decided_at IS NULL) OR (isfinite(decided_at) AND (decided_at >= created_at) AND (decided_at <= updated_at)))))",
     "c CHECK ((((status = ANY (ARRAY['APPROVED'::text, 'REJECTED'::text])) AND (decided_at IS NOT NULL) AND (decided_by_account_id IS NOT NULL)) OR ((status = ANY (ARRAY['OPEN'::text, 'WITHDRAWN'::text, 'OBSOLETE'::text])) AND (decided_at IS NULL) AND (decided_by_account_id IS NULL))))",
@@ -207,6 +226,12 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
 
 /** pg_get_indexdef of valid indexes that do not back a constraint, index name normalized to `?`. */
 const EXPECTED_INDEXES: Record<PlanningRelation, readonly string[]> = {
+  replacement_offers: [
+    "CREATE INDEX ? ON public.replacement_offers USING btree (company_id, employee_id, created_at, id)",
+    "CREATE INDEX ? ON public.replacement_offers USING btree (company_id, need_id, created_at, id)",
+    "CREATE UNIQUE INDEX ? ON public.replacement_offers USING btree (company_id, need_id, employee_id) WHERE (status = ANY (ARRAY['OPEN'::text, 'SELECTED'::text]))",
+    "CREATE UNIQUE INDEX ? ON public.replacement_offers USING btree (company_id, need_id) WHERE (status = 'SELECTED'::text)"
+  ],
   cancellation_requests: [
     "CREATE UNIQUE INDEX ? ON public.cancellation_requests USING btree (company_id, duty_id, employee_id) WHERE (status = 'OPEN'::text)",
   ],
@@ -309,16 +334,16 @@ export function classifyPlanningSchema(catalog: CatalogRow): PlanningSchemaRepor
     const of = (rows: { relation: string; signature: string }[]) =>
       rows.filter((row) => row.relation === relation).map((row) => row.signature);
     if (JSON.stringify(of(catalog.columns)) !== JSON.stringify(EXPECTED_COLUMNS[relation])) {
-      return { state: 'INVALID', reason: `columns of public.${relation} differ from migrations 0011/0012/0014/0016` };
+      return { state: 'INVALID', reason: `columns of public.${relation} differ from migrations 0011/0012/0014/0016/0018` };
     }
     if (!sameSet(of(catalog.constraints), EXPECTED_CONSTRAINTS[relation])) {
-      return { state: 'INVALID', reason: `constraints of public.${relation} differ from migrations 0011/0012/0014/0016` };
+      return { state: 'INVALID', reason: `constraints of public.${relation} differ from migrations 0011/0012/0014/0016/0018` };
     }
     if (!sameSet(of(catalog.indexes), EXPECTED_INDEXES[relation])) {
-      return { state: 'INVALID', reason: `indexes of public.${relation} differ from migrations 0011/0012/0014/0016` };
+      return { state: 'INVALID', reason: `indexes of public.${relation} differ from migrations 0011/0012/0014/0016/0018` };
     }
   }
-  return { state: 'COMPLETE', reason: 'planning schema matches migrations 0011/0012/0014/0016' };
+  return { state: 'COMPLETE', reason: 'planning schema matches migrations 0011/0012/0014/0016/0018' };
 }
 
 export async function readPlanningSchema(client: Queryable): Promise<PlanningSchemaReport> {
@@ -336,13 +361,24 @@ export class PlanningSchemaError extends Error {
 
 const logger = new Logger('PlanningSchema');
 
-/** Call inside the caller's transaction, before any planning dependency read or write. */
-export async function assertPlanningSchemaComplete(client: Queryable): Promise<void> {
+/**
+ * Call inside the caller's transaction before planning queries.
+ * REPEATABLE READ readers must opt into beforeSnapshot immediately after SET
+ * TRANSACTION, before any snapshot-producing statement. LOCK TABLE does not
+ * establish that data snapshot; DDL which committed during its wait is then
+ * visible to the FIRST catalog read. Later reads retain coherent RR behavior.
+ */
+const PLANNING_SCHEMA_LOCK = 'LOCK TABLE public.monthly_plans, public.duties, public.plan_assignments, public.edit_leases, public.project_operating_calendars, public.cancellation_requests, public.replacement_needs, public.replacement_offers IN ACCESS SHARE MODE';
+export async function assertPlanningSchemaComplete(
+  client: Queryable,
+  options: { beforeSnapshot?: boolean } = {},
+): Promise<void> {
+  if (options.beforeSnapshot) await client.query(PLANNING_SCHEMA_LOCK);
   let report = await readPlanningSchema(client);
   if (report.state === 'COMPLETE') {
     // Protect against ACCESS EXCLUSIVE canonical DDL until the caller commits.
     // Re-read after any lock wait; do not authorize using a pre-wait snapshot.
-    await client.query('LOCK TABLE public.monthly_plans, public.duties, public.plan_assignments, public.edit_leases, public.project_operating_calendars, public.cancellation_requests, public.replacement_needs IN ACCESS SHARE MODE');
+    if (!options.beforeSnapshot) await client.query(PLANNING_SCHEMA_LOCK);
     report = await readPlanningSchema(client);
     if (report.state === 'COMPLETE') return;
   }

@@ -65,7 +65,7 @@ export class EmployeeMonthService {
       await c.query(
         'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY',
       );
-      await assertPlanningSchemaComplete(c);
+      await assertPlanningSchemaComplete(c, { beforeSnapshot: true });
       const plan = await visibleMonth(c, t, planId, employeeId);
       const context = await creationContext(c, t, plan);
       const duties = await liveDuties(c, t, planId),
@@ -573,11 +573,13 @@ export class EmployeeMonthService {
         ...readSlot(d, member)!,
       });
     }
-    // ALL planning deltas first; ALL W1/W2 locks before the first Z audit/completion.
+    // ALL planning deltas first; ALL W1/W2/W3 locks before the first Z audit/completion.
     await this.mutations.dispatch(c, {
       companyId: t.companyId, actorAccountId: t.accountId, correlationId,
       cause: 'EMPLOYEE_MONTH_SAVE', changes: removals,
     });
+    // Reconciliation can wait on W3 after the earlier authority check.
+    await assertSessionInTransaction(c, t);
     for (const entry of audits) await this.audit.recordBusinessAction(c, entry);
     const moment = (
       await c.query<{ id: string; at: string }>(

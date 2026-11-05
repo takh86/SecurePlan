@@ -126,8 +126,8 @@ it('populated D15 upgrade preserves existing rows and ledger signatures byte-for
     expect(d16Snapshot[table]).toEqual(snapshot[table]);
   expect(d16LedgerConstraints).toEqual(ledgerConstraints);
 });
-it('final D17 signs the same seven canonical tables and the extended receipt schema', async () => {
-  expect(PLANNING_RELATIONS).toHaveLength(7);
+it('final D18 signs eight canonical tables and the extended receipt schema', async () => {
+  expect(PLANNING_RELATIONS).toHaveLength(8);
   await probe(async (c) => {
     expect(await readPlanningSchema(c)).toMatchObject({ state: 'COMPLETE' });
     await assertPlanningSchemaComplete(c);

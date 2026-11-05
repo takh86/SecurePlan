@@ -168,7 +168,7 @@ export class MonthlyPlansService implements OnModuleInit {
     return this.database.withTransaction(async (client) => {
       // Count and page from ONE snapshot, so totals match the returned page.
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
-      await assertPlanningSchemaComplete(client);
+      await assertPlanningSchemaComplete(client, { beforeSnapshot: true });
       const counted = await client.query<{ total: number }>(`SELECT count(*)::int AS total FROM ${from}`, params);
       const rows = await client.query<MonthlyPlanRow>(
         `SELECT ${monthlyPlanColumns('mp')} FROM ${from}
@@ -360,7 +360,7 @@ export class MonthlyPlansService implements OnModuleInit {
     return this.database.withTransaction(async (client) => {
       // Plan, duties, members and absence facts from ONE snapshot.
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
-      await assertPlanningSchemaComplete(client);
+      await assertPlanningSchemaComplete(client, { beforeSnapshot: true });
       const plan = await this.visiblePlan(client, tenant, planId);
       const params: unknown[] = [tenant.companyId, plan.id];
       let kindFilter = '';
@@ -393,7 +393,7 @@ export class MonthlyPlansService implements OnModuleInit {
   async getEntry(tenant: TenantContext, planId: string, entryId: string): Promise<MonthlyPlanEntryResponse> {
     return this.database.withTransaction(async (client) => {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
-      await assertPlanningSchemaComplete(client);
+      await assertPlanningSchemaComplete(client, { beforeSnapshot: true });
       const plan = await this.visiblePlan(client, tenant, planId);
       const duty = requireRow(await client.query<DutyRow>(
         `SELECT ${dutyColumns('d')} FROM public.duties AS d
@@ -748,6 +748,8 @@ export class MonthlyPlansService implements OnModuleInit {
         companyId: tenant.companyId, actorAccountId: tenant.accountId, correlationId, cause: 'DUTY_PATCH',
         changes: [{ dutyId, removedAssignmentIds: removedRows.map((member) => member.id) }],
       });
+      // Workflow W3 waits must not outlive the actor session. Failure rolls back its audits too.
+      await assertSessionInTransaction(client, tenant);
       await this.audit.recordBusinessAction(client, {
         companyId: tenant.companyId, actorAccountId: tenant.accountId, action: 'DUTY_UPDATED',
         resourceType: 'DUTY', resourceId: dutyId, oldValues: dutyValues(plan.id, duty), newValues: dutyValues(plan.id, updated), correlationId,
@@ -794,6 +796,8 @@ export class MonthlyPlansService implements OnModuleInit {
         companyId: tenant.companyId, actorAccountId: tenant.accountId, correlationId, cause: 'DUTY_DELETE',
         changes: [{ dutyId, removedAssignmentIds: memberships.rows.map((member) => member.id) }],
       });
+      // Workflow W3 waits must not outlive the actor session. Failure rolls back its audits too.
+      await assertSessionInTransaction(client, tenant);
       await this.audit.recordBusinessAction(client, {
         companyId: tenant.companyId, actorAccountId: tenant.accountId, action: 'DUTY_REMOVED', resourceType: 'DUTY', resourceId: dutyId,
         oldValues: dutyValues(plan.id, duty), newValues: { version: toDutyVersion(removed.rows[0].version), removedAt: timestamp }, correlationId,

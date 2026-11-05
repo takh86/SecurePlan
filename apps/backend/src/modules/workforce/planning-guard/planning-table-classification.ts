@@ -11,8 +11,8 @@
  * Defense in three layers:
  * 1. Runtime: the schema signature matches relations from PLANNING_GUARD_TABLES
  *    in ANY schema, including temporary schemas and information_schema.
- *    Only the seven canonical relations of
- *    migrations 0011/0012/0014/0016, unaltered and in `public`, are trusted; any other
+ *    Only the eight canonical relations of
+ *    migrations 0011/0012/0014/0016/0018, unaltered and in `public`, are trusted; any other
  *    planning-named relation makes every planning check fail closed.
  * 2. CI, static tripwire: planning-table-classification.spec.ts scans the
  *    migration files without a database and fails on a visible unclassified
@@ -52,8 +52,7 @@ export const PLANNING_GUARD_TABLES = [
   'plan',
   'edit_leases',
   'edit_lease',
-  // These workflow relations are not implemented. Their appearance must fail
-  // closed until a reviewed integration supplies reconciliation and a signature.
+  // Canonical plural workflow relations are signed; singular aliases remain forbidden.
   'cancellation_requests',
   'cancellation_request',
   'replacement_needs',

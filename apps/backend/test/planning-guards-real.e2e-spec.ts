@@ -144,6 +144,7 @@ describe('SP-11 — planning schema signature, real PostgreSQL', () => {
       { schema: 'public', name: 'plan_assignments', kind: 'r' },
       { schema: 'public', name: 'project_operating_calendars', kind: 'r' },
       { schema: 'public', name: 'replacement_needs', kind: 'r' },
+      { schema: 'public', name: 'replacement_offers', kind: 'r' },
     ]);
     await withClient(async (client) => {
       expect(await readPlanningSchema(client)).toMatchObject({ state: 'COMPLETE' });
@@ -287,7 +288,7 @@ describe('SP-11 — planning schema signature, real PostgreSQL', () => {
       const role = `sp79_rls_${suffix()}`;
       await client.query(`CREATE ROLE ${role} NOLOGIN;
         GRANT USAGE ON SCHEMA public TO ${role};
-        GRANT SELECT ON public.monthly_plans, public.duties, public.plan_assignments, public.cancellation_requests, public.replacement_needs, public.edit_leases, public.project_operating_calendars TO ${role};
+        GRANT SELECT ON public.monthly_plans, public.duties, public.plan_assignments, public.cancellation_requests, public.replacement_needs, public.replacement_offers, public.edit_leases, public.project_operating_calendars TO ${role};
         ALTER TABLE public.plan_assignments ENABLE ROW LEVEL SECURITY;
         ALTER TABLE public.plan_assignments FORCE ROW LEVEL SECURITY;
         CREATE POLICY sp79_deny ON public.plan_assignments USING (false);
@@ -319,10 +320,7 @@ describe('SP-11 — ABSENT schema and committed versus uncommitted DDL across se
       await sessionA.query('BEGIN');
       expect(await guardOutcomes(sessionA), 'no planning relation at all').toEqual(ABSENT);
       await sessionB.query('BEGIN');
-      await sessionB.query(migration('0011_planning_foundation.sql'));
-      await sessionB.query(migration('0012_duty_edit_leases.sql'));
-      await sessionB.query(migration('0014_project_operating_calendars.sql'));
-      await sessionB.query(migration('0016_cr03_reconciliation.sql'));
+      for (const file of files.filter((name) => name >= '0011')) await sessionB.query(migration(file));
       expect(await guardOutcomes(sessionA), 'uncommitted DDL is invisible').toEqual(ABSENT);
       await sessionB.query('COMMIT');
       expect(await guardOutcomes(sessionA), 'committed canonical schema, same open transaction').toEqual(OPEN);

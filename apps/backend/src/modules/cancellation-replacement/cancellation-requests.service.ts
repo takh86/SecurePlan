@@ -30,6 +30,7 @@ import { assertMyPlanMonth } from '../planning/me-monthly-plans-read.service.js'
 import { PLANNING_WRITER_TIMEOUTS } from '../planning/planning-locks.js';
 import { BusinessAuditService } from '../audit/business-audit.service.js';
 import type { CancellationResponse } from './cancellation.types.js';
+import { lockReplacementOffers, assertUnresolvedOffers, invalidateOpenOffers, auditInvalidatedOffers } from './replacement-offer-invalidation.js';
 const OP = 'CREATE_CANCELLATION';
 const RETENTION = 86400,
   STALE = 300;
@@ -176,7 +177,7 @@ export class CancellationRequestsService {
           cancellationRequests.push(result);
       }
       await assertSessionInTransaction(c, t);
-      // The exact schema guard rejects replacement_offers until its reviewed slice.
+      // P1 prepares persistence only; employee offer reads belong to the next slice.
       return { cancellationRequests, replacementOffers: [] };
     });
   }
@@ -251,9 +252,16 @@ export class CancellationRequestsService {
             : ['WITHDRAWN', 'REJECTED', 'OBSOLETE'].includes(row.status) &&
               need.status === 'CLOSED';
       if (!validPair) throw new Error('Inconsistent withdrawal pair');
-      if (row.status === 'WITHDRAWN') return this.resource(c, t, id, live.id);
+      const offers = await lockReplacementOffers(c, t.companyId, [need.id]);
+      await assertSessionInTransaction(c, t);
+      if (row.status === 'WITHDRAWN') {
+        if (offers.some((offer) => offer.status === 'OPEN' || offer.status === 'SELECTED'))
+          throw new Error('Active offer under withdrawn cancellation');
+        return this.resource(c, t, id, live.id);
+      }
       if (row.status !== 'OPEN')
         throw new ConflictException({ code: 'CANCELLATION_NOT_WITHDRAWABLE' });
+      assertUnresolvedOffers(offers);
       if (
         context.state !== 'ACTIVE' ||
         context.removed_at !== null ||
@@ -276,6 +284,7 @@ export class CancellationRequestsService {
       );
       if (changed.rowCount !== 1 || closed.rowCount !== 1)
         throw new Error('Withdrawal lost its conditional transition');
+      const invalidated = await invalidateOpenOffers(c, t.companyId, offers, clock.at);
       await assertSessionInTransaction(c, t);
       const envelope = {
         companyId: t.companyId,
@@ -298,6 +307,7 @@ export class CancellationRequestsService {
         oldValues: { status: 'OPEN' },
         newValues: { status: 'CLOSED' },
       });
+      await auditInvalidatedOffers(c, this.audit, { ...envelope, cause: 'CANCELLATION_WITHDRAWN' }, invalidated);
       return this.resource(c, t, id, live.id);
     });
   }
