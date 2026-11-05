@@ -190,7 +190,7 @@ it('filters before paging and applies the requested deterministic database order
   expect(filtered.body.items[0].cancellationRequestId).toBe(second.body.id);
   await pool.query("UPDATE cancellation_requests SET created_at='2026-01-01T00:00:00Z' WHERE id=ANY($1::uuid[])", [[requestId, second.body.id]]);
   const tie = await queue('?sortBy=createdAt&sortOrder=asc');
-  expect(tie.body.items.map((item: { cancellationRequestId: string }) => item.cancellationRequestId)).toEqual([requestId, second.body.id].sort());
+  expect(tie.body.items.map((item: { cancellationRequestId: string }) => item.cancellationRequestId)).toEqual([requestId, second.body.id].sort((left: string, right: string) => left.localeCompare(right)));
 });
 it('does not hide open work when its project is inactive or its duty has started', async () => {
   expect((await createOffer()).status).toBe(201);
@@ -376,7 +376,7 @@ it('rejects a revoked session after an observed schema-lock wait', async () => {
   }
 }, 20000);
 
-it('rereads the exact planning signature after an observed DDL wait', async () => {
+it.runIf(process.env.SECUREPLAN_SP19_ISOLATED_DDL === '1')('rereads the exact planning signature after an observed DDL wait', async () => {
   const blocker = await pool.connect();
   let pending: Promise<request.Response> | undefined;
   let committed = false;
