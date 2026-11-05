@@ -1,3 +1,8 @@
+import {
+  MeReplacementNeedsController,
+  ReplacementNeedsController,
+} from './modules/cancellation-replacement/replacement-needs.controller.js';
+import { ReplacementOffersService } from './modules/cancellation-replacement/replacement-offers.service.js';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 
@@ -72,6 +77,8 @@ import { MePlanningStatisticsService } from './modules/planning/me-planning-stat
     ]),
   ],
   controllers: [
+    MeReplacementNeedsController,
+    ReplacementNeedsController,
     CancellationRequestsController,
     MeWorkItemsController,
     AppController,
@@ -115,6 +122,7 @@ import { MePlanningStatisticsService } from './modules/planning/me-planning-stat
     { provide: ACTIVATION_DELIVERY, useFactory: createActivationDelivery },
     BusinessAuditService,
     CancellationRequestsService,
+    ReplacementOffersService,
     AssignmentRemovalReconciler,
     {
       provide: PLANNING_MUTATION_HANDLER,

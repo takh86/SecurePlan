@@ -9,6 +9,7 @@ export type AppRouteId =
   | 'employees'
   | 'projects'
   | 'monthly-planning'
+  | 'open-duties'
   | 'my-month-plan'
   | 'cancellations'
   | 'my-statistics';
@@ -78,6 +79,14 @@ export const APP_ROUTES: readonly AppRoute[] = [
     role: 'EMPLOYEE',
     title: 'Mein Monatsplan',
     lead: 'Ihre geplanten Dienste im ausgewählten Monat.',
+    availability: 'available',
+    acceptsMonth: true,
+  },
+  {
+    id: 'open-duties',
+    path: '/offene-dienste',
+    role: 'EMPLOYEE',
+    title: 'Offene Dienste',
     availability: 'available',
     acceptsMonth: true,
   },

@@ -1,0 +1,84 @@
+.open-duties {
+  min-width: 0;
+}
+.open-duties__list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+.open-duties__list > li {
+  border: 1px solid var(--color-border, #8d99a5);
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+.open-duties p,
+.open-duties li {
+  overflow-wrap: anywhere;
+}
+.open-duties button {
+  min-height: 44px;
+  max-width: 100%;
+  white-space: normal;
+}
+.open-duties dialog {
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+.open-duties__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.open-duties nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.open-duties {
+  max-width: 48rem;
+}
+.open-duties button,
+.open-duties input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius-small);
+  color: var(--sp-color-ink);
+  background: var(--sp-color-surface);
+  font: inherit;
+}
+.open-duties button {
+  cursor: pointer;
+  font-weight: 600;
+}
+.open-duties button:hover:not(:disabled) {
+  border-color: var(--sp-color-brand);
+  color: var(--sp-color-brand-strong);
+}
+.open-duties button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+.open-duties button:focus-visible,
+.open-duties input:focus-visible {
+  outline: 3px solid var(--sp-color-brand);
+  outline-offset: 2px;
+}
+.open-duties__list > li {
+  background: var(--sp-color-surface);
+  border-color: var(--sp-color-border);
+}
+.open-duties dialog {
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius);
+  padding: 1.25rem;
+  color: var(--sp-color-ink);
+  background: var(--sp-color-surface);
+}
+.open-duties dialog::backdrop {
+  background: rgb(15 23 42 / 60%);
+}

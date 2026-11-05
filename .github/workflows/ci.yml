@@ -79,6 +79,7 @@ jobs:
           node scripts/build-password-denylist.mjs | grep -E '^(VERIFIED|ELIGIBLE_ENTRIES|UNIQUE_PASSWORDS|OUTPUT_SHA256|GENERATOR)'
           echo "SECUREPLAN_PASSWORD_DENYLIST_PATH=$dir/secureplan-local-denylist.txt" >> "$GITHUB_ENV"
       - run: npm run lint
+      - run: npm run check:replacement-api
       - run: npm run typecheck
       - run: npm run build
       - run: npm test

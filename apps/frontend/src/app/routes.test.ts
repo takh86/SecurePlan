@@ -27,6 +27,7 @@ describe('F1 — route table', () => {
     ]);
     expect(routesForRole('EMPLOYEE').map((route) => route.title)).toEqual([
       'Mein Monatsplan',
+      'Offene Dienste',
       'Absagen & Ersatz',
       'Meine Statistik',
     ]);
@@ -45,6 +46,7 @@ describe('F1 — route table', () => {
       // SP-11 PR-2: create/read slice of the monthly plan (admin only).
       ['monthly-planning', 'COMPANY_ADMIN', true],
       ['my-month-plan', 'EMPLOYEE', undefined],
+      ['open-duties', 'EMPLOYEE', undefined],
       ['my-statistics', 'EMPLOYEE', undefined],
     ]);
     const planned = APP_ROUTES.filter((route) => route.availability === 'planned');
