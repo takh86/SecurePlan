@@ -542,7 +542,7 @@ it.each(['COMMIT', 'ROLLBACK'] as const)(
       await holder.query('BEGIN');
       const pid = await backendPid(holder);
       await holder.query(
-        "UPDATE replacement_offers SET status='WITHDRAWN',decided_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1",
+        "WITH moment AS MATERIALIZED (SELECT clock_timestamp() AS at) UPDATE replacement_offers SET status='WITHDRAWN',decided_at=moment.at,updated_at=moment.at FROM moment WHERE id=$1",
         [offers[0].id],
       );
       // Test-only terminal writer; not an offer-withdrawal API implementation.
@@ -573,7 +573,7 @@ it.each(['COMMIT', 'ROLLBACK'] as const)(
     const ids = await committedPair(),
       candidates = await seedOffers(ids.need);
     await pool.query(
-      "UPDATE replacement_offers SET status='WITHDRAWN',decided_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1",
+      "WITH moment AS MATERIALIZED (SELECT clock_timestamp() AS at) UPDATE replacement_offers SET status='WITHDRAWN',decided_at=moment.at,updated_at=moment.at FROM moment WHERE id=$1",
       [candidates[0].id],
     );
     await lease();
