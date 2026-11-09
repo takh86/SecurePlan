@@ -337,7 +337,14 @@ try {
   });
 
   await check('TEST-05', 'a case withdrawn by the real employee: refresh shows the authoritative state and it is not pending work', async () => {
-    await uiPage.goto(`${origin}/arbeitsuebersicht/${c4.replacementNeed.id}`);
+    // Sort by duty date so that C4 is guaranteed to be on page one even with 29+ pending cases.
+    // Prove the exact case is visible before withdrawal; avoid a vacuous absence assertion later.
+    const sortedQueue = `${origin}/arbeitsuebersicht?sortBy=dutyDate&sortOrder=asc`;
+    const caseHref = `/arbeitsuebersicht/${c4.replacementNeed.id}`;
+    await uiPage.goto(sortedQueue);
+    const c4QueueLink = uiPage.locator('a[href="' + caseHref + '"]');
+    await c4QueueLink.waitFor({ timeout: 20000 });
+    await c4QueueLink.click();
     await uiPage.getByRole('heading', { name: 'Vorgangsstatus' }).waitFor();
     assert.ok(!(await uiPage.locator('body').innerText()).includes('nicht mehr offen'), 'open before withdrawal');
     expectStatus(await api(actors.e3, 'POST', `/cancellation-requests/${c4.id}/withdraw`, { stage: 'TEST-05' }), 200, 'E3 withdraw');
@@ -345,15 +352,15 @@ try {
     await uiPage.getByRole('button', { name: 'Ansicht aktualisieren' }).click();
     await uiPage.getByRole('note').waitFor();
     assert.ok((await uiPage.getByRole('note').innerText()).includes('nicht mehr offen'));
-    await uiPage.goto(`${origin}/arbeitsuebersicht`);
-    await uiPage.getByRole('heading', { name: 'Arbeitsübersicht' }).waitFor();
+    await uiPage.goto(sortedQueue);
+    await uiPage.getByRole('table', { name: 'Offene Absagen und Ersatzbedarfe' }).waitFor();
     await uiPage.getByText('Seite 1 von 2', { exact: true }).waitFor();
-    const text = await uiPage.locator('body').innerText();
+    assert.equal(await uiPage.locator('a[href="' + caseHref + '"]').count(), 0,
+      'withdrawn case must disappear from the first queue page after refresh');
     const rows = await uiPage.getByRole('row').count();
-    assert.ok(rows > 2, 'queue still lists cases');
+    assert.ok(rows > 2, 'queue still lists other pending cases');
     const totals = await q('TEST-05 open cancellations after withdrawal', "SELECT count(*)::int AS open FROM cancellation_requests r JOIN replacement_needs n ON n.cancellation_request_id=r.id WHERE r.company_id=$1 AND r.status='OPEN' AND n.status='OPEN'", [ids.companyA]);
     assert.equal(totals[0].open, 28, 'withdrawn case excluded from pending count');
-    void text;
     await shot('TEST-05-after-withdrawal');
   });
 
