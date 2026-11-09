@@ -718,7 +718,12 @@ async function backendPid(client: PoolClient): Promise<number> {
   return Number((await client.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0].pid);
 }
 
-/** The seven rows of one selection with one losing offer, in the action order that auditSince returns. */
+/**
+ * The seven rows of one selection with one losing offer, in the action order that auditSince returns.
+ * CANCELLATION_APPROVED, REPLACEMENT_NEED_RESOLVED, REPLACEMENT_OFFER_SELECTED and REPLACEMENT_OFFER_NOT_SELECTED are
+ * PROPOSED under ADR-0004 supplement A8 and are PENDING PRODUCT OWNER APPROVAL. These assertions pin what the code
+ * emits; they do not record an approval. The DUTY_* rows use the already approved SP-12 contract.
+ */
 const SELECTED_ACTIONS = [
   'CANCELLATION_APPROVED',
   'DUTY_MEMBERSHIP_ADDED',
@@ -730,7 +735,7 @@ const SELECTED_ACTIONS = [
 ];
 
 describe('SP-20 audit contract (exact, real PostgreSQL)', () => {
-  it('a successful selection writes exactly the seven approved rows, with exact action, resource IDs, old and new values and one correlation ID', async () => {
+  it('a successful selection writes exactly the seven rows (A8 actions pending PO approval), with exact action, resource IDs, old and new values and one correlation ID', async () => {
     const f = await buildFixture();
     const mark = await auditBaseline(f.companyId);
     const res = await select(f, f.admin, { offerId: f.offerJonasId });
