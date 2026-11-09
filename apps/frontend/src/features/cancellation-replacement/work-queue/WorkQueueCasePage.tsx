@@ -63,6 +63,7 @@ export function WorkQueueCasePage({ route, queue, needId }: Props) {
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const [revision, setRevision] = useState(0);
+  const [decision, setDecision] = useState<Decision>({ phase: 'idle' });
   const search = offersSearch(parseOffersQuery(params));
   const query = useMemo(() => parseOffersQuery(new URLSearchParams(search)), [search]);
   const request = useMemo<CaseRequest>(() => ({ query, revision }), [query, revision]);
@@ -82,7 +83,7 @@ export function WorkQueueCasePage({ route, queue, needId }: Props) {
   }
 
   return (
-    <PageFrame title="Vorgang prüfen" lead="Nur Anzeige. Hier wird nichts entschieden und nichts geändert.">
+    <PageFrame title="Vorgang prüfen" lead="Offene Vorgänge prüfen. Ein geeignetes Angebot kann hier ausgewählt werden; die Auswahl wird serverseitig geprüft.">
       <div className="work-queue work-queue--case">
         <p className="work-queue__back">
           <Link to={back}>Zur Arbeitsübersicht</Link>
@@ -103,6 +104,10 @@ export function WorkQueueCasePage({ route, queue, needId }: Props) {
           <CaseDetails
             data={state.data}
             query={query}
+            queue={queue}
+            needId={needId}
+            decision={decision}
+            onDecision={setDecision}
             onChange={navigateTo}
             onRefresh={() => setRevision((current) => current + 1)}
           />
@@ -131,11 +136,19 @@ function CaseUnavailable({ error }: { error?: ApiError }) {
 function CaseDetails({
   data,
   query,
+  queue,
+  needId,
+  decision,
+  onDecision,
   onChange,
   onRefresh,
 }: {
   data: OffersPage;
   query: OffersQuery;
+  queue: WorkQueueApi;
+  needId: string;
+  decision: Decision;
+  onDecision: (next: Decision) => void;
   onChange: (next: OffersQuery) => void;
   onRefresh: () => void;
 }) {
@@ -282,6 +295,15 @@ function CaseDetails({
         />
       </section>
 
+      <SelectionPanel
+        queue={queue}
+        needId={needId}
+        page={data}
+        decision={decision}
+        onDecision={onDecision}
+        onRefresh={onRefresh}
+      />
+
       <p className="work-queue__evaluated">Stand der Auswertung: {formatUtc(context.evaluatedAt)}</p>
     </>
   );
@@ -407,5 +429,175 @@ function OfferPager({ pagination, onPage }: { pagination: Pagination; onPage: (p
         Nächste Seite
       </button>
     </nav>
+  );
+}
+
+/** SP-20: what the administrator may do next. Every rule is re-checked by the server under its locks. */
+type Decision =
+  | { phase: 'idle' }
+  | { phase: 'confirm'; offer: AdminOffer; key: string }
+  | { phase: 'pending'; offer: AdminOffer; key: string }
+  | { phase: 'done' }
+  | { phase: 'retry'; offer: AdminOffer; key: string }
+  | { phase: 'refused'; message: string };
+
+/** German text per refusal code (the closed catalogue; anything else gets the generic text). */
+const REFUSAL_TEXT: Readonly<Record<string, string>> = {
+  CANCELLATION_ALREADY_RESOLVED: 'Dieser Vorgang ist bereits entschieden.',
+  REPLACEMENT_NEED_NOT_OPEN: 'Dieser Ersatzbedarf ist nicht mehr offen.',
+  PLAN_CONCURRENT_MODIFICATION: 'Der Vorgang wurde inzwischen geändert.',
+  REPLACEMENT_OFFER_NOT_SELECTABLE: 'Dieses Angebot kann nicht mehr ausgewählt werden.',
+  REPLACEMENT_CANDIDATE_INELIGIBLE: 'Die Person ist für diesen Dienst nicht mehr geeignet.',
+  REPLACEMENT_CANDIDATE_UNAVAILABLE: 'Die Person ist in diesem Zeitraum nicht verfügbar.',
+  CANCELLATION_PLAN_CHANGED: 'Der Dienst oder der Plan wurde inzwischen geändert.',
+  RESOURCE_EDIT_LOCKED: 'Der Dienst wird gerade im Plan bearbeitet. Versuchen Sie es in einer Minute erneut.',
+  IDEMPOTENCY_REQUEST_IN_PROGRESS: 'Diese Auswahl wird bereits verarbeitet.',
+};
+
+function refusalText(error: ApiError): string {
+  return REFUSAL_TEXT[error.code ?? ''] ?? 'Die Auswahl wurde nicht angenommen.';
+}
+
+/**
+ * SP-20 administrative decision: choose one eligible offer, confirm, then submit. A disabled button is only a
+ * presentation; the server enforces concurrency. A refused answer reloads the case; an unknown outcome keeps
+ * the same Idempotency-Key, so a retry replays the decision instead of making a second one.
+ */
+function SelectionPanel({
+  queue,
+  needId,
+  page,
+  decision,
+  onDecision,
+  onRefresh,
+}: {
+  queue: WorkQueueApi;
+  needId: string;
+  page: OffersPage;
+  decision: Decision;
+  onDecision: (next: Decision) => void;
+  onRefresh: () => void;
+}) {
+  const headingId = useId();
+  const { context, items, pagination } = page;
+  const open = context.cancellation.status === 'OPEN' && context.need.status === 'OPEN';
+  const eligible = items.filter((offer) => offer.status === 'OPEN' && offer.reviewEligibility === 'ELIGIBLE');
+  const busy = decision.phase === 'pending';
+
+  async function submit(offer: AdminOffer, key: string) {
+    onDecision({ phase: 'pending', offer, key });
+    try {
+      await queue.select(needId, { offerId: offer.id, expectedVersion: context.need.concurrencyVersion, idempotencyKey: key });
+      onDecision({ phase: 'done' });
+      onRefresh();
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 409 || error.status === 404)) {
+        onDecision({ phase: 'refused', message: `${error.status === 404 ? 'Dieser Vorgang ist nicht mehr sichtbar.' : refusalText(error)} Die Daten wurden neu geladen.` });
+        onRefresh();
+      } else if (error instanceof ApiError && error.status !== null && error.status >= 400 && error.status < 500) {
+        onDecision({ phase: 'refused', message: `${refusalText(error)} Laden Sie den Vorgang neu, bevor Sie erneut auswählen.` });
+      } else {
+        // Unknown outcome (lost answer or server error): keep the key so that a retry replays the same decision.
+        onDecision({ phase: 'retry', offer, key });
+      }
+    }
+  }
+
+  const messages = (
+    <>
+      {decision.phase === 'done' && (
+        <p className="work-queue__notice" role="status">
+          Ersatz ausgewählt. Der Vorgang ist abgeschlossen.
+        </p>
+      )}
+      {decision.phase === 'refused' && (
+        <p className="work-queue__error-text" role="alert">
+          {decision.message}
+        </p>
+      )}
+    </>
+  );
+
+  if (!open) {
+    // A case that is no longer open shows only the outcome of this session's decision, if any.
+    const outcome = decision.phase === 'done' || decision.phase === 'refused';
+    return outcome ? (
+      <section className="work-queue__section" aria-labelledby={headingId}>
+        <h2 id={headingId}>Ersatz auswählen</h2>
+        {messages}
+      </section>
+    ) : null;
+  }
+
+  return (
+    <section className="work-queue__section" aria-labelledby={headingId} aria-busy={busy || undefined}>
+      <h2 id={headingId}>Ersatz auswählen</h2>
+      {messages}
+      {decision.phase === 'retry' && (
+        <p className="work-queue__error-text" role="alert">
+          Die Antwort des Servers fehlt. Die Auswahl kann gefahrlos erneut bestätigt werden; sie wird nicht doppelt angelegt.
+        </p>
+      )}
+      {eligible.length === 0 ? (
+        <p className="work-queue__sub">Auf dieser Seite gibt es kein aktuell geeignetes Angebot.</p>
+      ) : (
+        <ul className="work-queue__choices">
+          {eligible.map((offer) => {
+            const name = `${offer.employee.firstName} ${offer.employee.lastName}`;
+            const chosen = (decision.phase === 'confirm' || decision.phase === 'pending' || decision.phase === 'retry') && decision.offer.id === offer.id;
+            return (
+              <li key={offer.id}>
+                <p>
+                  {name} <span className="work-queue__sub">Personalnummer {offer.employee.employeeCode}</span>
+                </p>
+                {chosen ? (
+                  <div role="group" aria-label={`Auswahl bestätigen: ${name}`}>
+                    <p>
+                      Der Dienst wird auf {name} übertragen. Dieses Angebot wird angenommen; alle anderen offenen Angebote werden
+                      abgelehnt.
+                    </p>
+                    {decision.phase === 'retry' ? (
+                      <button type="button" className="work-queue__button" onClick={() => submit(offer, decision.key)}>
+                        Erneut bestätigen
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="work-queue__button"
+                        disabled={busy}
+                        onClick={() => submit(offer, decision.key)}
+                      >
+                        Ersatz bestätigen
+                      </button>
+                    )}{' '}
+                    <button
+                      type="button"
+                      className="work-queue__button"
+                      disabled={busy}
+                      onClick={() => onDecision({ phase: 'idle' })}
+                    >
+                      Abbrechen
+                    </button>
+                    {decision.phase === 'pending' && <p role="status">Auswahl wird gespeichert …</p>}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="work-queue__button"
+                    disabled={busy}
+                    onClick={() => onDecision({ phase: 'confirm', offer, key: globalThis.crypto.randomUUID() })}
+                  >
+                    Ersatz auswählen
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {pagination.totalPages > 1 && (
+        <p className="work-queue__sub">Angebote auf anderen Seiten werden hier nicht zur Auswahl angeboten.</p>
+      )}
+    </section>
   );
 }

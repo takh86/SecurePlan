@@ -82,6 +82,17 @@ export type CaseNeed = {
   openOfferCount: number;
   project: ProjectRef;
   timeZone: string;
+  /** SP-20: Expected-Version for the selection command. */
+  concurrencyVersion: number;
+  /** SP-20: the selected offer of a RESOLVED need; null otherwise. */
+  selectedOfferId: string | null;
+};
+
+export type ReplacementAssignmentRef = {
+  id: string;
+  employeeId: string;
+  source: 'REPLACEMENT';
+  state: 'ACTIVE';
 };
 
 export type CaseContext = {
@@ -91,7 +102,18 @@ export type CaseContext = {
   dutyRemoved: boolean;
   originalAssignmentActive: boolean;
   eligibleOpenOfferCount: number;
+  /** SP-20: CONSISTENT only when the selected offer and its membership agree. */
+  consistency: 'CONSISTENT' | 'INCONSISTENT';
+  replacementAssignment: ReplacementAssignmentRef | null;
   evaluatedAt: string;
+};
+
+/** SP-20: the server's answer to a successful selection (only the fields the case view uses). */
+export type SelectionResult = {
+  needId: string;
+  cancellationRequestId: string;
+  needVersion: number;
+  selectedOfferId: string;
 };
 
 export type OffersPage = { items: AdminOffer[]; pagination: Pagination; context: CaseContext };
