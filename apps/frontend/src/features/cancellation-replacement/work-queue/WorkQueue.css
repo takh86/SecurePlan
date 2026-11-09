@@ -223,9 +223,16 @@
   font-weight: 600;
 }
 
+.work-queue__open {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .work-queue__table th,
 .work-queue__table td {
-  padding: 10px 12px;
+  padding: 10px 10px;
   border-top: 1px solid var(--sp-color-border);
   text-align: left;
   vertical-align: top;

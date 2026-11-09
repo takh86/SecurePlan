@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // @vitest-environment-options {"url":"https://localhost:8443/arbeitsuebersicht"}
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -72,16 +72,11 @@ function apiWith(answers: Answers = {}) {
   });
 }
 
-function renderAt(path: string, api: SessionApi, revalidate = vi.fn()) {
+function renderAt(path: string, api: SessionApi) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route
-          path="/arbeitsuebersicht/*"
-          element={
-            <WorkQueueSection route={workQueueRoute()} api={api} identity={IDENTITY} requestSessionRevalidation={revalidate} />
-          }
-        />
+        <Route path="/arbeitsuebersicht/*" element={<WorkQueueSection route={workQueueRoute()} api={api} identity={IDENTITY} />} />
         <Route path="*" element={<p>Außerhalb des Arbeitsbereichs</p>} />
       </Routes>
     </MemoryRouter>,
@@ -207,12 +202,12 @@ describe('SP-19 — administrative work queue (read-only)', () => {
     expect(await screen.findByRole('table')).toBeTruthy();
   });
 
-  it('asks the session to revalidate on forbidden access and shows no case data', async () => {
-    const revalidate = vi.fn();
-    const { api } = apiWith({ queue: () => Promise.reject(new ApiError('http', 403, 'ACTION_FORBIDDEN', 'req-403')) });
-    renderAt('/arbeitsuebersicht', api, revalidate);
+  it('shows forbidden access once, without a request loop, and shows no case data', async () => {
+    const { api, requests } = apiWith({ queue: () => Promise.reject(new ApiError('http', 403, 'ACTION_FORBIDDEN', 'req-403')) });
+    renderAt('/arbeitsuebersicht', api);
     expect((await screen.findByRole('alert')).textContent).toContain('Kein Zugriff');
-    expect(revalidate).toHaveBeenCalledTimes(1);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(queueRequests(requests)).toHaveLength(1);
     expect(screen.queryByRole('table')).toBeNull();
   });
 
@@ -253,6 +248,24 @@ describe('SP-19 — administrative work queue (read-only)', () => {
     expect(await screen.findByText(/Die Projektliste konnte nicht geladen werden/)).toBeTruthy();
     expect((select as HTMLSelectElement).value).toBe(PROJECT_ID);
     expect(within(select).getByRole('option', { name: 'Ausgewähltes Projekt' })).toBeTruthy();
+  });
+
+  it('P3: offers a retry for the project list and loads it after recovery', async () => {
+    const user = userEvent.setup();
+    let projectCalls = 0;
+    const { api } = apiWith({
+      projects: () => {
+        projectCalls += 1;
+        if (projectCalls === 1) throw new ApiError('network', null, null, null);
+        return PROJECTS;
+      },
+    });
+    renderAt('/arbeitsuebersicht', api);
+    await user.click(await screen.findByRole('button', { name: 'Projektliste erneut laden' }));
+    const select = await screen.findByRole('combobox', { name: 'Projekt' });
+    await waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(3));
+    expect(projectCalls).toBe(2);
+    expect(screen.queryByRole('button', { name: 'Projektliste erneut laden' })).toBeNull();
   });
 
   it('ignores a response that arrives after a newer filter was selected', async () => {

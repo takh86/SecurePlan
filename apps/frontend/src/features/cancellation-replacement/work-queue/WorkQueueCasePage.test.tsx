@@ -35,7 +35,7 @@ function renderCase(path: string, answer: (path: string) => unknown) {
       <Routes>
         <Route
           path="/arbeitsuebersicht/*"
-          element={<WorkQueueSection route={workQueueRoute()} api={api} identity={IDENTITY} requestSessionRevalidation={() => {}} />}
+          element={<WorkQueueSection route={workQueueRoute()} api={api} identity={IDENTITY} />}
         />
       </Routes>
     </MemoryRouter>,
@@ -143,6 +143,32 @@ describe('SP-19 — administrative case view (read-only)', () => {
     expect(requests.at(-1)?.path).toContain('page=1');
     expect(await screen.findByRole('table', { name: 'Eingereichte Ersatzangebote' })).toBeTruthy();
     expect(within(screen.getByRole('table', { name: 'Eingereichte Ersatzangebote' })).getAllByRole('row')).toHaveLength(2);
+  });
+
+  it('P2-02: a page past the last one says so, keeps the status filter and returns to page one', async () => {
+    const user = userEvent.setup();
+    const [open] = threeOffers();
+    const { requests } = renderCase(`${CASE_PATH}?status=OPEN&page=3`, (path) =>
+      path.includes('page=3') ? offersPage([], caseContext(), 2, 3) : offersPage([open], caseContext(), 1, 1),
+    );
+    expect(await screen.findByText('Diese Seite ist leer')).toBeTruthy();
+    expect(screen.queryByText('Noch keine Ersatzangebote')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Zur ersten Seite' }));
+    await waitFor(() => expect(requests.at(-1)?.path).toContain('page=1'));
+    expect(requests.at(-1)?.path).toContain('status=OPEN');
+    expect(await screen.findByRole('table', { name: 'Eingereichte Ersatzangebote' })).toBeTruthy();
+  });
+
+  it('P2-02: a status without matches is not reported as "no offers" and can show all offers', async () => {
+    const user = userEvent.setup();
+    const { requests } = renderCase(`${CASE_PATH}?status=WITHDRAWN`, (path) =>
+      path.includes('status=WITHDRAWN') ? offersPage([], caseContext(), 0, 1) : offersPage(threeOffers()),
+    );
+    expect(await screen.findByText('Keine Angebote mit diesem Status')).toBeTruthy();
+    expect(screen.queryByText('Noch keine Ersatzangebote')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Alle Angebote anzeigen' }));
+    await waitFor(() => expect(requests.at(-1)?.path).not.toContain('status='));
+    expect(await screen.findByRole('table', { name: 'Eingereichte Ersatzangebote' })).toBeTruthy();
   });
 
   it('shows a retry for a transient failure', async () => {

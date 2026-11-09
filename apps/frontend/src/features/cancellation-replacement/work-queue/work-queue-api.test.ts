@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../../shared/api/api-error';
 import {
   createWorkQueueApi,
@@ -9,7 +9,6 @@ import {
   parseQueuePage,
   parseQueueQuery,
   queueSearch,
-  revalidateOnForbidden,
 } from './work-queue-api';
 import {
   NEED_ID,
@@ -87,6 +86,19 @@ describe('SP-19 queue response parsing', () => {
   it('rejects a duplicated replacement need', () => {
     expectInvalid(() => parseQueuePage(queuePage([queueItem(), queueItem()], 2), 1));
   });
+
+  // P2-01: pattern-valid but impossible instants must not escape as an uncaught RangeError.
+  it.each([
+    ['a month 13 instant', '2026-13-01T10:00:00.000Z'],
+    ['a February 30 instant', '2026-02-30T10:00:00.000Z'],
+    ['an hour 25 instant', '2026-12-15T25:00:00.000Z'],
+  ])('rejects %s as invalid-response in a queue row', (_, value) => {
+    expectInvalid(() => parseQueuePage(queuePage([queueItem({ createdAt: value })]), 1));
+  });
+
+  it('rejects an impossible instant in the page evaluation time', () => {
+    expectInvalid(() => parseQueuePage({ ...queuePage([]), evaluatedAt: '2026-13-01T10:00:00.000Z' }, 1));
+  });
 });
 
 describe('SP-19 case response parsing', () => {
@@ -132,6 +144,20 @@ describe('SP-19 case response parsing', () => {
   it('rejects offers that are not in the documented order', () => {
     const [first, second] = threeOffers();
     expectInvalid(() => parseOffersPage(offersPage([second, first]), NEED_ID, { status: null, page: 1 }));
+  });
+
+  it('rejects an impossible decision instant on a closed offer as invalid-response', () => {
+    expectInvalid(() =>
+      parseOffersPage(
+        offersPage([offer({ status: 'WITHDRAWN', decidedAt: '2026-02-30T10:00:00.000Z', reviewEligibility: 'NOT_APPLICABLE' })]),
+        NEED_ID,
+        { status: null, page: 1 },
+      ),
+    );
+  });
+
+  it('rejects an impossible evaluation instant in the case context', () => {
+    expectInvalid(() => parseOffersPage(offersPage([], caseContext({ evaluatedAt: '2026-13-01T10:00:00.000Z' })), NEED_ID, { status: null, page: 1 }));
   });
 
   it('rejects a context that describes a different case', () => {
@@ -242,11 +268,4 @@ describe('SP-19 client requests', () => {
     });
   });
 
-  it('asks the session boundary to revalidate only on forbidden access', () => {
-    const revalidate = vi.fn();
-    revalidateOnForbidden(new ApiError('http', 403, 'ACTION_FORBIDDEN', null), revalidate);
-    revalidateOnForbidden(new ApiError('http', 404, 'RESOURCE_NOT_FOUND', null), revalidate);
-    revalidateOnForbidden(new Error('boom'), revalidate);
-    expect(revalidate).toHaveBeenCalledTimes(1);
-  });
 });

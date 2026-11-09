@@ -12,7 +12,7 @@ import { StatusBadge } from '../../../shared/ui/StatusBadge';
 import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/ViewStates';
 import type { ProjectsApi } from '../../projects/projects-api';
 import { formatUtc, dutyTimeText } from './work-queue-format';
-import { parseQueueQuery, queueSearch, revalidateOnForbidden, type WorkQueueApi } from './work-queue-api';
+import { parseQueueQuery, queueSearch, type WorkQueueApi } from './work-queue-api';
 import {
   CANCELLATION_LABELS,
   CASE_TYPE_LABELS,
@@ -34,7 +34,6 @@ type Props = {
   route: AppRoute;
   queue: WorkQueueApi;
   projects: ProjectsApi;
-  requestSessionRevalidation: () => void;
 };
 
 type ListRequest = { query: QueueQuery; revision: number };
@@ -83,7 +82,9 @@ function countText(total: number): string {
  * the server. Filters, sorting and pages are URL state and are applied by the
  * server; the list is never assembled or filtered in the browser.
  */
-export function WorkQueuePage({ route, queue, projects, requestSessionRevalidation }: Props) {
+// A 403 is shown as "Kein Zugriff". It does not trigger a session re-check: that re-check would remount the page and
+// request again, so the data path never loops. 401 is handled by the session boundary.
+export function WorkQueuePage({ route, queue, projects }: Props) {
   const [params, setParams] = useSearchParams();
   const [revision, setRevision] = useState(0);
   const search = queueSearch(parseQueueQuery(params));
@@ -93,16 +94,9 @@ export function WorkQueuePage({ route, queue, projects, requestSessionRevalidati
   const source = useMemo<ReadSource<ListRequest, QueuePage>>(
     () => ({
       kind: 'api',
-      async load(current, signal) {
-        try {
-          return await queue.queue(current.query, signal);
-        } catch (error) {
-          if (!signal.aborted) revalidateOnForbidden(error, requestSessionRevalidation);
-          throw error;
-        }
-      },
+      load: (current, signal) => queue.queue(current.query, signal),
     }),
-    [queue, requestSessionRevalidation],
+    [queue],
   );
   const { state, retry } = useReadSource(source, request);
 
@@ -132,6 +126,7 @@ export function WorkQueuePage({ route, queue, projects, requestSessionRevalidati
           projectsState={projectState.state}
           onChange={navigateTo}
           onRefresh={() => setRevision((current) => current + 1)}
+          onRetryProjects={projectState.retry}
         />
         <p className="work-queue__legend">
           Offene Angebote sind alle eingereichten Angebote, die noch offen sind. Aktuell geeignet ist davon nur der Teil,
@@ -210,11 +205,13 @@ function QueueFilters({
   projectsState,
   onChange,
   onRefresh,
+  onRetryProjects,
 }: {
   query: QueueQuery;
   projectsState: ReadState<ProjectRef[]>;
   onChange: (next: QueueQuery) => void;
   onRefresh: () => void;
+  onRetryProjects: () => void;
 }) {
   const presenceName = useId();
   const typeId = useId();
@@ -285,9 +282,12 @@ function QueueFilters({
           </select>
         </label>
         {projectsState.status === 'error' && (
-          <p className="work-queue__hint" role="status">
-            Die Projektliste konnte nicht geladen werden. Der Projektfilter ist deshalb nicht verfügbar.
-          </p>
+          <div className="work-queue__hint" role="status">
+            <p>Die Projektliste konnte nicht geladen werden. Der Projektfilter kann erst geändert werden, wenn sie geladen ist.</p>
+            <button type="button" className="work-queue__button" onClick={onRetryProjects}>
+              Projektliste erneut laden
+            </button>
+          </div>
         )}
 
         <label htmlFor={monthId}>
@@ -387,9 +387,6 @@ function QueueTable({
               <th scope="col">Offene Angebote</th>
               <th scope="col">Aktuell geeignet</th>
               <th scope="col">Angelegt</th>
-              <th scope="col">
-                <span className="visually-hidden">Aktion</span>
-              </th>
             </tr>
           </thead>
           <tbody>
@@ -414,6 +411,14 @@ function QueueRow({ item, backPath, caseBasePath }: { item: QueueItem; backPath:
       <th scope="row">
         <span className="work-queue__name">{name}</span>
         <span className="work-queue__sub">Personalnummer {employee.employeeCode}</span>
+        <Link
+          className="work-queue__open"
+          to={`${caseBasePath}/${item.replacementNeedId}`}
+          state={{ back: backPath }}
+          aria-label={`Vorgang öffnen für ${name}`}
+        >
+          Vorgang öffnen
+        </Link>
       </th>
       <td data-label="Projekt">{item.project.name}</td>
       <td data-label="Dienst">
@@ -437,11 +442,6 @@ function QueueRow({ item, backPath, caseBasePath }: { item: QueueItem; backPath:
         {item.eligibleOpenOfferCount}
       </td>
       <td data-label="Angelegt">{formatUtc(item.createdAt)}</td>
-      <td className="work-queue__action">
-        <Link to={`${caseBasePath}/${item.replacementNeedId}`} state={{ back: backPath }} aria-label={`Vorgang öffnen für ${name}`}>
-          Vorgang öffnen
-        </Link>
-      </td>
     </tr>
   );
 }

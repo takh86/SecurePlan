@@ -1,0 +1,103 @@
+{
+  "kind": "sp19-ui-stub-checks",
+  "notAcceptance": "Backend, PostgreSQL and authorization are NOT exercised: API responses are network stubs.",
+  "browser": "Google Chrome (channel chrome) via Playwright",
+  "origin": "loopback static build",
+  "results": [
+    {
+      "id": "UI-01",
+      "description": "administrator lands on the live queue; no synthetic preview text; read requests only",
+      "result": "PASS",
+      "ms": 493
+    },
+    {
+      "id": "UI-02",
+      "description": "queue values and overnight time in the saved zone (browser zone America/Los_Angeles)",
+      "result": "PASS",
+      "ms": 36
+    },
+    {
+      "id": "UI-03",
+      "description": "open case shows ELIGIBLE / INELIGIBLE / NOT_APPLICABLE as text, separate counts, no decision controls",
+      "result": "PASS",
+      "ms": 219
+    },
+    {
+      "id": "UI-04",
+      "description": "filters, sorting and pagination send the documented server parameters; refresh keeps URL state",
+      "result": "PASS",
+      "ms": 867
+    },
+    {
+      "id": "UI-04b",
+      "description": "pagination: next/previous page requests, page count, empty page beyond the last page, back to page one",
+      "result": "PASS",
+      "ms": 474
+    },
+    {
+      "id": "UI-05",
+      "description": "case changed while open: refresh shows the authoritative state and the closed case is not pending",
+      "result": "PASS",
+      "ms": 326
+    },
+    {
+      "id": "UI-06",
+      "description": "EMPLOYEE gets no administrative request; invalid and unknown case ids are safe",
+      "result": "PASS",
+      "ms": 178
+    },
+    {
+      "id": "UI-07a",
+      "description": "network interruption shows a safe error and retry recovers",
+      "result": "PASS",
+      "ms": 180
+    },
+    {
+      "id": "UI-07b",
+      "description": "API 401 leaves the protected view (sign-in form), API 403 denies and revalidates the session",
+      "result": "PASS",
+      "ms": 1787
+    },
+    {
+      "id": "UI-07c",
+      "description": "API 404 for a hidden project filter gives a neutral message and a way out; unknown case gives unavailable",
+      "result": "PASS",
+      "ms": 381
+    },
+    {
+      "id": "UI-07d",
+      "description": "invalid response and impossible timestamp are rejected without a page error",
+      "result": "PASS",
+      "ms": 219
+    },
+    {
+      "id": "UI-07e",
+      "description": "empty company shows the empty state; project list failure offers a retry",
+      "result": "PASS",
+      "ms": 337
+    },
+    {
+      "id": "UI-07f",
+      "description": "case page: page beyond the last one keeps the status filter and returns to page one",
+      "result": "PASS",
+      "ms": 202
+    },
+    {
+      "id": "UI-08a",
+      "description": "keyboard: links receive visible focus; no horizontal page scroll at 390px; table rows labelled",
+      "result": "PASS",
+      "ms": 335
+    },
+    {
+      "id": "UI-08b",
+      "description": "console: no uncaught page errors during the run; console error categories recorded",
+      "result": "PASS",
+      "ms": 0
+    }
+  ],
+  "pageErrors": 0,
+  "consoleErrorCategories": {
+    "failed-resource (expected from injected faults)": 6
+  },
+  "mutationsAttempted": []
+}

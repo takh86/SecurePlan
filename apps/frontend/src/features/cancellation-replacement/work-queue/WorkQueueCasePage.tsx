@@ -10,13 +10,7 @@ import { ApiErrorAlert } from '../../../shared/ui/ApiErrorAlert';
 import { StatusBadge } from '../../../shared/ui/StatusBadge';
 import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/ViewStates';
 import { dutyTimeText, formatUtc } from './work-queue-format';
-import {
-  isCaseId,
-  offersSearch,
-  parseOffersQuery,
-  revalidateOnForbidden,
-  type WorkQueueApi,
-} from './work-queue-api';
+import { isCaseId, offersSearch, parseOffersQuery, type WorkQueueApi } from './work-queue-api';
 import {
   CANCELLATION_LABELS,
   ELIGIBILITY_LABELS,
@@ -36,7 +30,6 @@ type Props = {
   route: AppRoute;
   queue: WorkQueueApi;
   needId: string;
-  requestSessionRevalidation: () => void;
 };
 
 type CaseRequest = { query: OffersQuery; revision: number };
@@ -66,7 +59,7 @@ function isPendingCase(context: CaseContext): boolean {
  * context and the offer page from one server snapshot. Read-only: no action here
  * changes a cancellation, a need or an offer.
  */
-export function WorkQueueCasePage({ route, queue, needId, requestSessionRevalidation }: Props) {
+export function WorkQueueCasePage({ route, queue, needId }: Props) {
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const [revision, setRevision] = useState(0);
@@ -78,16 +71,9 @@ export function WorkQueueCasePage({ route, queue, needId, requestSessionRevalida
   const source = useMemo<ReadSource<CaseRequest, OffersPage>>(
     () => ({
       kind: 'api',
-      async load(current, signal) {
-        try {
-          return await queue.offers(needId, current.query, signal);
-        } catch (error) {
-          if (!signal.aborted) revalidateOnForbidden(error, requestSessionRevalidation);
-          throw error;
-        }
-      },
+      load: (current, signal) => queue.offers(needId, current.query, signal),
     }),
-    [queue, needId, requestSessionRevalidation],
+    [queue, needId],
   );
   const { state, retry } = useReadSource(source, request);
 
@@ -288,7 +274,12 @@ function CaseDetails({
           </button>
         </div>
 
-        <OfferList page={data} query={query} onPage={(page) => onChange({ ...query, page })} />
+        <OfferList
+          page={data}
+          query={query}
+          onPage={(page) => onChange({ ...query, page })}
+          onAllStatuses={() => onChange({ status: null, page: 1 })}
+        />
       </section>
 
       <p className="work-queue__evaluated">Stand der Auswertung: {formatUtc(context.evaluatedAt)}</p>
@@ -296,17 +287,52 @@ function CaseDetails({
   );
 }
 
-function OfferList({ page, query, onPage }: { page: OffersPage; query: OffersQuery; onPage: (page: number) => void }) {
+function OfferList({
+  page,
+  query,
+  onPage,
+  onAllStatuses,
+}: {
+  page: OffersPage;
+  query: OffersQuery;
+  onPage: (page: number) => void;
+  onAllStatuses: () => void;
+}) {
   const captionId = useId();
   if (page.items.length === 0) {
+    // Three different situations; only the first means that no offer exists for this need.
+    if (page.pagination.totalItems > 0) {
+      // Offers exist, but the requested page is past the last one (the status filter is kept).
+      return (
+        <div className="work-queue__empty">
+          <EmptyState
+            title="Diese Seite ist leer"
+            description="Die angeforderte Seite enthält keine Angebote mehr. Der gewählte Angebotsstatus bleibt erhalten."
+          />
+          <button type="button" className="work-queue__button" onClick={() => onPage(1)}>
+            Zur ersten Seite
+          </button>
+        </div>
+      );
+    }
+    if (query.status) {
+      // A status filter without matches; offers of other statuses may still exist.
+      return (
+        <div className="work-queue__empty">
+          <EmptyState
+            title="Keine Angebote mit diesem Status"
+            description="Für den gewählten Angebotsstatus gibt es keine Angebote. Angebote mit einem anderen Status können trotzdem vorhanden sein."
+          />
+          <button type="button" className="work-queue__button" onClick={onAllStatuses}>
+            Alle Angebote anzeigen
+          </button>
+        </div>
+      );
+    }
     return (
       <EmptyState
-        title={query.status ? 'Keine Angebote mit diesem Status' : 'Noch keine Ersatzangebote'}
-        description={
-          query.status
-            ? 'Wählen Sie einen anderen Angebotsstatus.'
-            : 'Für diesen Ersatzbedarf wurde bisher kein Angebot eingereicht.'
-        }
+        title="Noch keine Ersatzangebote"
+        description="Für diesen Ersatzbedarf wurde bisher kein Angebot eingereicht."
       />
     );
   }

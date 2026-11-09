@@ -54,12 +54,7 @@ function RouteView({ route, role, api, identity, requestSessionRevalidation }: {
       return <MonthlyPlanningSection route={route} api={api} />;
     case 'work-queue':
       return (
-        <WorkQueueSection
-          route={route}
-          api={api}
-          identity={identity}
-          requestSessionRevalidation={requestSessionRevalidation}
-        />
+        <WorkQueueSection route={route} api={api} identity={identity} />
       );
     case 'my-statistics':
       return (

@@ -13,7 +13,6 @@ type Props = {
   route: AppRoute;
   api: SessionApi;
   identity: IdentityContext;
-  requestSessionRevalidation: () => void;
 };
 
 /**
@@ -29,49 +28,20 @@ export function WorkQueueSection(props: Props) {
   return <BoundWorkQueue key={boundary.generation} {...props} />;
 }
 
-function BoundWorkQueue({ route, api, requestSessionRevalidation }: Props) {
+function BoundWorkQueue({ route, api }: Props) {
   const queue = useMemo(() => createWorkQueueApi(api), [api]);
   const projects = useMemo(() => createProjectsApi(api), [api]);
   return (
     <Routes>
-      <Route
-        index
-        element={
-          <WorkQueuePage
-            route={route}
-            queue={queue}
-            projects={projects}
-            requestSessionRevalidation={requestSessionRevalidation}
-          />
-        }
-      />
-      <Route
-        path=":needId"
-        element={<CaseRoute route={route} queue={queue} requestSessionRevalidation={requestSessionRevalidation} />}
-      />
+      <Route index element={<WorkQueuePage route={route} queue={queue} projects={projects} />} />
+      <Route path=":needId" element={<CaseRoute route={route} queue={queue} />} />
       <Route path="*" element={<Navigate to={route.path} replace />} />
     </Routes>
   );
 }
 
-function CaseRoute({
-  route,
-  queue,
-  requestSessionRevalidation,
-}: {
-  route: AppRoute;
-  queue: WorkQueueApi;
-  requestSessionRevalidation: () => void;
-}) {
+function CaseRoute({ route, queue }: { route: AppRoute; queue: WorkQueueApi }) {
   const { needId = '' } = useParams();
   // A different case is a different page: nothing carries over from the previous one.
-  return (
-    <WorkQueueCasePage
-      key={needId}
-      route={route}
-      queue={queue}
-      needId={needId}
-      requestSessionRevalidation={requestSessionRevalidation}
-    />
-  );
+  return <WorkQueueCasePage key={needId} route={route} queue={queue} needId={needId} />;
 }

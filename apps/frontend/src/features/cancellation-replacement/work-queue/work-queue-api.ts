@@ -71,7 +71,8 @@ function count(value: unknown): number {
 
 function millis(value: unknown): string {
   const s = text(value);
-  if (!MILLIS.test(s) || new Date(s).toISOString() !== s) invalid();
+  // A pattern-valid but impossible date (e.g. month 13) parses to NaN; toISOString() would throw a RangeError.
+  if (!MILLIS.test(s) || !Number.isFinite(Date.parse(s)) || new Date(s).toISOString() !== s) invalid();
   return s;
 }
 
@@ -376,11 +377,6 @@ export function offersSearch(query: OffersQuery): string {
 
 export function isCaseId(value: string | undefined): value is string {
   return value !== undefined && UUID.test(value);
-}
-
-/** 401 is handled by the session boundary; a 403 means the role changed, so the session is re-checked. */
-export function revalidateOnForbidden(error: unknown, revalidate: () => void): void {
-  if (error instanceof ApiError && error.status === 403) revalidate();
 }
 
 // ---------------------------------------------------------------------------
