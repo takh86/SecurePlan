@@ -1,10 +1,16 @@
 # API Design – öffentliche Übersicht
 
-SP19-P1 proposes the [administrative read API](admin-work-queue.openapi.json) for
-review: tenant-scoped work queue, cancellation and need context, and submitted
-offers. Eligibility indicators describe current criteria for submitting a new
-offer; they do not authorize selection or reassignment. React integration,
-administrative decisions and deployment are outside this backend slice.
+SP19-P1 [administrative read API](admin-work-queue.openapi.json) is implemented
+in the merged backend PR #112 (tenant-scoped work queue, cancellation/need
+context and offers). SP19-P2 React read-only integration is in [PR #113](https://github.com/takh86/SecurePlan/pull/113)
+with [backend-backed acceptance evidence](../reviews/sp19-backend-acceptance-report.md).
+Eligibility indicators describe current eligibility for submitting an offer;
+they do not authorize selection or reassignment. Administrative decision
+commands and deployment remain outside SP19-P1/P2.
+
+Implementation and acceptance evidence do not, by themselves, record formal
+Product Owner approval of this API contract. That approval remains to be
+confirmed before SP-19 closeout.
 
 A1 implementation amendment (2026-11-03): [project operating calendar](project-operating-calendar.md).
 A2 adopted backend contract (2026-11-03): [employee-month Save](employee-month-save.md),
