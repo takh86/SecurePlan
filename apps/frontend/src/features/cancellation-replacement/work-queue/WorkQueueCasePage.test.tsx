@@ -5,7 +5,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { APP_ROUTES, type AppRoute } from '../../../app/routes';
-import { ApiError } from '../../../shared/api/api-error';
+import { ApiError, parseApiError } from '../../../shared/api/api-error';
 import type { SessionRequest } from '../../auth/session-api';
 import { WorkQueueSection } from './WorkQueueSection';
 import {
@@ -274,6 +274,35 @@ describe('SP-20 — administrative selection', () => {
     expect(posts).toBe(1);
     expect(requests.filter((request) => request.method === 'GET').length).toBeGreaterThanOrEqual(2);
   });
+
+  // The refusal travels the real path: a problem+json response is parsed by parseApiError, so the code must be
+  // on the allowlist for the specific German text to appear (not the generic "Die Auswahl wurde nicht angenommen.").
+  for (const [code, text] of [
+    ['CANCELLATION_ALREADY_RESOLVED', 'Dieser Vorgang ist bereits entschieden. Die Daten wurden neu geladen.'],
+    ['REPLACEMENT_OFFER_NOT_SELECTABLE', 'Dieses Angebot kann nicht mehr ausgewählt werden. Die Daten wurden neu geladen.'],
+  ] as const) {
+    it(`SP-20: ${code} keeps its specific German refusal, reloads the case and writes only once`, async () => {
+      const user = userEvent.setup();
+      let posts = 0;
+      const { requests } = renderSelection(async (_path, options) => {
+        if (options.method === 'POST') {
+          posts += 1;
+          throw await parseApiError(
+            new Response(JSON.stringify({ code }), { status: 409, headers: { 'content-type': 'application/problem+json' } }),
+          );
+        }
+        return offersPage(threeOffers());
+      });
+      await screen.findByRole('table', { name: 'Eingereichte Ersatzangebote' });
+      const getsBefore = requests.filter((request) => request.method === 'GET').length;
+      await user.click((await screen.findAllByRole('button', { name: 'Ersatz auswählen' }))[0]);
+      await user.click(screen.getByRole('button', { name: 'Ersatz bestätigen' }));
+      expect(await screen.findByText(text)).toBeTruthy();
+      expect(screen.queryByText('Die Auswahl wurde nicht angenommen. Die Daten wurden neu geladen.')).toBeNull();
+      expect(posts).toBe(1);
+      expect(requests.filter((request) => request.method === 'GET').length).toBeGreaterThan(getsBefore);
+    });
+  }
 
   it('while the selection is in flight the confirmation is disabled and no second write starts', async () => {
     const user = userEvent.setup();

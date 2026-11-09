@@ -79,8 +79,19 @@ describe('SP-07 — field errors and employee codes', () => {
         expect((await parseApiError(problem(Number(status) === 400 ? 409 : 400, { code }))).code, code).toBeNull();
       }
     }
-    // Codes of later slices stay untrusted until a UI handles them.
-    expect((await parseApiError(problem(409, { code: 'CANCELLATION_ALREADY_RESOLVED' }))).code).toBeNull();
+  });
+
+  it('SP-20: preserves the replacement-selection refusal codes from application/problem+json, only with 409', async () => {
+    for (const code of ['CANCELLATION_ALREADY_RESOLVED', 'REPLACEMENT_OFFER_NOT_SELECTABLE'] as const) {
+      const refused = await parseApiError(problem(409, { code, correlationId: 'req-1' }));
+      expect(refused.kind).toBe('http');
+      expect(refused.status).toBe(409);
+      expect(refused.code, code).toBe(code);
+      expect(refused.correlationId).toBe('req-1');
+      for (const status of [400, 404, 500]) {
+        expect((await parseApiError(problem(status, { code }))).code, `${code} @${status}`).toBeNull();
+      }
+    }
   });
 
   it('SP-13: trusts MONTHLY_PLAN_ALREADY_PUBLISHED only with its catalogued 409', async () => {
