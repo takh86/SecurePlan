@@ -4,6 +4,10 @@ Target: draft PR #113, branch `feat/sp19-admin-work-queue-ui`.
 Starting commit: `5a6f63c`. Reviewed fix commit: `3eb9465`.
 Refs #35 and #36. This report does not close those issues and does not merge PR #113.
 
+> **Superseded.** This report describes the stub-based UI run only. The backend-backed run
+> against a disposable PostgreSQL 17 database passed all 15 scenarios; see
+> `sp19-backend-acceptance-report.md`.
+
 ## Result in one sentence
 
 The frontend behaves correctly in real Chrome under controlled API responses, and three
