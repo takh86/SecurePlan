@@ -203,9 +203,9 @@ A repeated handler call has no further effect or audit. Retained assignments
 and terminal cancellations remain unchanged. This prerequisite introduces no
 cancellation command, read resource, offer or decision API.
 
-## SP-20 supplement — replacement selection audit (PENDING PRODUCT OWNER APPROVAL)
+## SP-20 supplement — replacement selection audit (PRODUCT OWNER APPROVED)
 
-**Status: PENDING PRODUCT OWNER APPROVAL.** The four actions below are proposed, not approved. No approval is inferred from the implementation, from the Draft PR or from the earlier approvals in this document. Independent technical, security and documentary review remains separate. Until the Product Owner records a decision here, the actions must not be treated as part of the approved catalogue.
+**Status: PRODUCT OWNER APPROVED (2026-11-09, explicit owner decision in the SecurePlan project conversation).** The Product Owner approved precisely the four actions, resource identities, old/new payloads and counts below. This is approval of the business audit vocabulary only; independent code, security, browser acceptance, release and merge gates remain separate.
 
 Scope: one successful `POST /api/v1/replacement-needs/:needId/selection` by a COMPANY_ADMIN. The operation changes one cancellation (OPEN to APPROVED), one replacement need (OPEN to RESOLVED), the selected offer (OPEN to SELECTED) and every other OPEN offer of that need (OPEN to NOT_SELECTED). Refusals, idempotent replays and rejected stale requests emit no success audit.
 
@@ -228,4 +228,4 @@ The duty and membership rows written by the same transaction are not new actions
 
 A successful selection with one losing OPEN offer therefore produces seven rows in one transaction. The payloads contain IDs, statuses, bounded duty values and persisted timestamps only. No names, e-mail addresses, absence reasons, tokens or complete plan copies are recorded.
 
-**Decision requested from the Product Owner:** approve or reject the four actions and their payloads above. Record the result here with the approver and date. Recorded decision: **PENDING**.
+**Recorded decision: APPROVED — Product Owner, 2026-11-09.** Approved scope is limited to the four new SP-20 audit actions and their exact resource identities, bounded old/new payloads, occurrence rules and shared transactional envelope specified above. Existing SP-12 audit actions remain governed by their previously approved contract. This approval does **not** authorize merging PR #116, merging PR #117, deployment, or closure of technical acceptance findings.
