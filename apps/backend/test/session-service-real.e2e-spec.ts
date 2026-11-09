@@ -9,35 +9,24 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import pg, { type PoolClient } from 'pg';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatabaseService } from '../src/database/database.service.js';
+import type { TenantContext } from '../src/auth/authorization/tenant-context.js';
 import {
   SessionService,
   assertSessionCsrf,
+  assertSessionInTransaction,
   type CreateSessionInput,
 } from '../src/auth/session.service.js';
 
 const { Pool } = pg;
-const INITIAL_TIME = new Date('2026-10-19T12:00:00.000Z');
 const VERIFIED_HASH = 'synthetic-verified-hash-v1';
-
-class TestableSessionService extends SessionService {
-  private instant = new Date(INITIAL_TIME);
-
-  setTime(instant: Date): void {
-    this.instant = instant;
-  }
-
-  protected override now(): Date {
-    return new Date(this.instant);
-  }
-}
 
 type Fixture = { companyA: string; companyB: string; accountA: string; accountB: string };
 let pool: InstanceType<typeof Pool> | undefined;
 let client: PoolClient | undefined;
 let fixture: Fixture;
-let service: TestableSessionService;
+let service: SessionService;
 
 function db(): PoolClient {
   if (!client) throw new Error('Test transaction not initialized');
@@ -64,7 +53,18 @@ async function expectSessionError(
   });
 }
 
-const plus = (ms: number) => new Date(INITIAL_TIME.getTime() + ms);
+const digestOf = (raw: string) => createHash('sha256').update(raw, 'utf8').digest();
+
+/** Moves one session's stored instants back on the database clock. The application clock is not involved (SP-115). */
+async function ageSession(rawToken: string, createdAgo: string, lastSeenAgo: string): Promise<void> {
+  await db().query(
+    `UPDATE sessions
+        SET created_at = clock_timestamp() - interval '${createdAgo}',
+            last_seen_at = clock_timestamp() - interval '${lastSeenAgo}'
+      WHERE token_hash = $1`,
+    [digestOf(rawToken)],
+  );
+}
 const HOUR_MS = 60 * 60 * 1000;
 
 describe('SP-05 — SessionService (real PostgreSQL)', () => {
@@ -117,7 +117,7 @@ describe('SP-05 — SessionService (real PostgreSQL)', () => {
     const isolatedDatabase = {
       withTransaction: async <T>(work: (tx: PoolClient) => Promise<T>): Promise<T> => work(db()),
     } as unknown as DatabaseService;
-    service = new TestableSessionService(isolatedDatabase);
+    service = new SessionService(isolatedDatabase);
   });
 
   afterEach(async () => {
@@ -159,7 +159,11 @@ describe('SP-05 — SessionService (real PostgreSQL)', () => {
       companyId: fixture.companyB,
       accountId: fixture.accountB,
     }));
-    expect(created.absoluteExpiresAt).toEqual(plus(12 * HOUR_MS));
+    const span = await db().query<{ span_ms: string }>(
+      "SELECT (extract(epoch FROM absolute_expires_at - created_at) * 1000)::text AS span_ms FROM sessions WHERE token_hash = $1",
+      [digestOf(created.rawToken)],
+    );
+    expect(Number(span.rows[0].span_ms)).toBe(12 * HOUR_MS);
   });
 
   it('04: refuses inactive accounts and companies', async () => {
@@ -188,7 +192,6 @@ describe('SP-05 — SessionService (real PostgreSQL)', () => {
 
   it('07: validates and touches an active EMPLOYEE session', async () => {
     const created = await service.createForAccount(credentials());
-    service.setTime(plus(HOUR_MS));
     const validated = await service.validateAndTouch(created.rawToken);
     expect(validated).toMatchObject({
       accountId: fixture.accountA,
@@ -196,21 +199,23 @@ describe('SP-05 — SessionService (real PostgreSQL)', () => {
       role: 'EMPLOYEE',
       csrfToken: created.csrfToken,
     });
-    const result = await db().query<{last_seen_at: Date}>('SELECT last_seen_at FROM sessions WHERE id = $1', [validated.sessionId]);
-    expect(result.rows[0].last_seen_at).toEqual(plus(HOUR_MS));
+    const result = await db().query<{ created_at: Date; last_seen_at: Date }>(
+      'SELECT created_at, last_seen_at FROM sessions WHERE id = $1',
+      [validated.sessionId],
+    );
+    expect(result.rows[0].last_seen_at.getTime()).toBeGreaterThanOrEqual(result.rows[0].created_at.getTime());
   });
 
   it('08: expires an EMPLOYEE after 8 hours idle (even though absolute expiry is later)', async () => {
     const created = await service.createForAccount(credentials());
-    service.setTime(plus(8 * HOUR_MS));
+    await ageSession(created.rawToken, '9 hours', '8 hours 1 minute');
     await expectSessionError(service.validateAndTouch(created.rawToken), 'SESSION_EXPIRED');
   });
 
   it('09: expires an ADMIN at absolute expiry even with recent activity', async () => {
     const created = await service.createForAccount(credentials({companyId: fixture.companyB, accountId: fixture.accountB}));
-    // Create a recent activity row at minute 11h59 without extending absolute expiry.
-    await db().query('UPDATE sessions SET last_seen_at = $1 WHERE account_id = $2', [plus(12 * HOUR_MS - 60_000), fixture.accountB]);
-    service.setTime(plus(12 * HOUR_MS));
+    // The session began more than 12 hours ago, but its last activity is one minute old: absolute expiry must still win.
+    await ageSession(created.rawToken, '12 hours 1 minute', '1 minute');
     await expectSessionError(service.validateAndTouch(created.rawToken), 'SESSION_EXPIRED');
   });
 
@@ -224,7 +229,8 @@ describe('SP-05 — SessionService (real PostgreSQL)', () => {
   it('11: checks CURRENT role on each request (not role at login)', async () => {
     const created = await service.createForAccount(credentials());
     await db().query("UPDATE accounts SET role = 'COMPANY_ADMIN' WHERE id = $1", [fixture.accountA]);
-    service.setTime(plus(31 * 60_000));
+    // Idle 31 minutes: expired under the ADMIN 30-minute idle policy that now applies to this account.
+    await ageSession(created.rawToken, '32 minutes', '31 minutes');
     await expectSessionError(service.validateAndTouch(created.rawToken), 'SESSION_EXPIRED');
   });
 
@@ -255,5 +261,117 @@ describe('SP-05 — SessionService (real PostgreSQL)', () => {
     const created = await service.createForAccount(credentials());
     await db().query("UPDATE companies SET status = 'SUSPENDED' WHERE id = $1", [fixture.companyA]);
     await expectSessionError(service.validateAndTouch(created.rawToken), 'SESSION_REVOKED');
+  });
+
+  // #115 regression. Session times must come from one clock: the database clock that the transactional
+  // check compares against. A skewed application clock must not reject a fresh session on either path.
+  describe('SP-115 consistent session clock (real PostgreSQL)', () => {
+    const SKEW_MS = 4000;
+    const tenantOf = (v: { sessionId: string; accountId: string; companyId: string; role: TenantContext['role'] }): TenantContext => ({
+      sessionId: v.sessionId,
+      accountId: v.accountId,
+      companyId: v.companyId,
+      role: v.role,
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('a fresh session is accepted by the guard path and the transactional path when the application clock is 4 s ahead', async () => {
+      vi.useFakeTimers({ toFake: ['Date'], now: new Date(Date.now() + SKEW_MS) });
+      const created = await service.createForAccount(credentials());
+      const validated = await service.validateAndTouch(created.rawToken);
+      await expect(assertSessionInTransaction(db(), tenantOf(validated))).resolves.toBeUndefined();
+    });
+
+    it('a fresh session is accepted by both paths when the application clock is 4 s behind', async () => {
+      vi.useFakeTimers({ toFake: ['Date'], now: new Date(Date.now() - SKEW_MS) });
+      const created = await service.createForAccount(credentials());
+      const validated = await service.validateAndTouch(created.rawToken);
+      await expect(assertSessionInTransaction(db(), tenantOf(validated))).resolves.toBeUndefined();
+    });
+
+    it('stored session times are database clock values, not application clock values', async () => {
+      vi.useFakeTimers({ toFake: ['Date'], now: new Date(Date.now() + SKEW_MS) });
+      const created = await service.createForAccount(credentials());
+      const row = (
+        await db().query<{ created_at: Date; db_now: Date }>(
+          'SELECT created_at, clock_timestamp() AS db_now FROM sessions WHERE token_hash = $1',
+          [digestOf(created.rawToken)],
+        )
+      ).rows[0];
+      expect(Math.abs(row.db_now.getTime() - row.created_at.getTime())).toBeLessThan(1000);
+    });
+
+    it('idle expiry is still enforced on the transactional path (no weakening)', async () => {
+      const created = await service.createForAccount(credentials());
+      const session = (await db().query<{ id: string }>('SELECT id FROM sessions WHERE token_hash = $1', [digestOf(created.rawToken)])).rows[0];
+      await db().query(
+        `UPDATE sessions SET created_at = clock_timestamp() - interval '9 hours',
+                              last_seen_at = clock_timestamp() - interval '8 hours 1 minute'
+         WHERE id = $1`,
+        [session.id],
+      );
+      await expect(
+        assertSessionInTransaction(db(), { sessionId: session.id, accountId: fixture.accountA, companyId: fixture.companyA, role: 'EMPLOYEE' }),
+      ).rejects.toMatchObject({ response: { code: 'SESSION_EXPIRED' } });
+    });
+  });
+
+  // PR #117 review. validateAndTouch decides expiry on its locked SELECT, then runs a guarded UPDATE. A deadline that
+  // passes between those two statements is an expiry, so it must answer SESSION_EXPIRED (never SESSION_REVOKED) and
+  // must not touch the session. Timing is controlled, not delayed: the hook runs on the same transaction right after
+  // the locked SELECT returns and moves the stored state past its deadline, which is the state the clock would reach.
+  describe('PR #117 review: expiry between the locked read and the touch (real PostgreSQL)', () => {
+    /** A SessionService whose transaction runs `afterLockedRead` once, immediately after validateAndTouch's locked read. */
+    function serviceWithStepAfterLockedRead(afterLockedRead: () => Promise<void>): SessionService {
+      const tx = db();
+      let fired = false;
+      const hooked = {
+        query: async (text: string, params: unknown[] = []) => {
+          const result = await tx.query(text, params);
+          if (!fired && text.includes('AS expired') && text.includes('FOR UPDATE')) {
+            fired = true;
+            await afterLockedRead();
+          }
+          return result;
+        },
+      } as unknown as PoolClient;
+      return new SessionService({
+        withTransaction: async <T>(work: (c: PoolClient) => Promise<T>): Promise<T> => work(hooked),
+      } as unknown as DatabaseService);
+    }
+
+    it('the absolute deadline passing after the locked read answers SESSION_EXPIRED, not SESSION_REVOKED', async () => {
+      const created = await service.createForAccount(credentials());
+      const digest = digestOf(created.rawToken);
+      const racing = serviceWithStepAfterLockedRead(async () => {
+        await db().query(
+          "UPDATE sessions SET absolute_expires_at = clock_timestamp() - interval '1 millisecond' WHERE token_hash = $1",
+          [digest],
+        );
+      });
+      await expectSessionError(racing.validateAndTouch(created.rawToken), 'SESSION_EXPIRED');
+    });
+
+    it('the idle deadline passing after the locked read answers SESSION_EXPIRED and does not touch the session', async () => {
+      const created = await service.createForAccount(credentials());
+      const digest = digestOf(created.rawToken);
+      const racing = serviceWithStepAfterLockedRead(async () => {
+        await db().query(
+          "UPDATE sessions SET created_at = clock_timestamp() - interval '9 hours', last_seen_at = clock_timestamp() - interval '8 hours 1 minute' WHERE token_hash = $1",
+          [digest],
+        );
+      });
+      await expectSessionError(racing.validateAndTouch(created.rawToken), 'SESSION_EXPIRED');
+      const row = (
+        await db().query<{ still_idle: boolean }>(
+          "SELECT (clock_timestamp() - last_seen_at) > interval '8 hours' AS still_idle FROM sessions WHERE token_hash = $1",
+          [digest],
+        )
+      ).rows[0];
+      expect(row.still_idle).toBe(true);
+    });
   });
 });
