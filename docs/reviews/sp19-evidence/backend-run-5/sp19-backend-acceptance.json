@@ -1,0 +1,995 @@
+{
+  "startedAt": "2026-11-09T08:22:02.764Z",
+  "target": {
+    "containerRun": "sp19-1b46c9ab59f8",
+    "cluster": "7706083736888881191"
+  },
+  "origin": "https://localhost:8443",
+  "http": [
+    {
+      "stage": "setup-calendar",
+      "actor": "admin-a",
+      "method": "GET",
+      "path": "/projects/3082df68-cb1b-43fd-a5df-5816858296e0/operating-calendar?effectiveForMonth=2026-12-01",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-calendar",
+      "actor": "admin-a",
+      "method": "PATCH",
+      "path": "/projects/3082df68-cb1b-43fd-a5df-5816858296e0/operating-calendar",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-calendar",
+      "actor": "admin-a",
+      "method": "GET",
+      "path": "/projects/2df3415f-8faf-41ad-9bc7-45a8de2d7c7c/operating-calendar?effectiveForMonth=2026-12-01",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-calendar",
+      "actor": "admin-a",
+      "method": "PATCH",
+      "path": "/projects/2df3415f-8faf-41ad-9bc7-45a8de2d7c7c/operating-calendar",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-calendar",
+      "actor": "admin-b",
+      "method": "GET",
+      "path": "/projects/10a957fe-85b5-453d-b70e-dd28e38aea94/operating-calendar?effectiveForMonth=2026-12-01",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-calendar",
+      "actor": "admin-b",
+      "method": "PATCH",
+      "path": "/projects/10a957fe-85b5-453d-b70e-dd28e38aea94/operating-calendar",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-plan",
+      "actor": "admin-a",
+      "method": "POST",
+      "path": "/monthly-plans",
+      "status": 201,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-plan",
+      "actor": "admin-a",
+      "method": "POST",
+      "path": "/monthly-plans",
+      "status": 201,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-plan",
+      "actor": "admin-b",
+      "method": "POST",
+      "path": "/monthly-plans",
+      "status": 201,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-plan",
+      "actor": "admin-a",
+      "method": "GET",
+      "path": "/monthly-plans/343f9b96-8185-4a48-8c24-89be066b5027/employee-months/26a515f7-7e29-45a8-aaf1-adf20e8d3c4d",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-plan",
+      "actor": "admin-a",
+      "method": "POST",
+      "path": "/monthly-plans/343f9b96-8185-4a48-8c24-89be066b5027/employee-months/26a515f7-7e29-45a8-aaf1-adf20e8d3c4d/save",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-plan",
+      "actor": "admin-a",
+      "method": "GET",
+      "path": "/monthly-plans/343f9b96-8185-4a48-8c24-89be066b5027/employee-months/722714c8-19f4-4fdc-8c79-6c1021366723",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-plan",
+      "actor": "admin-a",
+      "method": "POST",
+      "path": "/monthly-plans/343f9b96-8185-4a48-8c24-89be066b5027/employee-months/722714c8-19f4-4fdc-8c79-6c1021366723/save",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-plan",
+      "actor": "admin-a",
+      "method": "GET",
+      "path": "/monthly-plans/343f9b96-8185-4a48-8c24-89be066b5027/employee-months/b43d7c86-60a0-4e98-a35e-77d99270dd42",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-plan",
+      "actor": "admin-a",
+      "method": "POST",
+      "path": "/monthly-plans/343f9b96-8185-4a48-8c24-89be066b5027/employee-months/b43d7c86-60a0-4e98-a35e-77d99270dd42/save",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-plan",
+      "actor": "admin-a",
+      "method": "GET",
+      "path": "/monthly-plans/f41970c7-0d7c-4b29-b716-897f2ed62cc9/employee-months/722714c8-19f4-4fdc-8c79-6c1021366723",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-plan",
+      "actor": "admin-a",
+      "method": "POST",
+      "path": "/monthly-plans/f41970c7-0d7c-4b29-b716-897f2ed62cc9/employee-months/722714c8-19f4-4fdc-8c79-6c1021366723/save",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-plan",
+      "actor": "admin-b",
+      "method": "GET",
+      "path": "/monthly-plans/e8a8ffd5-5e5c-4d3e-a26a-d59a54c115fc/employee-months/33e024ad-babf-4e9a-9f42-f09a67999393",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-plan",
+      "actor": "admin-b",
+      "method": "POST",
+      "path": "/monthly-plans/e8a8ffd5-5e5c-4d3e-a26a-d59a54c115fc/employee-months/33e024ad-babf-4e9a-9f42-f09a67999393/save",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-publish",
+      "actor": "admin-a",
+      "method": "POST",
+      "path": "/monthly-plans/343f9b96-8185-4a48-8c24-89be066b5027/publish",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-publish",
+      "actor": "admin-a",
+      "method": "POST",
+      "path": "/monthly-plans/f41970c7-0d7c-4b29-b716-897f2ed62cc9/publish",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-publish",
+      "actor": "admin-b",
+      "method": "POST",
+      "path": "/monthly-plans/e8a8ffd5-5e5c-4d3e-a26a-d59a54c115fc/publish",
+      "status": 200,
+      "code": null,
+      "cache": "no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "GET",
+      "path": "/me/monthly-plans?monthStart=2026-12-01",
+      "status": 200,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-2-a",
+      "method": "GET",
+      "path": "/me/monthly-plans?monthStart=2027-01-01",
+      "status": 200,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-2-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-3-a",
+      "method": "GET",
+      "path": "/me/monthly-plans?monthStart=2026-12-01",
+      "status": 200,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-3-a",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-b",
+      "method": "GET",
+      "path": "/me/monthly-plans?monthStart=2026-12-01",
+      "status": 200,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-cancel",
+      "actor": "employee-b",
+      "method": "POST",
+      "path": "/cancellation-requests",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-offers",
+      "actor": "employee-2-a",
+      "method": "POST",
+      "path": "/replacement-needs/ec2e679f-8b76-444e-b8d9-d06d6b76ac24/offers",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-offers",
+      "actor": "employee-3-a",
+      "method": "POST",
+      "path": "/replacement-needs/ec2e679f-8b76-444e-b8d9-d06d6b76ac24/offers",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-offers",
+      "actor": "employee-3-a",
+      "method": "POST",
+      "path": "/replacement-needs/ade23b48-52d1-4f53-b704-4d61deb83591/offers",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "setup-offers",
+      "actor": "employee-1-a",
+      "method": "POST",
+      "path": "/replacement-needs/29f72841-3b0b-4dad-9fba-ffc514bc71ce/offers",
+      "status": 201,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-01",
+      "actor": "admin-a",
+      "method": "GET",
+      "path": "/admin/work-queue?page=1&pageSize=25&sortBy=createdAt&sortOrder=asc",
+      "status": 200,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-02",
+      "actor": "admin-a",
+      "method": "GET",
+      "path": "/admin/work-queue?page=1&pageSize=25&sortBy=createdAt&sortOrder=asc",
+      "status": 200,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-03",
+      "actor": "admin-a",
+      "method": "GET",
+      "path": "/replacement-needs/ade23b48-52d1-4f53-b704-4d61deb83591/offers?page=1&pageSize=25",
+      "status": 200,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-05",
+      "actor": "employee-3-a",
+      "method": "POST",
+      "path": "/cancellation-requests/69e7611d-5faa-4955-9c7c-5af9aa0b7768/withdraw",
+      "status": 200,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-06",
+      "actor": "employee-1-a",
+      "method": "GET",
+      "path": "/admin/work-queue",
+      "status": 403,
+      "code": "ACTION_FORBIDDEN",
+      "cache": "private, no-store",
+      "contentType": "application/problem+json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-06",
+      "actor": "anonymous",
+      "method": "GET",
+      "path": "/admin/work-queue",
+      "status": 401,
+      "code": "SESSION_REQUIRED",
+      "cache": "private, no-store",
+      "contentType": "application/problem+json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-06",
+      "actor": "admin-a",
+      "method": "GET",
+      "path": "/replacement-needs/97e0bf3c-a6db-4bd5-a5a4-7c07c13db07f/offers",
+      "status": 404,
+      "code": "RESOURCE_NOT_FOUND",
+      "cache": "private, no-store",
+      "contentType": "application/problem+json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-06",
+      "actor": "admin-a",
+      "method": "GET",
+      "path": "/cancellation-requests/1121a32f-9974-40a7-abb4-88e2b83ec9b6",
+      "status": 404,
+      "code": "RESOURCE_NOT_FOUND",
+      "cache": "private, no-store",
+      "contentType": "application/problem+json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-06",
+      "actor": "admin-a",
+      "method": "GET",
+      "path": "/admin/work-queue?projectId=10a957fe-85b5-453d-b70e-dd28e38aea94",
+      "status": 404,
+      "code": "RESOURCE_NOT_FOUND",
+      "cache": "private, no-store",
+      "contentType": "application/problem+json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-06",
+      "actor": "admin-a",
+      "method": "GET",
+      "path": "/replacement-needs/not-a-uuid/offers",
+      "status": 404,
+      "code": "RESOURCE_NOT_FOUND",
+      "cache": "private, no-store",
+      "contentType": "application/problem+json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-06",
+      "actor": "admin-b",
+      "method": "GET",
+      "path": "/replacement-needs/ec2e679f-8b76-444e-b8d9-d06d6b76ac24/offers",
+      "status": 404,
+      "code": "RESOURCE_NOT_FOUND",
+      "cache": "private, no-store",
+      "contentType": "application/problem+json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-06c",
+      "actor": "demo-admin-a",
+      "method": "GET",
+      "path": "/admin/work-queue",
+      "status": 200,
+      "code": null,
+      "cache": "private, no-store",
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-06c",
+      "actor": "demo-admin-a",
+      "method": "GET",
+      "path": "/admin/work-queue",
+      "status": 401,
+      "code": "SESSION_REVOKED",
+      "cache": "private, no-store",
+      "contentType": "application/problem+json; charset=utf-8"
+    },
+    {
+      "stage": "TEST-06c",
+      "actor": "demo-admin-a",
+      "method": "GET",
+      "path": "/admin/work-queue",
+      "status": 401,
+      "code": "SESSION_EXPIRED",
+      "cache": "private, no-store",
+      "contentType": "application/problem+json; charset=utf-8"
+    }
+  ],
+  "pg": [
+    {
+      "label": "offers-after-setup",
+      "rowCount": 3,
+      "rows": [
+        {
+          "need_id": "29f72841-3b0b-4dad-9fba-ffc514bc71ce",
+          "status": "OPEN",
+          "count": "1"
+        },
+        {
+          "need_id": "ade23b48-52d1-4f53-b704-4d61deb83591",
+          "status": "WITHDRAWN",
+          "count": "1"
+        },
+        {
+          "need_id": "ec2e679f-8b76-444e-b8d9-d06d6b76ac24",
+          "status": "OPEN",
+          "count": "2"
+        }
+      ]
+    },
+    {
+      "label": "TEST-02 open/status for C1",
+      "rowCount": 1,
+      "rows": [
+        {
+          "open": 2,
+          "need_status": "OPEN",
+          "request_status": "OPEN"
+        }
+      ]
+    },
+    {
+      "label": "TEST-05 cancellation status after real withdrawal",
+      "rowCount": 1,
+      "rows": [
+        {
+          "status": "WITHDRAWN"
+        }
+      ]
+    },
+    {
+      "label": "TEST-05 open cancellations after withdrawal",
+      "rowCount": 1,
+      "rows": [
+        {
+          "open": 28
+        }
+      ]
+    },
+    {
+      "label": "no cross-tenant write (foreign company still has exactly one open need)",
+      "rowCount": 1,
+      "rows": [
+        {
+          "open_needs": 1
+        }
+      ]
+    }
+  ],
+  "results": [
+    {
+      "id": "TEST-01",
+      "description": "administrator logs in through the real UI, reaches /arbeitsuebersicht, data loads from the backend",
+      "result": "PASS",
+      "ms": 1129
+    },
+    {
+      "id": "TEST-02",
+      "description": "queue rows show employee, project, shift, date, statuses and open/eligible counts matching API and PostgreSQL",
+      "result": "PASS",
+      "ms": 478
+    },
+    {
+      "id": "TEST-02b",
+      "description": "overnight NIGHT duty shows the saved-zone end date (Berlin) while the browser runs in America/Los_Angeles",
+      "result": "PASS",
+      "ms": 396
+    },
+    {
+      "id": "TEST-03",
+      "description": "open case shows ELIGIBLE / INELIGIBLE / NOT_APPLICABLE from the server, separate counts, no decision control",
+      "result": "PASS",
+      "ms": 747
+    },
+    {
+      "id": "TEST-04",
+      "description": "filters, sorting and pagination use server parameters; refresh keeps URL state",
+      "result": "PASS",
+      "ms": 2538
+    },
+    {
+      "id": "TEST-05",
+      "description": "a case withdrawn by the real employee: refresh shows the authoritative state and it is not pending work",
+      "result": "PASS",
+      "ms": 1321
+    },
+    {
+      "id": "TEST-06a",
+      "description": "HTTP authorization: EMPLOYEE, anonymous, cross-tenant, invalid and hidden IDs",
+      "result": "PASS",
+      "ms": 244
+    },
+    {
+      "id": "TEST-06b",
+      "description": "UI: EMPLOYEE sees no admin data; foreign and malformed case IDs show safe unavailable states",
+      "result": "PASS",
+      "ms": 1683
+    },
+    {
+      "id": "TEST-06c",
+      "description": "UI logout ends access; an old cookie gets 401; revoked and expired sessions are rejected by the server",
+      "result": "PASS",
+      "ms": 701
+    },
+    {
+      "id": "TEST-06d",
+      "description": "account switch in the same browser: after an employee sign-in, no administrative data is shown",
+      "result": "PASS",
+      "ms": 647
+    },
+    {
+      "id": "TEST-07a",
+      "description": "network interruption shows a safe error; retry recovers with the real backend",
+      "result": "PASS",
+      "ms": 557
+    },
+    {
+      "id": "TEST-07b",
+      "description": "real 403 after a role change: forbidden shown once in the UI, exactly one request, no loop",
+      "result": "PASS",
+      "ms": 2538
+    },
+    {
+      "id": "TEST-07c",
+      "description": "pagination beyond the last page and empty company filter (real empty response)",
+      "result": "PASS",
+      "ms": 942
+    },
+    {
+      "id": "TEST-07d",
+      "description": "controlled fault injection on the real page: impossible timestamp rejected, no page error",
+      "result": "PASS",
+      "ms": 556
+    },
+    {
+      "id": "TEST-08",
+      "description": "UX: keyboard focus, 390px layout without horizontal overflow, German labels, console without uncaught errors",
+      "result": "PASS",
+      "ms": 1139
+    }
+  ],
+  "pageErrors": 0,
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 401 ()",
+    "Failed to load resource: the server responded with a status of 401 ()",
+    "Failed to load resource: the server responded with a status of 404 ()",
+    "Failed to load resource: the server responded with a status of 401 ()",
+    "Failed to load resource: the server responded with a status of 401 ()",
+    "Failed to load resource: the server responded with a status of 401 ()",
+    "Failed to load resource: the server responded with a status of 401 ()",
+    "Failed to load resource: net::ERR_INTERNET_DISCONNECTED",
+    "Failed to load resource: the server responded with a status of 404 ()"
+  ],
+  "seeded": {
+    "companies": 2,
+    "accounts": 7,
+    "employees": 4,
+    "projects": 3
+  },
+  "cases": {
+    "e1Count": 27,
+    "c3": {
+      "cancellation": "e7d69c4f-6a5e-4391-934a-1aed8565f63e",
+      "need": "29f72841-3b0b-4dad-9fba-ffc514bc71ce"
+    },
+    "c4": {
+      "cancellation": "69e7611d-5faa-4955-9c7c-5af9aa0b7768",
+      "need": "2ff430b4-2cee-4718-bf7f-81ae74dcad93"
+    },
+    "foreign": {
+      "cancellation": "1121a32f-9974-40a7-abb4-88e2b83ec9b6",
+      "need": "97e0bf3c-a6db-4bd5-a5a4-7c07c13db07f"
+    },
+    "c1": {
+      "cancellation": "b78f57db-2046-43ae-abc5-7fe91934c599",
+      "need": "ec2e679f-8b76-444e-b8d9-d06d6b76ac24"
+    },
+    "c2": {
+      "cancellation": "28f2eb0e-a3c7-4f31-befe-35973f9359c4",
+      "need": "ade23b48-52d1-4f53-b704-4d61deb83591"
+    },
+    "totalNord": 27
+  },
+  "ui": {
+    "c1Row": {
+      "Projekt": "SP19 Nord",
+      "Dienst": "Do, 03.12.2026Tagdienst · 06:00 – 18:00Zeitzone Europe/Berlin",
+      "Vorgang": "Absage",
+      "Absage": "Offen",
+      "Ersatzbedarf": "Offen",
+      "Offene Angebote": "2",
+      "Aktuell geeignet": "1",
+      "Angelegt": "09.11.2026, 08:22 UTC"
+    }
+  },
+  "server": {
+    "queueRequestsSeen": 18
+  },
+  "security": {
+    "employeeQueueStatus": 403,
+    "employeeQueueCode": "ACTION_FORBIDDEN",
+    "anonymousStatus": 401,
+    "anonymousCode": "SESSION_REQUIRED",
+    "crossTenant": {
+      "offers": 404,
+      "cancellation": 404,
+      "projectFilter": 404,
+      "codes": [
+        "RESOURCE_NOT_FOUND",
+        "RESOURCE_NOT_FOUND",
+        "RESOURCE_NOT_FOUND"
+      ]
+    },
+    "malformedId": {
+      "status": 404,
+      "code": "RESOURCE_NOT_FOUND"
+    },
+    "foreignAdminReadsA": 404,
+    "replayAfterLogoutStatus": 401,
+    "replayAfterLogoutCode": "SESSION_REVOKED",
+    "revoked": {
+      "status": 401,
+      "code": "SESSION_REVOKED"
+    },
+    "expired": {
+      "status": 401,
+      "code": "SESSION_EXPIRED"
+    },
+    "demotedRole": {
+      "uiRequestsAfter403": 1
+    }
+  },
+  "finishedAt": "2026-11-09T08:22:25.594Z"
+}

@@ -7,7 +7,9 @@ It supersedes the stub-only status in `sp19-browser-acceptance.md`.
 
 ## Result
 
-All 15 backend-backed scenarios passed in one complete run (exit code 0, no fatal error).
+All 15 backend-backed scenarios passed in the latest complete run (run 5: fresh disposable
+PostgreSQL 17 container, harness and documentation at PR HEAD `1baf0d0` from the Tech Lead,
+exit code 0, no fatal error). Earlier runs 1 to 4 are described under "Run history".
 The run used the real NestJS backend, the real React frontend (Vite development server),
 real Chrome, and an isolated PostgreSQL 17 database. Some checks used controlled fixtures,
 documented below. Merge recommendation is in the last section.
@@ -16,7 +18,9 @@ documented below. Merge recommendation is in the last section.
 
 | Item | Value |
 |---|---|
-| Database | Disposable PostgreSQL 17.11, Docker container `secureplan-sp19-6892717d7142` (run ID `sp19-6892717d7142`), image `postgres:17`, tmpfs storage, host binding 127.0.0.1:55736 -> 5432. Created for this run only. |
+| Database (latest run, run 5) | Disposable PostgreSQL 17.11, Docker container `secureplan-sp19-1b46c9ab59f8` (run ID `sp19-1b46c9ab59f8`), image `postgres:17`, tmpfs storage, host binding 127.0.0.1:56236 -> 5432. Created for run 5 only; verified with `scripts/disposable-test-target.mjs` and migrated (0001–0018, second run no-op). Removed after the run. |
+| Database (run 1 to run 4) | Earlier disposable containers `secureplan-sp19-6892717d7142` and others, each created for one run and removed afterwards. |
+| Existing persistent database | Not used. The development container `docker-postgres-1` (127.0.0.1:5432) was not connected to or modified. |
 | Existing database | Not used, not modified. The persistent development container `docker-postgres-1` (127.0.0.1:5432) was not connected to, migrated, or written. |
 | Target verification | Repository procedure `docs/testing/disposable-postgres.md`: `scripts/disposable-test-target.mjs record` and reverify, then migrations applied twice (second run no-op), then `scripts/verify-db.mjs` passed. |
 | Migrations | `0001` through `0018` (repository files, applied to the disposable database only). |
@@ -44,7 +48,7 @@ NOT RUN. Each row gives the steps, the expected and actual results, and the evid
 | TEST-02b | Overnight duty in saved zone | Süd night duty, browser in America/Los_Angeles | Times and end date in Europe/Berlin | `18:00 – 06:00 (Mo, 11.01.2027)`, `Zeitzone Europe/Berlin` | PASS | UI assertion |
 | TEST-03 | Offers: ELIGIBLE / INELIGIBLE / NOT_APPLICABLE | Open C1 and C2 | Labels from the server; no decision control | C1: Synthetic Bravo `Aktuell geeignet`; Synthetic Charlie `Aktuell nicht geeignet` (after SICK fixture on the duty day). C2: withdrawn offer `Nicht anwendbar`; `GET /replacement-needs/{id}/offers` for C2 returns `reviewEligibility: NOT_APPLICABLE`. No button named approve, reject, select, assign, confirm, save or cancellation. | PASS | HTTP 200; PostgreSQL (`offers-after-setup`); `TEST-03-case-eligibility.png` |
 | TEST-04 | Filters, sorting, pagination, empty page, URL state | Click offer filters; type, project, month, sort; next/previous; `?page=3`; reload | Server parameters and stable state | Offer `WITH_ELIGIBLE` shows 2 rows (C1, C3); project Süd shows 1; month 2027-01 shows 1; sort and type applied; `Seite 1 von 2` then page 2 requested from the server; `?page=3` shows `Diese Seite ist leer`, `Zur ersten Seite` returns to page one; reload restores the offer filter from the URL | PASS | UI assertions; `TEST-04-filters.png` |
-| TEST-05 | Case changed while open | Open C4 (not yet withdrawn), withdraw it by its employee via `POST /api/v1/cancellation-requests/{id}/withdraw`, refresh | Authoritative state; closed case not pending | Withdraw = 200; PostgreSQL `WITHDRAWN`; open cancellations 28 after (29 before by construction: 27 + C3 + C4); detail after refresh shows `nicht mehr offen` note. The absence of the row in the queue was not asserted in the UI; the count is verified in PostgreSQL. | PASS | HTTP 200; PostgreSQL rows; `TEST-05-after-withdrawal.png` |
+| TEST-05 | Case changed while open; withdrawn case disappears from the React queue | Sort the queue by duty date ascending (C4 is on page one); open C4 from its queue link; C4's employee withdraws it via `POST /api/v1/cancellation-requests/{id}/withdraw`; open the case and refresh; reload the sorted queue and check the first page | Presence before withdrawal; authoritative state after refresh; the case's link absent from the first queue page after refresh; closed case not pending | Before: queue link for C4 visible and opened. Withdraw = 200; PostgreSQL `WITHDRAWN`. Detail after refresh shows the `nicht mehr offen` note. After refresh the sorted queue shows 2 pages ("Seite 1 von 2") and no link to C4's need on page one (screenshot). PostgreSQL: 28 open cancellations after the withdrawal. | PASS | HTTP 200; PostgreSQL rows (`TEST-05 cancellation status after real withdrawal`, `TEST-05 open cancellations after withdrawal`); `TEST-05-after-withdrawal.png` (run 5) |
 | TEST-06a | HTTP authorization and tenant isolation | Employee, anonymous, cross-tenant, invalid and hidden IDs (HTTP) | 403, 401, 404 without existence information | Employee `GET /admin/work-queue` = 403 `ACTION_FORBIDDEN`. Anonymous = 401 `SESSION_REQUIRED`. Company A reads Company B offers, cancellation and project filter = 404 `RESOURCE_NOT_FOUND` each. Company B administrator reads a Company A case = 404. Malformed ID `not-a-uuid` = 404 `RESOURCE_NOT_FOUND`. Company B has still exactly one open need after the attempts. | PASS | HTTP trace; PostgreSQL (`no cross-tenant write`) |
 | TEST-06b | UI: employee and unavailable cases | Employee signs in and opens `/arbeitsuebersicht`; administrator opens a foreign case and a malformed ID | `Kein Zugriff auf diese Ansicht`; `Vorgang nicht verfügbar` without case data | As expected; `TEST-06-unavailable-case.png` | PASS | `TEST-06-unavailable-case.png` |
 | TEST-06c | Logout, replay, revocation and expiry | UI logout; replay the signed-out session cookie from a fresh context; revoke and expire sessions of a dedicated account | Replay and revoked and expired sessions rejected by the server | UI shows sign-in after logout; replayed cookie = 401 `SESSION_REVOKED`; revoked = 401 `SESSION_REVOKED`; expired = 401 `SESSION_EXPIRED`. Cookie values were never printed or stored. | PASS | HTTP trace |
@@ -54,7 +58,7 @@ NOT RUN. Each row gives the steps, the expected and actual results, and the evid
 | TEST-07c | Empty response, hidden project, pagination beyond the end | `?month=2030-01`; `?projectId=` of Company B; `?page=3` | Empty state; `Projekt nicht verfügbar` with removal; empty page with way back | `Keine Vorgänge für diese Auswahl`; real 404 for the hidden project and `Projekt nicht verfügbar`, filter removal returns the table; `Diese Seite ist leer` | PASS | HTTP 404; UI assertions |
 | TEST-07d | Invalid timestamp rejected (controlled fault injection) | Route interception rewrites `createdAt` of the real response to `2026-13-01...` | `Antwort konnte nicht verarbeitet werden`; no uncaught page error | As expected; page errors 0 | PASS | UI assertions |
 | TEST-07 (API 401 in UI) | UI reaction to a revoked session mid-page | — | Sign-in form | Not run against the real backend in this run. Covered by the stub-based run (UI-07b). | NOT RUN (real backend) | `docs/reviews/sp19-browser-acceptance.md` |
-| TEST-08 | UX: keyboard, responsive layout, German labels, console | Tab to the open link; 390px emulation; console | Visible focus; no horizontal overflow; no uncaught errors | Focus visible on `Vorgang öffnen`; no horizontal overflow at 390 px; German labels; page errors 0; console errors are only `Failed to load resource` entries from negative tests (401 x4, 404 x2, network disconnect x1) | PASS | `TEST-08-mobile-390.png`; console categories in the JSON |
+| TEST-08 | UX: keyboard, responsive layout, German labels, console | Tab to the open link; 390px emulation; console | Visible focus; no horizontal overflow; no uncaught errors | Focus visible on `Vorgang öffnen`; no horizontal overflow at 390 px; German labels; page errors 0; console errors are only `Failed to load resource` entries from negative tests (run 5: 401 x6, 404 x2, network disconnect x1) | PASS | `TEST-08-mobile-390.png`; console categories in the JSON |
 
 Scope limits of TEST-08: desktop Chrome only; mobile is viewport emulation; no other
 browsers or physical devices.
@@ -130,9 +134,31 @@ harness only changed documents and the script):
 8. The acceptance harness is a local script (needs Docker, Chrome and a running stack); it is
    not part of CI.
 
+## Run history
+
+| Run | Database | Result | Notes |
+|---|---|---|---|
+| 1 | fresh PG 17 container | 10 PASS, 4 FAIL | Harness assumptions (exact cache header value, expiry fixture constraint, login race, and a shared-e-mail collision on re-run). No product defect. |
+| 2 | same container | 13 PASS, 1 FAIL | Harness race while the list reloaded after a filter change. |
+| 3 | same container | 14 PASS, 0 FAIL | Offer-filter clear was not waited for before the next step. Harness only. |
+| 4 | same container | 15 PASS, 0 FAIL | Added TEST-06d (account switch in the same browser). Full evidence in `docs/reviews/sp19-evidence/backend/`. |
+| 5 (latest) | fresh PG 17 container `secureplan-sp19-1b46c9ab59f8` | 15 PASS, 0 FAIL | Tech Lead's stronger TEST-05 assertion (presence before withdrawal, absence on page one after refresh). Evidence in `docs/reviews/sp19-evidence/backend-run-5/`. |
+
+Run 5 console categories (JSON): 401 x6 and 404 x2 from negative tests, network disconnect x1.
+Page errors 0. Secret scan of the exported JSON and screenshots: no CSRF value, cookie, or password.
+
+## Blockers and open items
+
+- **Product Owner sign-off of the administrative read API contract is pending.** The
+  implementation (PR #112) and this acceptance evidence do not record formal Product Owner
+  approval (see `docs/api/README.md`). Required before SP-19 closeout. Not verified here.
+- Mid-page revocation in the UI against the real backend (not run; covered by the stub run).
+- Desktop Chrome only; mobile is emulation.
+
 ## Merge recommendation
 
 **READY FOR HUMAN REVIEW / MERGE CANDIDATE**, conditional on the GitHub CI run for the final
-PR head being green (checked and recorded in the PR description after the push). The remaining
-risks above are not blockers for the reviewed scope, but they must be accepted by the reviewer.
-Merging is a human decision; nothing has been merged.
+PR head being green (recorded in the PR description after the push). The pending Product Owner
+sign-off of the API contract is a closeout item for SP-19, not a code blocker for this PR, but
+it must be resolved before the SP-19 closeout. The remaining risks above must be accepted by the
+reviewer. Merging is a human decision; nothing has been merged.
