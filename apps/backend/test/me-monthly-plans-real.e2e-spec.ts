@@ -32,6 +32,7 @@ import {
   insertProjectAssignment,
   insertShiftConfiguration,
   STANDARD_SHIFTS,
+  asReplacementMembership,
 } from './helpers/planning-fixtures.js';
 
 const BASE = '/api/v1/me/monthly-plans',
@@ -525,10 +526,9 @@ describe('SP14 real HTTP + PG ownership H1-H26/C1-C4', () => {
       "UPDATE employees SET shift_eligibility='TAG',employment_end='2026-01-01' WHERE id=$1",
       [own.employeeId],
     );
-    await pool.query(
-      "UPDATE plan_assignments SET source='REPLACEMENT' WHERE employee_id=$1",
-      [own.employeeId],
-    );
+    for (const row of (await pool.query<{ id: string }>('SELECT id FROM plan_assignments WHERE employee_id = $1', [own.employeeId])).rows) {
+      await asReplacementMembership(pool, row.id);
+    }
     expect((await read().expect(200)).body.items[0].duties[0].dutyId).toBe(
       duty,
     );

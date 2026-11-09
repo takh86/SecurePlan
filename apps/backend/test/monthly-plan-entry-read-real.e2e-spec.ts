@@ -17,8 +17,15 @@ import {
 } from './helpers/synthetic-tenants.js';
 import { ORIGIN, RecordingDelivery, bootEmployeesApp } from './helpers/employees-test-app.js';
 import {
-  STANDARD_SHIFTS, createStaff, insertDuty, insertMembership, insertPlan,
-  insertProjectAssignment, insertShiftConfiguration, planningState,
+  STANDARD_SHIFTS,
+  createStaff,
+  insertDuty,
+  insertMembership,
+  insertPlan,
+  insertProjectAssignment,
+  insertShiftConfiguration,
+  planningState,
+  asReplacementMembership,
 } from './helpers/planning-fixtures.js';
 
 const BASE = '/api/v1/monthly-plans';
@@ -213,7 +220,7 @@ describe('SP-12 — single-entry HTTP contract and isolation', () => {
 
   it('lists only active memberships, preserving their IDs, roles and server-owned source', async () => {
     await insertMembership(pool, tenantA.companyId, entry.id, jonas.employeeId, 'REMOVED');
-    await pool.query("UPDATE plan_assignments SET source = 'REPLACEMENT' WHERE id = $1", [entry.assignments[0].id]);
+    await asReplacementMembership(pool, entry.assignments[0].id);
     const result = await read().expect(200);
     expect(result.body.assignments).toEqual([{ ...entry.assignments[0], source: 'REPLACEMENT' }]);
     await pool.query("UPDATE plan_assignments SET state = 'REMOVED', removed_at = clock_timestamp() WHERE id = $1", [entry.assignments[0].id]);

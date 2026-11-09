@@ -32,6 +32,7 @@ import {
   insertProjectAssignment,
   insertShiftConfiguration,
   STANDARD_SHIFTS,
+  asReplacementMembership,
 } from './helpers/planning-fixtures.js';
 
 const BASE = '/api/v1/me/planning-statistics',
@@ -295,10 +296,10 @@ describe('SP15 real Nest HTTP/PostgreSQL contract H01-H08 K01-K02', () => {
     await pool.query('DELETE FROM project_assignments WHERE employee_id=$1', [
       own.employeeId,
     ]);
-    await pool.query(
-      "UPDATE plan_assignments SET source='REPLACEMENT',duty_function='SCHICHTLEITER' WHERE employee_id=$1",
-      [own.employeeId],
-    );
+    for (const row of (await pool.query<{ id: string }>('SELECT id FROM plan_assignments WHERE employee_id = $1', [own.employeeId])).rows) {
+      await asReplacementMembership(pool, row.id);
+    }
+    await pool.query("UPDATE plan_assignments SET duty_function='SCHICHTLEITER' WHERE employee_id=$1", [own.employeeId]);
     await pool.query(
       "UPDATE employees SET shift_eligibility='TAG',employment_end='2026-01-01' WHERE id=$1",
       [own.employeeId],

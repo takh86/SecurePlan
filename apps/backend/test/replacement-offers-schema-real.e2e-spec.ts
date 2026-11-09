@@ -137,8 +137,8 @@ async function offer(
   return (
     await c.query<{ id: string }>(
       `WITH moment AS (SELECT clock_timestamp() AS at)
-    INSERT INTO replacement_offers(company_id,need_id,employee_id,status,created_at,updated_at,decided_at)
-    SELECT $1,$2,$3,$4,at,at,CASE WHEN $4='OPEN' THEN NULL ELSE at END FROM moment RETURNING id`,
+    INSERT INTO replacement_offers(company_id,need_id,duty_id,employee_id,status,created_at,updated_at,decided_at)
+    SELECT $1,$2,(SELECT duty_id FROM replacement_needs WHERE id=$2),$3,$4,at,at,CASE WHEN $4='OPEN' THEN NULL ELSE at END FROM moment RETURNING id`,
       [company, needId, employee, status],
     )
   ).rows[0].id;
@@ -415,12 +415,18 @@ it.each([
   'CREATE INDEX sp18_extra ON replacement_offers(need_id)',
   'ALTER TABLE replacement_offers ENABLE ROW LEVEL SECURITY',
   'ALTER TABLE replacement_offers DISABLE TRIGGER ALL',
-  'ALTER TABLE idempotency_records DROP CONSTRAINT fk_idempotency_records__offer_result; ALTER TABLE replacement_offers SET UNLOGGED',
   'CREATE TEMP TABLE replacement_offer(id uuid)',
 ])('exact planning guard rejects offer drift: %s', async (ddl) => {
   await probe(async (c) => {
     await c.query(ddl);
     await expect(assertPlanningSchemaComplete(c)).rejects.toThrow();
+  });
+});
+it('PostgreSQL refuses SET UNLOGGED on replacement_offers while the circular keys reference logged tables', async () => {
+  await probe(async (c) => {
+    await expect(c.query('ALTER TABLE replacement_offers SET UNLOGGED')).rejects.toThrow(
+      'references logged table',
+    );
   });
 });
 it.each([

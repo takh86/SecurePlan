@@ -26,6 +26,7 @@ import {
   type QueueQuery,
   type QueueSortBy,
   type ReviewEligibility,
+  type SelectionResult,
   type SortOrder,
 } from './work-queue-types';
 
@@ -257,10 +258,13 @@ function cancellation(value: unknown): CaseCancellation {
 }
 
 function need(value: unknown): CaseNeed {
-  const n = record(value, ['id', 'cancellationRequestId', 'duty', 'status', 'resolvedAt', 'openOfferCount', 'project', 'timeZone']);
+  const n = record(value, ['id', 'cancellationRequestId', 'duty', 'status', 'resolvedAt', 'openOfferCount', 'project', 'timeZone', 'concurrencyVersion', 'selectedOfferId']);
   const status = oneOf(n.status, NEED_STATUSES);
   const resolvedAt = nullableMillis(n.resolvedAt);
-  if ((status === 'RESOLVED') !== (resolvedAt !== null)) invalid();
+  const selectedOfferId = n.selectedOfferId === null ? null : uuid(n.selectedOfferId);
+  const concurrencyVersion = n.concurrencyVersion;
+  if ((status === 'RESOLVED') !== (resolvedAt !== null) || (status === 'RESOLVED') !== (selectedOfferId !== null)) invalid();
+  if (!Number.isSafeInteger(concurrencyVersion) || (concurrencyVersion as number) < 1) invalid();
   return {
     id: uuid(n.id),
     cancellationRequestId: uuid(n.cancellationRequestId),
@@ -270,15 +274,25 @@ function need(value: unknown): CaseNeed {
     openOfferCount: count(n.openOfferCount),
     project: project(n.project),
     timeZone: zone(n.timeZone),
+    concurrencyVersion: concurrencyVersion as number,
+    selectedOfferId,
   };
 }
 
+function replacementAssignment(value: unknown): CaseContext['replacementAssignment'] {
+  if (value === null) return null;
+  const a = record(value, ['id', 'employeeId', 'source', 'state']);
+  if (a.source !== 'REPLACEMENT' || a.state !== 'ACTIVE') invalid();
+  return { id: uuid(a.id), employeeId: uuid(a.employeeId), source: 'REPLACEMENT', state: 'ACTIVE' };
+}
+
 function caseContext(value: unknown, needId: string): CaseContext {
-  const c = record(value, ['cancellation', 'need', 'monthStart', 'dutyRemoved', 'originalAssignmentActive', 'eligibleOpenOfferCount', 'evaluatedAt']);
+  const c = record(value, ['cancellation', 'need', 'monthStart', 'dutyRemoved', 'originalAssignmentActive', 'eligibleOpenOfferCount', 'evaluatedAt', 'consistency', 'replacementAssignment']);
   const cancellationRef = cancellation(c.cancellation);
   const needRef = need(c.need);
   const monthStart = civilDate(c.monthStart);
   const eligibleOpenOfferCount = count(c.eligibleOpenOfferCount);
+  if (c.consistency !== 'CONSISTENT' && c.consistency !== 'INCONSISTENT') invalid();
   // The context describes one case: the need, its cancellation and the duty must agree.
   if (
     !sameId(needRef.id, needId) ||
@@ -299,7 +313,22 @@ function caseContext(value: unknown, needId: string): CaseContext {
     dutyRemoved: c.dutyRemoved,
     originalAssignmentActive: c.originalAssignmentActive,
     eligibleOpenOfferCount,
+    consistency: c.consistency,
+    replacementAssignment: replacementAssignment(c.replacementAssignment),
     evaluatedAt: millis(c.evaluatedAt),
+  };
+}
+
+/** SP-20 selection answer: the fields the case view needs; the rest of the server object is ignored by design. */
+export function parseSelectionResult(value: unknown, needId: string): SelectionResult {
+  const r = record(value, ['needId', 'cancellationRequestId', 'status', 'decidedAt', 'needVersion', 'selectedOffer', 'otherOffers', 'originalAssignment', 'replacementAssignment', 'duty']);
+  const selected = record(r.selectedOffer, ['id', 'status', 'employee']);
+  if (!sameId(uuid(r.needId), needId) || selected.status !== 'SELECTED' || !Number.isSafeInteger(r.needVersion)) invalid();
+  return {
+    needId: uuid(r.needId),
+    cancellationRequestId: uuid(r.cancellationRequestId),
+    needVersion: r.needVersion as number,
+    selectedOfferId: uuid(selected.id),
   };
 }
 
@@ -386,7 +415,11 @@ export function isCaseId(value: string | undefined): value is string {
 export interface WorkQueueApi {
   queue(query: QueueQuery, signal?: AbortSignal): Promise<QueuePage>;
   offers(needId: string, query: OffersQuery, signal?: AbortSignal): Promise<OffersPage>;
+  /** SP-20: selects one eligible offer. `expectedVersion` is the need version the administrator saw. */
+  select(needId: string, input: SelectionInput, signal?: AbortSignal): Promise<SelectionResult>;
 }
+
+export type SelectionInput = { offerId: string; expectedVersion: number; idempotencyKey: string };
 
 export function createWorkQueueApi(api: SessionApi): WorkQueueApi {
   return {
@@ -410,6 +443,21 @@ export function createWorkQueueApi(api: SessionApi): WorkQueueApi {
       params.set('pageSize', String(PAGE_SIZE));
       const path = `/api/v1/replacement-needs/${encodeURIComponent(needId)}/offers?${params}`;
       return parseOffersPage(await api.request<unknown>(path, { signal }), needId, query);
+    },
+    async select(needId, input, signal) {
+      // Client-side shape check only; the server re-checks every precondition under its locks.
+      if (!isCaseId(needId) || !isCaseId(input.offerId) || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) invalid();
+      const path = `/api/v1/replacement-needs/${encodeURIComponent(needId)}/selection`;
+      return parseSelectionResult(
+        await api.request<unknown>(path, {
+          method: 'POST',
+          body: { offerId: input.offerId },
+          expectedVersion: input.expectedVersion,
+          idempotencyKey: input.idempotencyKey,
+          signal,
+        }),
+        needId,
+      );
     },
   };
 }

@@ -30,6 +30,10 @@ export type AdminNeed = {
   openOfferCount: number;
   project: { id: string; name: string };
   timeZone: string;
+  /** SP-20: the Expected-Version for the selection command; monotonic, starts at 1. */
+  concurrencyVersion: number;
+  /** SP-20: the selected offer of a RESOLVED need; null otherwise. */
+  selectedOfferId: string | null;
 };
 export type AdminQueueItem = {
   type: 'CANCELLATION_REQUEST' | 'REPLACEMENT_NEED';
@@ -54,6 +58,10 @@ export type AdminOfferContext = {
   dutyRemoved: boolean;
   originalAssignmentActive: boolean;
   eligibleOpenOfferCount: number;
+  /** SP-20: CONSISTENT only when the case's links (selected offer, membership) agree; INCONSISTENT is surfaced, never hidden. */
+  consistency: 'CONSISTENT' | 'INCONSISTENT';
+  /** SP-20: the active replacement membership of the duty, if any. */
+  replacementAssignment: { id: string; employeeId: string; source: 'REPLACEMENT'; state: 'ACTIVE' } | null;
   evaluatedAt: string;
 };
 function invalid(field?: string, subcode: ValidationSubcode = 'INVALID_FORMAT'): never {

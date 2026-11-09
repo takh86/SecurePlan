@@ -45,7 +45,8 @@ const EXPECTED_COLUMNS: Record<PlanningRelation, readonly string[]> = {
     "status text NOT NULL DEFAULT 'OPEN'::text",
     "created_at timestamp with time zone NOT NULL DEFAULT clock_timestamp()",
     "updated_at timestamp with time zone NOT NULL DEFAULT clock_timestamp()",
-    "decided_at timestamp with time zone"
+    "decided_at timestamp with time zone",
+    "duty_id uuid NOT NULL"
   ],
   cancellation_requests: [
     "id uuid NOT NULL DEFAULT gen_random_uuid()",
@@ -69,6 +70,8 @@ const EXPECTED_COLUMNS: Record<PlanningRelation, readonly string[]> = {
     "created_at timestamp with time zone NOT NULL DEFAULT clock_timestamp()",
     "updated_at timestamp with time zone NOT NULL DEFAULT clock_timestamp()",
     "resolved_at timestamp with time zone",
+    "selected_offer_id uuid",
+    "concurrency_version bigint NOT NULL DEFAULT 1",
   ],
   project_operating_calendars: [
     'id uuid NOT NULL DEFAULT gen_random_uuid()',
@@ -132,6 +135,7 @@ const EXPECTED_COLUMNS: Record<PlanningRelation, readonly string[]> = {
     'removed_at timestamp with time zone',
     'created_at timestamp with time zone NOT NULL DEFAULT clock_timestamp()',
     'updated_at timestamp with time zone NOT NULL DEFAULT clock_timestamp()',
+    'replacement_offer_id uuid',
   ],
 };
 
@@ -143,6 +147,9 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
     "c CHECK ((isfinite(created_at) AND isfinite(updated_at) AND (updated_at >= created_at) AND ((decided_at IS NULL) OR (isfinite(decided_at) AND (decided_at >= created_at) AND (decided_at <= updated_at)))))",
     "f FOREIGN KEY (company_id, employee_id) REFERENCES public.employees(company_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT",
     "f FOREIGN KEY (company_id, need_id) REFERENCES public.replacement_needs(company_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+    "f FOREIGN KEY (company_id, need_id, duty_id) REFERENCES public.replacement_needs(company_id, id, duty_id) ON DELETE RESTRICT",
+    "u UNIQUE (company_id, id, need_id)",
+    "u UNIQUE (company_id, id, duty_id, employee_id)",
     "p PRIMARY KEY (id)",
     "u UNIQUE (company_id, id)"
   ],
@@ -167,6 +174,10 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
     "f FOREIGN KEY (company_id, cancellation_request_id, duty_id) REFERENCES public.cancellation_requests(company_id, id, duty_id) ON DELETE RESTRICT",
     "f FOREIGN KEY (company_id, duty_id) REFERENCES public.duties(company_id, id) ON DELETE RESTRICT",
     "p PRIMARY KEY (id)",
+    "c CHECK (((status = 'RESOLVED'::text) = (selected_offer_id IS NOT NULL)))",
+    "c CHECK (((concurrency_version >= 1) AND (concurrency_version <= '9007199254740991'::bigint)))",
+    "f FOREIGN KEY (company_id, selected_offer_id, id) REFERENCES public.replacement_offers(company_id, id, need_id) ON DELETE RESTRICT",
+    "u UNIQUE (company_id, id, duty_id)",
     "u UNIQUE (company_id, cancellation_request_id)",
     "u UNIQUE (company_id, id)",
   ],
@@ -221,6 +232,8 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
     'p PRIMARY KEY (id)',
     'u UNIQUE (company_id, id)',
     'u UNIQUE (company_id, id, duty_id, employee_id)',
+    "c CHECK ((((source = 'NORMAL'::text) AND (replacement_offer_id IS NULL)) OR ((source = 'REPLACEMENT'::text) AND (replacement_offer_id IS NOT NULL))))",
+    "f FOREIGN KEY (company_id, replacement_offer_id, duty_id, employee_id) REFERENCES public.replacement_offers(company_id, id, duty_id, employee_id) ON DELETE RESTRICT",
   ],
 };
 
@@ -250,6 +263,7 @@ const EXPECTED_INDEXES: Record<PlanningRelation, readonly string[]> = {
   plan_assignments: [
     "CREATE INDEX ? ON public.plan_assignments USING btree (company_id, employee_id, duty_id) WHERE (state = 'ACTIVE'::text)",
     "CREATE UNIQUE INDEX ? ON public.plan_assignments USING btree (company_id, duty_id, employee_id) WHERE (state = 'ACTIVE'::text)",
+    "CREATE UNIQUE INDEX ? ON public.plan_assignments USING btree (company_id, replacement_offer_id) WHERE (source = 'REPLACEMENT'::text)",
   ],
 };
 
@@ -300,7 +314,7 @@ const CATALOG_SQL = `
        LEFT JOIN pg_catalog.pg_attrdef AS d ON d.adrelid = t.oid AND d.adnum = a.attnum) AS columns,
     (SELECT coalesce(jsonb_agg(jsonb_build_object('relation', t.name, 'signature',
               k.contype::text || ' ' || regexp_replace(pg_catalog.pg_get_constraintdef(k.oid),
-                'REFERENCES (projects|accounts|monthly_plans|duties|employees|plan_assignments|cancellation_requests|replacement_needs)\\(', 'REFERENCES public.\\1('))), '[]'::jsonb)
+                'REFERENCES (projects|accounts|monthly_plans|duties|employees|plan_assignments|cancellation_requests|replacement_needs|replacement_offers)\\(', 'REFERENCES public.\\1('))), '[]'::jsonb)
        FROM canonical AS t
        JOIN pg_catalog.pg_constraint AS k ON k.conrelid = t.oid) AS constraints,
     (SELECT coalesce(jsonb_agg(jsonb_build_object('relation', t.name, 'signature',

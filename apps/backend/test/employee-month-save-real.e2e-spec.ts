@@ -32,6 +32,7 @@ import {
   insertPlan,
   insertProjectAssignment,
   planningState,
+  asReplacementMembership,
 } from './helpers/planning-fixtures.js';
 import {
   openLocalTestPool,
@@ -285,10 +286,8 @@ it('reuses a legacy empty destination and preserves shared colleague identity, r
     f.dutyId,
     f.jonas.employeeId,
   );
-  await pool.query(
-    "UPDATE plan_assignments SET duty_function='SCHICHTLEITER',source='REPLACEMENT' WHERE id=$1",
-    [other],
-  );
+  await asReplacementMembership(pool, other);
+  await pool.query("UPDATE plan_assignments SET duty_function='SCHICHTLEITER' WHERE id=$1", [other]);
   const before = (
     await pool.query('SELECT * FROM plan_assignments WHERE id=$1', [other])
   ).rows[0];
@@ -348,10 +347,7 @@ it('reads INVALID_DUAL and permits explicit correction, with new identity on lat
   ).not.toBe(old);
 });
 it('retains assignment identity/source for role changes and increments the duty once', async () => {
-  await pool.query(
-    "UPDATE plan_assignments SET source='REPLACEMENT' WHERE id=$1",
-    [f.membership],
-  );
+  await asReplacementMembership(pool, f.membership);
   const dto = await draft();
   paint(dto, MUTATION_DAY, 'DAY', 'SHIFT_LEAD');
   const r = await save(dto);

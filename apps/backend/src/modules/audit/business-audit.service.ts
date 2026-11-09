@@ -67,7 +67,22 @@ export type BusinessAuditAction =
   | 'REPLACEMENT_NEED_CLOSED'
   /** SP18 D08 owner-ratified bounded offer lifecycle events. */
   | 'REPLACEMENT_OFFER_CREATED'
-  | 'REPLACEMENT_OFFER_INVALIDATED';
+  | 'REPLACEMENT_OFFER_INVALIDATED'
+  /**
+   * SP-20 atomic replacement selection. Approved by the Product Owner on 2026-11-09 (ADR-0004, SP-20 supplement):
+   * the exact payloads are enforced by selectionAudit below.
+   */
+  | 'CANCELLATION_APPROVED'
+  | 'REPLACEMENT_NEED_RESOLVED'
+  | 'REPLACEMENT_OFFER_SELECTED'
+  | 'REPLACEMENT_OFFER_NOT_SELECTED';
+
+const SELECTION_ACTIONS: readonly BusinessAuditAction[] = [
+  'CANCELLATION_APPROVED',
+  'REPLACEMENT_NEED_RESOLVED',
+  'REPLACEMENT_OFFER_SELECTED',
+  'REPLACEMENT_OFFER_NOT_SELECTED',
+];
 
 export type BusinessAuditEntry = {
   companyId: string;
@@ -87,6 +102,9 @@ export class BusinessAuditService {
   async recordBusinessAction(client: Queryable, entry: BusinessAuditEntry): Promise<void> {
     if (entry.action === 'REPLACEMENT_OFFER_CREATED' || entry.action === 'REPLACEMENT_OFFER_INVALIDATED') {
       if (!offerAudit(entry)) throw new Error('Invalid bounded replacement offer audit');
+    }
+    if (SELECTION_ACTIONS.includes(entry.action)) {
+      if (!selectionAudit(entry)) throw new Error('Invalid bounded replacement selection audit');
     }
     if (entry.action === 'PROJECT_OPERATING_CALENDAR_UPDATED') {
       if (entry.resourceType !== 'PROJECT_OPERATING_CALENDAR' || entry.actorAccountId === null
@@ -131,6 +149,28 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function exactKeys(value: Readonly<Record<string, unknown>>, keys: string): boolean {
   return !Array.isArray(value) && Object.keys(value).sort().join(',') === keys;
 }
+/** Exact payloads for the SP-20 selection events; the envelope carries the actor, tenant and correlation. */
+function selectionAudit(entry: BusinessAuditEntry): boolean {
+  if (entry.actorAccountId === null || ![entry.companyId, entry.actorAccountId, entry.resourceId, entry.correlationId].every((id) => UUID.test(id))) return false;
+  const old = entry.oldValues;
+  if (old == null || !exactKeys(old, 'status') || old.status !== 'OPEN') return false;
+  const value = entry.newValues;
+  if (value == null || Buffer.byteLength(JSON.stringify(value), 'utf8') >= 512) return false;
+  switch (entry.action) {
+    case 'CANCELLATION_APPROVED':
+      return entry.resourceType === 'CANCELLATION_REQUEST' && exactKeys(value, 'status') && value.status === 'APPROVED';
+    case 'REPLACEMENT_NEED_RESOLVED':
+      return entry.resourceType === 'REPLACEMENT_NEED' && exactKeys(value, 'selectedOfferId,status') && value.status === 'RESOLVED'
+        && typeof value.selectedOfferId === 'string' && UUID.test(value.selectedOfferId);
+    case 'REPLACEMENT_OFFER_SELECTED':
+      return entry.resourceType === 'REPLACEMENT_OFFER' && exactKeys(value, 'status') && value.status === 'SELECTED';
+    case 'REPLACEMENT_OFFER_NOT_SELECTED':
+      return entry.resourceType === 'REPLACEMENT_OFFER' && exactKeys(value, 'status') && value.status === 'NOT_SELECTED';
+    default:
+      return false;
+  }
+}
+
 function offerAudit(entry: BusinessAuditEntry): boolean {
   const value = entry.newValues;
   if (entry.resourceType !== 'REPLACEMENT_OFFER' || entry.actorAccountId === null

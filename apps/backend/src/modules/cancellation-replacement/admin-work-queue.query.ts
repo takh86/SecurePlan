@@ -3,7 +3,7 @@ const core = `WITH moment AS MATERIALIZED (SELECT clock_timestamp() AS at),
 cases AS MATERIALIZED (
  SELECT r.id AS request_id,r.assignment_id,r.employee_id AS requester_id,r.duty_id,
  r.status AS request_status,r.created_at AS request_created,r.decided_at,
- n.id AS need_id,n.status AS need_status,n.created_at AS need_created,n.resolved_at,
+ n.id AS need_id,n.status AS need_status,n.created_at AS need_created,n.resolved_at,n.concurrency_version AS need_version,n.selected_offer_id,
  a.id IS NOT NULL AND a.state='ACTIVE' AND a.removed_at IS NULL AS original_active,
  d.removed_at IS NOT NULL AS duty_removed,d.duty_date,d.shift_kind,d.starts_at,d.ends_at,d.time_zone,
  d.planning_month,d.project_id,pr.name AS project_name,
@@ -12,7 +12,11 @@ cases AS MATERIALIZED (
    AND pr.id IS NOT NULL AND e.id IS NOT NULL AND
    CASE WHEN r.status='OPEN' THEN n.status='OPEN' AND a.state='ACTIVE' AND a.removed_at IS NULL AND d.removed_at IS NULL AND p.status='PUBLISHED'
         WHEN r.status='APPROVED' AND n.status='OPEN_UNFILLED' THEN a.state='REMOVED' AND a.removed_at IS NOT NULL AND p.status='PUBLISHED'
-        WHEN r.status='APPROVED' THEN n.status='RESOLVED'
+        WHEN r.status='APPROVED' AND n.status='RESOLVED' THEN n.selected_offer_id IS NOT NULL AND a.state='REMOVED' AND p.status='PUBLISHED'
+          AND EXISTS(SELECT 1 FROM public.replacement_offers so JOIN public.plan_assignments ra
+            ON ra.company_id=so.company_id AND ra.replacement_offer_id=so.id AND ra.employee_id=so.employee_id AND ra.duty_id=so.duty_id
+            AND ra.source='REPLACEMENT' AND ra.state='ACTIVE' AND ra.removed_at IS NULL
+            WHERE so.company_id=r.company_id AND so.id=n.selected_offer_id AND so.need_id=n.id AND so.status='SELECTED')
         WHEN r.status IN ('WITHDRAWN','REJECTED','OBSOLETE') THEN n.status='CLOSED'
         ELSE false END,false) AS valid
  FROM public.cancellation_requests r
@@ -80,7 +84,8 @@ const cancellation = `jsonb_build_object('id',c.request_id,'assignmentId',c.assi
  'replacementNeed',jsonb_build_object('id',c.need_id,'status',c.need_status,'resolvedAt',to_char(c.resolved_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))) `;
 const need = `jsonb_build_object('id',c.need_id,'cancellationRequestId',c.request_id,'duty',c.duty,'status',c.need_status,
  'resolvedAt',to_char(c.resolved_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
- 'openOfferCount',c.open_count,'project',c.project,'timeZone',c.time_zone)`;
+ 'openOfferCount',c.open_count,'project',c.project,'timeZone',c.time_zone,
+ 'concurrencyVersion',c.need_version,'selectedOfferId',c.selected_offer_id)`;
 
 /** Sort fragments are fixed literals selected by validated values. */
 export function queueSql(sortBy: 'createdAt' | 'dutyDate', sortOrder: 'asc' | 'desc'): string {
@@ -115,6 +120,9 @@ SELECT (SELECT invalid FROM diagnostics) AS invalid,(SELECT count(*)::int FROM s
  (SELECT jsonb_build_object('cancellation',${cancellation},'need',${need},
  'monthStart',to_char(c.planning_month,'YYYY-MM-DD'),'dutyRemoved',c.duty_removed,
  'originalAssignmentActive',c.original_active,'eligibleOpenOfferCount',c.eligible_count,
+ 'consistency',CASE WHEN c.valid THEN 'CONSISTENT' ELSE 'INCONSISTENT' END,
+ 'replacementAssignment',(SELECT jsonb_build_object('id',ra.id,'employeeId',ra.employee_id,'source',ra.source,'state',ra.state)
+   FROM public.plan_assignments ra WHERE ra.company_id=$1 AND ra.duty_id=c.duty_id AND ra.source='REPLACEMENT' AND ra.state='ACTIVE' AND ra.removed_at IS NULL LIMIT 1),
  'evaluatedAt',(SELECT value FROM stamp)) FROM selected c) AS context,
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',id,'needId',need_id,
  'employee',jsonb_build_object('id',employee_id,'employeeCode',employee_number,'firstName',first_name,'lastName',last_name),

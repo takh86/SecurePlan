@@ -90,7 +90,11 @@ export type KnownErrorCode =
   | 'PROJECT_CALENDAR_DEPENDENCY_CONFLICT'
   // A2 employee-month Save (adopted contract A2-GATE-1, backend #95).
   // Its German texts live in the planning feature.
-  | 'EMPLOYEE_MONTH_SAVE_CONFLICT';
+  | 'EMPLOYEE_MONTH_SAVE_CONFLICT'
+  // SP-20 replacement selection refusals (approved backend catalogue, both 409). German texts live in the
+  // work-queue feature, which reloads the case after either refusal.
+  | 'CANCELLATION_ALREADY_RESOLVED'
+  | 'REPLACEMENT_OFFER_NOT_SELECTABLE';
 
 export type ApiErrorKind = 'http' | 'network' | 'invalid-response';
 
@@ -184,6 +188,8 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   PROJECT_CALENDAR_CONCURRENT_MODIFICATION: 409,
   PROJECT_CALENDAR_DEPENDENCY_CONFLICT: 409,
   EMPLOYEE_MONTH_SAVE_CONFLICT: 409,
+  CANCELLATION_ALREADY_RESOLVED: 409,
+  REPLACEMENT_OFFER_NOT_SELECTABLE: 409,
 };
 
 const POINTER_PATTERN = /^#(?:\/(?:[A-Za-z0-9_-]|~[01])+)+$/;

@@ -53,7 +53,6 @@ import {
   monthlyPlanColumns,
   toMonthlyPlanEntryResponse,
   toMonthlyPlanResponse,
-  toDutyAssignmentResponse,
   toDutyVersion,
   type DutyRow,
   type MembershipRow,
@@ -70,7 +69,9 @@ import { assertPlanningSchemaComplete } from './planning-schema.js';
 import { acquireDutyLease, assertDutyLease, editLeaseTtl, releaseDutyLease, renewDutyLease, type EditLeaseResponse } from './duty-edit-leases.js';
 import { PublishIdempotencyService } from './publish-idempotency.service.js';
 import { assertOperatingDay } from './operating-calendar-guard.js';
+import { assertNoResolvedReplacementChange } from './resolved-replacement-guard.js';
 import { assertSessionInTransaction } from '../../auth/session.service.js';
+import { dutyValues, memberValues, removalColumn } from './duty-audit-values.js';
 
 const ADMIN_ONLY = ['COMPANY_ADMIN'] as const;
 const DEFAULT_PAGE_SIZE = 25;
@@ -115,15 +116,6 @@ type DutySnapshot = DutyRow & {
 const snapshotColumns = (alias: string) => `${dutyColumns(alias)}, ${alias}.time_zone,
   to_char(${alias}.config_effective_from_month, 'YYYY-MM-DD') AS config_month,
   left(${alias}.start_local::text, 5) AS start_local, left(${alias}.end_local::text, 5) AS end_local`;
-const removalColumn = `to_char(removed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS removed_at`;
-const memberValues = (row: MembershipRow) => {
-  const member = toDutyAssignmentResponse(row);
-  return { dutyId: row.duty_id, employeeId: member.employeeId, dutyRole: member.dutyRole, source: member.source };
-};
-const dutyValues = (planId: string, row: DutyRow) => {
-  const entry = toMonthlyPlanEntryResponse(row, [], new Set());
-  return { planId, dutyDate: entry.dutyDate, shiftKind: entry.shiftKind, startsAt: entry.startsAt, endsAt: entry.endsAt, version: entry.version };
-};
 const memberSignature = (members: MembershipRow[]) => JSON.stringify([...members].sort((a, b) => a.id.localeCompare(b.id)));
 
 @Injectable()
@@ -704,6 +696,13 @@ export class MonthlyPlansService implements OnModuleInit {
       await this.assertStaffing(client, tenant, employees.filter((employee) => roster.has(employee.id)), links,
         plan.project_id, day, kind, interval, dutyId, new Set(changedEmployees.map((employee) => employee.id)));
 
+      // SP-20 D-8: date/shift changes and removal or role change of a selected replacement are refused for a RESOLVED duty.
+      await assertNoResolvedReplacementChange(client, tenant.companyId, dutyId, {
+        timingChanged: timeChanged,
+        membershipIds: members
+          .filter((member) => !roster.has(member.employee_id) || roster.get(member.employee_id) !== member.duty_function)
+          .map((member) => member.id),
+      });
       let updated: DutyRow;
       try {
         const result = await client.query<DutyRow>(
@@ -778,6 +777,8 @@ export class MonthlyPlansService implements OnModuleInit {
   ): Promise<void> {
     await this.database.withTransaction(async (client) => {
       const { plan, duty } = await this.lockMutation(client, tenant, planId, dutyId, expectedVersion, token);
+      // SP-20 D-8: a duty with a RESOLVED replacement cannot be removed while the selection stands.
+      await assertNoResolvedReplacementChange(client, tenant.companyId, dutyId, { removesDuty: true });
       const removed = await client.query<DutyRow & { removed_at: string }>(
         `UPDATE public.duties AS d SET removed_at = clock_timestamp(), concurrency_version = concurrency_version + 1, updated_at = clock_timestamp()
          WHERE d.company_id = $1 AND d.monthly_plan_id = $2 AND d.id = $3 AND d.concurrency_version = $4 AND d.removed_at IS NULL

@@ -3,6 +3,8 @@ import {
   ReplacementNeedsController,
 } from './modules/cancellation-replacement/replacement-needs.controller.js';
 import { ReplacementOffersService } from './modules/cancellation-replacement/replacement-offers.service.js';
+import { ReplacementSelectionController } from './modules/cancellation-replacement/replacement-selection.controller.js';
+import { ReplacementSelectionService } from './modules/cancellation-replacement/replacement-selection.service.js';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 
@@ -82,6 +84,7 @@ import { AdminWorkQueueService } from './modules/cancellation-replacement/admin-
     AdminWorkQueueController,
     MeReplacementNeedsController,
     ReplacementNeedsController,
+    ReplacementSelectionController,
     CancellationRequestsController,
     MeWorkItemsController,
     AppController,
@@ -127,6 +130,7 @@ import { AdminWorkQueueService } from './modules/cancellation-replacement/admin-
     CancellationRequestsService,
     AdminWorkQueueService,
     ReplacementOffersService,
+    ReplacementSelectionService,
     AssignmentRemovalReconciler,
     {
       provide: PLANNING_MUTATION_HANDLER,

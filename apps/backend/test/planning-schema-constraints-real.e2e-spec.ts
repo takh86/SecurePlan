@@ -214,7 +214,8 @@ describe('DB-04 — exact CHECK constraints, no partial rows', () => {
 
   it.each([
     ['function', ['LEITER', 'NORMAL', 'ACTIVE', null], 'ck_plan_assignments__function'],
-    ['source', ['MITARBEITER', 'AUTO', 'ACTIVE', null], 'ck_plan_assignments__source'],
+    // An unknown source also violates ck_plan_assignments__replacement_origin; PostgreSQL reports the first failing check by name.
+    ['source outside NORMAL/REPLACEMENT', ['MITARBEITER', 'AUTO', 'ACTIVE', null], 'ck_plan_assignments__replacement_origin'],
     ['ACTIVE with removed_at', ['MITARBEITER', 'NORMAL', 'ACTIVE', '2027-03-01T00:00:00Z'], 'ck_plan_assignments__state'],
     ['REMOVED without removed_at', ['MITARBEITER', 'NORMAL', 'REMOVED', null], 'ck_plan_assignments__state'],
     ['unknown state', ['MITARBEITER', 'NORMAL', 'PENDING', null], 'ck_plan_assignments__state'],
@@ -240,6 +241,8 @@ describe('DB-04 — exact CHECK constraints, no partial rows', () => {
       { child: 'monthly_plans', parent: 'projects' },
       { child: 'plan_assignments', parent: 'duties' },
       { child: 'plan_assignments', parent: 'employees' },
+      // SP-20 (migration 0019): a REPLACEMENT membership references the offer it came from, with tenant, duty and employee.
+      { child: 'plan_assignments', parent: 'replacement_offers' },
     ]);
   });
 });

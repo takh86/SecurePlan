@@ -669,7 +669,9 @@
           "resolvedAt",
           "openOfferCount",
           "project",
-          "timeZone"
+          "timeZone",
+          "concurrencyVersion",
+          "selectedOfferId"
         ],
         "properties": {
           "id": {
@@ -706,6 +708,17 @@
           },
           "timeZone": {
             "type": "string"
+          },
+          "concurrencyVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "SP-20 Expected-Version for the selection command. Monotonic; starts at 1."
+          },
+          "selectedOfferId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "SP-20 selected offer of a RESOLVED need; null otherwise."
           }
         }
       },
@@ -881,7 +894,9 @@
           "dutyRemoved",
           "originalAssignmentActive",
           "eligibleOpenOfferCount",
-          "evaluatedAt"
+          "evaluatedAt",
+          "consistency",
+          "replacementAssignment"
         ],
         "properties": {
           "cancellation": {
@@ -907,6 +922,47 @@
           "evaluatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "consistency": {
+            "type": "string",
+            "enum": [
+              "CONSISTENT",
+              "INCONSISTENT"
+            ],
+            "description": "SP-20: CONSISTENT only when the case's links agree; INCONSISTENT is surfaced, never hidden."
+          },
+          "replacementAssignment": {
+            "type": "object",
+            "additionalProperties": false,
+            "nullable": true,
+            "required": [
+              "id",
+              "employeeId",
+              "source",
+              "state"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "employeeId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "REPLACEMENT"
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ACTIVE"
+                ]
+              }
+            }
           }
         }
       },

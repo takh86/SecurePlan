@@ -252,8 +252,8 @@ async function seedOffers(
        SELECT id,$1,id::text||'@offers.invalid','TENANT','EMPLOYEE','ACTIVE','synthetic-offer-fixture' FROM ids RETURNING id),
      employees AS (INSERT INTO public.employees(company_id,account_id,employee_number,first_name,last_name,shift_eligibility)
        SELECT $1,id,left(id::text,30),'Synthetic','Candidate','BOTH' FROM accounts RETURNING id)
-     INSERT INTO public.replacement_offers(company_id,need_id,employee_id,status,created_at,updated_at,decided_at)
-       SELECT $1,$2,e.id,$4,m.at,m.at,CASE WHEN $4='OPEN' THEN NULL ELSE m.at END
+     INSERT INTO public.replacement_offers(company_id,need_id,duty_id,employee_id,status,created_at,updated_at,decided_at)
+       SELECT $1,$2,(SELECT duty_id FROM public.replacement_needs WHERE company_id=$1 AND id=$2),e.id,$4,m.at,m.at,CASE WHEN $4='OPEN' THEN NULL ELSE m.at END
        FROM employees e CROSS JOIN moment m RETURNING id,employee_id`,
       [f.tenant.companyId, needId, count, status],
     )
@@ -595,7 +595,7 @@ it.each(['COMMIT', 'ROLLBACK'] as const)(
         [f.tenant.companyId, ids.need],
       );
       await holder.query(
-        'INSERT INTO replacement_offers(company_id,need_id,employee_id) VALUES($1,$2,$3)',
+        'INSERT INTO replacement_offers(company_id,need_id,duty_id,employee_id) VALUES($1,$2,(SELECT duty_id FROM replacement_needs WHERE company_id=$1 AND id=$2),$3)',
         [f.tenant.companyId, ids.need, candidates[0].employee_id],
       );
       flight = patch({ assignments: [] }).then((r) => r);
@@ -675,6 +675,9 @@ it('observed W3 lock timeout rolls back 1000-offer closure completely', async ()
 
 it('unrelated CR03 removal preserves a future resolved case and selected/nonselected offer history', async () => {
   const ids = await committedPair();
+  // A RESOLVED need must point at its SELECTED offer (ck_replacement_needs__selection), so offers come first.
+  await seedOffers(ids.need, 1, 'SELECTED');
+  await seedOffers(ids.need, 2, 'NOT_SELECTED');
   const c = await pool.connect();
   try {
     await c.query('BEGIN');
@@ -686,16 +689,14 @@ it('unrelated CR03 removal preserves a future resolved case and selected/nonsele
       [ids.cancellation, at, f.tenant.admin.accountId],
     );
     await c.query(
-      "UPDATE replacement_needs SET status='RESOLVED',resolved_at=$2::timestamptz,updated_at=$2::timestamptz WHERE id=$1",
-      [ids.need, at],
+      "UPDATE replacement_needs SET status='RESOLVED',resolved_at=$2::timestamptz,updated_at=$2::timestamptz,selected_offer_id=(SELECT id FROM replacement_offers WHERE company_id=$3 AND need_id=$1 AND status='SELECTED') WHERE id=$1",
+      [ids.need, at, f.tenant.companyId],
     );
     await c.query('COMMIT');
   } finally {
     await c.query('ROLLBACK');
     c.release();
   }
-  await seedOffers(ids.need, 1, 'SELECTED');
-  await seedOffers(ids.need, 2, 'NOT_SELECTED');
   const offers = await offerRows(),
     wf = await workflow();
   await lease();

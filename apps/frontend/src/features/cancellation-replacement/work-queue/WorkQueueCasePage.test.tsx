@@ -5,9 +5,11 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { APP_ROUTES, type AppRoute } from '../../../app/routes';
-import { ApiError } from '../../../shared/api/api-error';
+import { ApiError, parseApiError } from '../../../shared/api/api-error';
+import type { SessionRequest } from '../../auth/session-api';
 import { WorkQueueSection } from './WorkQueueSection';
 import {
+  CANCELLATION_ID,
   IDENTITY,
   NEED_ID,
   caseContext,
@@ -183,12 +185,167 @@ describe('SP-19 — administrative case view (read-only)', () => {
     expect(within(alert).getByRole('button', { name: 'Erneut versuchen' })).toBeTruthy();
   });
 
-  it('sends only GET requests and exposes no workflow action', async () => {
+  it('loads with GET requests only; a write starts only from an explicit choice and confirmation', async () => {
     const { requests } = renderCase(CASE_PATH, () => offersPage(threeOffers()));
     await screen.findByRole('table', { name: 'Eingereichte Ersatzangebote' });
     expect(requests.every((request) => request.method === 'GET')).toBe(true);
     for (const button of screen.getAllByRole('button')) {
-      expect(button.textContent ?? '').not.toMatch(/Genehmig|Ablehn|Auswähl|Zuweis|Bestätig|Speicher|Absage/i);
+      expect(button.textContent ?? '').not.toMatch(/Genehmig|Ablehn|Zuweis|Speicher/i);
     }
+  });
+});
+
+describe('SP-20 — administrative selection', () => {
+  function renderSelection(answer: (path: string, options: SessionRequest) => unknown) {
+    const { api, requests } = recordingApi((path, options) => {
+      if (path.startsWith('/api/v1/replacement-needs/')) return answer(path, options);
+      throw new Error(`unexpected request: ${path}`);
+    });
+    render(
+      <MemoryRouter initialEntries={[CASE_PATH]}>
+        <Routes>
+          <Route path="/arbeitsuebersicht/*" element={<WorkQueueSection route={workQueueRoute()} api={api} identity={IDENTITY} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    return { requests };
+  }
+
+  function eligibleOffer() {
+    const offer = threeOffers().find((candidate) => candidate.status === 'OPEN' && candidate.reviewEligibility === 'ELIGIBLE');
+    if (!offer) throw new Error('fixture has no eligible offer');
+    return offer;
+  }
+
+  function selectionAnswer(offer: { id: string; employee: { id: string; employeeCode: string; firstName: string; lastName: string } }) {
+    return {
+      needId: NEED_ID,
+      cancellationRequestId: CANCELLATION_ID,
+      status: { cancellation: 'APPROVED', need: 'RESOLVED' },
+      decidedAt: '2026-12-15T10:00:00.000Z',
+      needVersion: 2,
+      selectedOffer: { id: offer.id, status: 'SELECTED', employee: offer.employee },
+      otherOffers: [],
+      originalAssignment: { id: '71000000-0000-4000-8000-000000000009', state: 'REMOVED', removedAt: '2026-12-15T10:00:00.000Z' },
+      replacementAssignment: { id: '71000000-0000-4000-8000-000000000010', employeeId: offer.employee.id, source: 'REPLACEMENT', state: 'ACTIVE' },
+      duty: { id: '71000000-0000-4000-8000-000000000011', concurrencyVersion: 3 },
+    };
+  }
+
+  it('confirms before writing, then posts one selection with Expected-Version and an Idempotency-Key', async () => {
+    const user = userEvent.setup();
+    const offer = eligibleOffer();
+    const posted: SessionRequest[] = [];
+    const { requests } = renderSelection((_path, options) => {
+      if (options.method === 'POST') {
+        posted.push(options);
+        return selectionAnswer(offer);
+      }
+      return offersPage(threeOffers());
+    });
+    await screen.findByRole('table', { name: 'Eingereichte Ersatzangebote' });
+    await user.click((await screen.findAllByRole('button', { name: 'Ersatz auswählen' }))[0]);
+    expect(posted).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: 'Ersatz bestätigen' }));
+    expect(await screen.findByText('Ersatz ausgewählt. Der Vorgang ist abgeschlossen.')).toBeTruthy();
+    expect(posted).toHaveLength(1);
+    expect(posted[0].expectedVersion).toBe(1);
+    expect(posted[0].body).toEqual({ offerId: offer.id });
+    expect(typeof posted[0].idempotencyKey).toBe('string');
+    expect(requests.filter((request) => request.method === 'POST')).toEqual([
+      { path: `/api/v1/replacement-needs/${NEED_ID}/selection`, method: 'POST' },
+    ]);
+  });
+
+  it('a refused selection (409) names the reason and reloads the case', async () => {
+    const user = userEvent.setup();
+    let posts = 0;
+    const { requests } = renderSelection((_path, options) => {
+      if (options.method === 'POST') {
+        posts += 1;
+        throw new ApiError('http', 409, 'PLAN_CONCURRENT_MODIFICATION', null);
+      }
+      return offersPage(threeOffers());
+    });
+    await screen.findByRole('table', { name: 'Eingereichte Ersatzangebote' });
+    await user.click((await screen.findAllByRole('button', { name: 'Ersatz auswählen' }))[0]);
+    await user.click(screen.getByRole('button', { name: 'Ersatz bestätigen' }));
+    expect(await screen.findByText(/Der Vorgang wurde inzwischen geändert\. Die Daten wurden neu geladen\./)).toBeTruthy();
+    expect(posts).toBe(1);
+    expect(requests.filter((request) => request.method === 'GET').length).toBeGreaterThanOrEqual(2);
+  });
+
+  // The refusal travels the real path: a problem+json response is parsed by parseApiError, so the code must be
+  // on the allowlist for the specific German text to appear (not the generic "Die Auswahl wurde nicht angenommen.").
+  for (const [code, text] of [
+    ['CANCELLATION_ALREADY_RESOLVED', 'Dieser Vorgang ist bereits entschieden. Die Daten wurden neu geladen.'],
+    ['REPLACEMENT_OFFER_NOT_SELECTABLE', 'Dieses Angebot kann nicht mehr ausgewählt werden. Die Daten wurden neu geladen.'],
+  ] as const) {
+    it(`SP-20: ${code} keeps its specific German refusal, reloads the case and writes only once`, async () => {
+      const user = userEvent.setup();
+      let posts = 0;
+      const { requests } = renderSelection(async (_path, options) => {
+        if (options.method === 'POST') {
+          posts += 1;
+          throw await parseApiError(
+            new Response(JSON.stringify({ code }), { status: 409, headers: { 'content-type': 'application/problem+json' } }),
+          );
+        }
+        return offersPage(threeOffers());
+      });
+      await screen.findByRole('table', { name: 'Eingereichte Ersatzangebote' });
+      const getsBefore = requests.filter((request) => request.method === 'GET').length;
+      await user.click((await screen.findAllByRole('button', { name: 'Ersatz auswählen' }))[0]);
+      await user.click(screen.getByRole('button', { name: 'Ersatz bestätigen' }));
+      expect(await screen.findByText(text)).toBeTruthy();
+      expect(screen.queryByText('Die Auswahl wurde nicht angenommen. Die Daten wurden neu geladen.')).toBeNull();
+      expect(posts).toBe(1);
+      expect(requests.filter((request) => request.method === 'GET').length).toBeGreaterThan(getsBefore);
+    });
+  }
+
+  it('while the selection is in flight the confirmation is disabled and no second write starts', async () => {
+    const user = userEvent.setup();
+    const offer = eligibleOffer();
+    let release: (value: unknown) => void = () => undefined;
+    let posts = 0;
+    renderSelection((_path, options) => {
+      if (options.method === 'POST') {
+        posts += 1;
+        return new Promise((resolve) => {
+          release = resolve;
+        });
+      }
+      return offersPage(threeOffers());
+    });
+    await screen.findByRole('table', { name: 'Eingereichte Ersatzangebote' });
+    await user.click((await screen.findAllByRole('button', { name: 'Ersatz auswählen' }))[0]);
+    await user.click(screen.getByRole('button', { name: 'Ersatz bestätigen' }));
+    expect(await screen.findByText('Auswahl wird gespeichert …')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Ersatz bestätigen' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(posts).toBe(1);
+    release(selectionAnswer(offer));
+  });
+
+  it('an unknown outcome keeps the same Idempotency-Key, so a retry replays the decision', async () => {
+    const user = userEvent.setup();
+    const offer = eligibleOffer();
+    const keys: string[] = [];
+    renderSelection((_path, options) => {
+      if (options.method === 'POST') {
+        keys.push(options.idempotencyKey ?? '');
+        if (keys.length === 1) throw new ApiError('http', 500, null, null);
+        return selectionAnswer(offer);
+      }
+      return offersPage(threeOffers());
+    });
+    await screen.findByRole('table', { name: 'Eingereichte Ersatzangebote' });
+    await user.click((await screen.findAllByRole('button', { name: 'Ersatz auswählen' }))[0]);
+    await user.click(screen.getByRole('button', { name: 'Ersatz bestätigen' }));
+    await user.click(await screen.findByRole('button', { name: 'Erneut bestätigen' }));
+    expect(await screen.findByText('Ersatz ausgewählt. Der Vorgang ist abgeschlossen.')).toBeTruthy();
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).not.toBe('');
+    expect(keys[1]).toBe(keys[0]);
   });
 });
