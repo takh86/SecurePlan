@@ -29,13 +29,31 @@ const unauthorized: Responder = () => new Response(JSON.stringify({ code: 'SESSI
 
 let otherTab: BroadcastChannel;
 
+// SP-19: the administrative landing reads its work queue and the project filter reads projects. Without a queued
+// answer the company is empty; both are documented GET reads.
+const LANDING_READS = {
+  queue: '/api/v1/admin/work-queue?page=1&pageSize=25&sortBy=createdAt&sortOrder=asc',
+  projects: '/api/v1/projects?pageSize=100',
+};
+const emptyLanding = (body: unknown): Responder => () => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+function companyDefault(url: string): Responder | undefined {
+  if (url === LANDING_READS.queue) return emptyLanding({ items: [], pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 }, evaluatedAt: '2026-12-15T11:00:00.000Z' });
+  if (url === LANDING_READS.projects) return emptyLanding({ items: [], pagination: { page: 1, pageSize: 100, totalItems: 0, totalPages: 0 } });
+  return undefined;
+}
+
 function stubApi(queues: Record<string, Responder[]>) {
   const fetchMock = vi.fn((input: RequestInfo | URL) => {
-    const next = queues[String(input)]?.shift();
+    const next = queues[String(input)]?.shift() ?? companyDefault(String(input));
     return next ? Promise.resolve(next()) : Promise.reject(new Error(`Unexpected request ${String(input)}`));
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
+}
+
+/** Only the session check (`GET /api/v1/me`) is of interest to these tests; landing reads are counted separately. */
+function meCalls(fetchMock: ReturnType<typeof stubApi>): string[] {
+  return fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url === '/api/v1/me');
 }
 
 async function signedInAt(path: string, queues: Record<string, Responder[]>) {
@@ -43,6 +61,10 @@ async function signedInAt(path: string, queues: Record<string, Responder[]>) {
   window.history.replaceState(null, '', path);
   render(<App />);
   expect(await screen.findByRole('navigation', { name: 'Hauptnavigation' })).toBeTruthy();
+  if (path === '/arbeitsuebersicht') {
+    // The landing issues its reads on mount; wait for them so later call counts are exact.
+    await waitFor(() => expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual(expect.arrayContaining([LANDING_READS.queue, LANDING_READS.projects])));
+  }
   return fetchMock;
 }
 
@@ -64,13 +86,14 @@ afterEach(() => {
 describe('cross-tab session signals through <App/>', () => {
   it('a logout in another tab removes the shell and resets the URL; nothing is requested', async () => {
     const fetchMock = await signedInAt('/arbeitsuebersicht', { '/api/v1/me': [authorized] });
+    const requestsBeforeSignal = fetchMock.mock.calls.length;
     act(() => otherTab.postMessage({ type: 'signed-out' }));
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Anmelden' })).toBeTruthy();
     expect(screen.queryByRole('navigation', { name: 'Hauptnavigation' })).toBeNull();
     expect(document.body.textContent).not.toContain(ADMIN.email);
     await waitFor(() => expect(window.location.pathname).toBe('/'));
-    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual(['/api/v1/me']);
+    expect(fetchMock.mock.calls).toHaveLength(requestsBeforeSignal);
   });
 
   it('a login in another tab re-checks the session; a revoked session ends in the login form', async () => {
@@ -79,14 +102,14 @@ describe('cross-tab session signals through <App/>', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Anmelden' })).toBeTruthy();
     expect(document.body.textContent).not.toContain(ADMIN.email);
-    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual(['/api/v1/me', '/api/v1/me']);
+    expect(meCalls(fetchMock)).toEqual(['/api/v1/me', '/api/v1/me']);
   });
 
   it('a login in another tab keeps the shell when the server confirms the session', async () => {
     const fetchMock = await signedInAt('/arbeitsuebersicht', { '/api/v1/me': [authorized, authorized] });
     act(() => otherTab.postMessage({ type: 'signed-in' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(meCalls(fetchMock)).toHaveLength(2));
     expect(await screen.findByRole('navigation', { name: 'Hauptnavigation' })).toBeTruthy();
     expect(window.location.pathname).toBe('/arbeitsuebersicht');
   });
@@ -105,7 +128,7 @@ describe('cross-tab session signals through <App/>', () => {
 
     expect(screen.getByRole('navigation', { name: 'Hauptnavigation' })).toBeTruthy();
     expect(screen.queryByRole('heading', { level: 1, name: 'Anmelden' })).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(meCalls(fetchMock)).toHaveLength(1);
   });
 });
 

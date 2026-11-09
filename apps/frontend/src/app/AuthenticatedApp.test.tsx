@@ -40,6 +40,10 @@ function renderApp(role: TenantRole, path: string, overrides: { logoutPending?: 
     if (path.startsWith('/api/v1/me/planning-statistics?')) return {
       monthStart: path.split('monthStart=')[1], plannedWorkdays: 0, dayShiftCount: 0, nightShiftCount: 0,
     };
+    // SP-19: an empty administrative queue (the server's documented shape).
+    if (path.startsWith('/api/v1/admin/work-queue?')) return {
+      items: [], pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 }, evaluatedAt: '2026-12-15T11:00:00.000Z',
+    };
     return page([]);
   });
   apiRequests = requests;
@@ -128,7 +132,8 @@ describe('F1 — role-based routes (UI gating only; the server authorizes every 
     ]);
     expect(links[0].getAttribute('aria-current')).toBe('page');
     expect(within(nav).queryByText('Mein Monatsplan')).toBeNull();
-    expect(await screen.findByText('Alex Beispiel')).toBeTruthy();
+    // SP-19: the live queue of an empty company (no synthetic case is shown).
+    expect(await screen.findByText('Keine offenen Vorgänge')).toBeTruthy();
   });
 
   it('shows only the employee navigation for EMPLOYEE and marks the month route as current', async () => {

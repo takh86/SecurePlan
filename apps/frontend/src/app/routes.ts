@@ -43,8 +43,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: '/arbeitsuebersicht',
     role: 'COMPANY_ADMIN',
     title: 'Arbeitsübersicht',
-    lead: 'Offene Vorgänge – Absagen und Ersatzbedarf, die eine Entscheidung brauchen.',
-    availability: 'preview',
+    lead: 'Offene Absagen und Ersatzbedarfe mit ihren Ersatzangeboten. Nur Anzeige.',
+    availability: 'available',
+    nested: true,
   },
   {
     id: 'employees',
