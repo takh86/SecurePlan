@@ -1,177 +1,469 @@
-import { useId, useState } from 'react';
-import { useReadSource } from '../../../shared/data/use-read-source';
-import { SHIFT_TYPE_LABELS } from '../../../shared/shift/shift-view';
-import { formatDate } from '../../../shared/time/month';
-import { PreviewNotice } from '../../../shared/ui/PreviewNotice';
-import { ShiftTime } from '../../../shared/ui/ShiftTime';
+import { useId, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
+import { PageFrame } from '../../../app/PageFrame';
+import type { AppRoute } from '../../../app/routes';
+import { ApiError } from '../../../shared/api/api-error';
+import type { ReadSource } from '../../../shared/data/data-source';
+import { loadAllPages } from '../../../shared/data/load-all-pages';
+import { useReadSource, type ReadState } from '../../../shared/data/use-read-source';
+import { parsePlanMonth, planDateLabel } from '../../../shared/time/civil-time';
+import { ApiErrorAlert } from '../../../shared/ui/ApiErrorAlert';
 import { StatusBadge } from '../../../shared/ui/StatusBadge';
 import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/ViewStates';
-import { defaultWorkQueueSource } from './work-queue-preview-source';
-import type { WorkQueueCase, WorkQueueSegment, WorkQueueSource } from './work-queue-types';
-import './WorkQueuePage.css';
+import type { ProjectsApi } from '../../projects/projects-api';
+import { formatUtc, dutyTimeText } from './work-queue-format';
+import { parseQueueQuery, queueSearch, revalidateOnForbidden, type WorkQueueApi } from './work-queue-api';
+import {
+  CANCELLATION_LABELS,
+  CASE_TYPE_LABELS,
+  NEED_LABELS,
+  SHIFT_LABELS,
+  type CaseType,
+  type OfferPresence,
+  type Pagination,
+  type ProjectRef,
+  type QueueItem,
+  type QueuePage,
+  type QueueQuery,
+  type QueueSortBy,
+  type SortOrder,
+} from './work-queue-types';
+import './WorkQueue.css';
 
-const SEGMENTS: ReadonlyArray<{ value: WorkQueueSegment; label: string }> = [
-  { value: 'all', label: 'Alle' },
-  { value: 'with-offers', label: 'Ersatzangebote liegen vor' },
-  { value: 'without-offers', label: 'Noch kein Ersatzangebot' },
+type Props = {
+  route: AppRoute;
+  queue: WorkQueueApi;
+  projects: ProjectsApi;
+  requestSessionRevalidation: () => void;
+};
+
+type ListRequest = { query: QueueQuery; revision: number };
+
+const DEFAULT_FILTERS: Pick<QueueQuery, 'type' | 'offerPresence' | 'projectId' | 'month' | 'page'> = {
+  type: null,
+  offerPresence: null,
+  projectId: null,
+  month: null,
+  page: 1,
+};
+
+// Lookup tables map control values back to typed values; no free DOM value reaches the query.
+const TYPE_OPTIONS: ReadonlyArray<{ value: CaseType | null; label: string }> = [
+  { value: null, label: 'Alle Vorgangsarten' },
+  { value: 'CANCELLATION_REQUEST', label: 'Absagen' },
+  { value: 'REPLACEMENT_NEED', label: 'Ersatzbedarfe' },
 ];
 
-function hasOffers(item: WorkQueueCase): boolean {
-  return item.replacementOfferCount > 0;
+const PRESENCE_OPTIONS: ReadonlyArray<{ value: OfferPresence | null; label: string }> = [
+  { value: null, label: 'Alle offenen Vorgänge' },
+  { value: 'WITH_ELIGIBLE', label: 'Mit aktuell geeigneten Angeboten' },
+  { value: 'WITHOUT_ELIGIBLE', label: 'Ohne aktuell geeignete Angebote' },
+];
+
+const SORT_OPTIONS: ReadonlyArray<{ value: QueueSortBy; label: string }> = [
+  { value: 'createdAt', label: 'Angelegt am' },
+  { value: 'dutyDate', label: 'Dienstdatum' },
+];
+
+const ORDER_OPTIONS: ReadonlyArray<{ value: SortOrder; label: string }> = [
+  { value: 'asc', label: 'Aufsteigend' },
+  { value: 'desc', label: 'Absteigend' },
+];
+
+function hasFilter(query: QueueQuery): boolean {
+  return query.type !== null || query.offerPresence !== null || query.projectId !== null || query.month !== null;
 }
 
-function inSegment(segment: WorkQueueSegment, item: WorkQueueCase): boolean {
-  if (segment === 'with-offers') return hasOffers(item);
-  if (segment === 'without-offers') return !hasOffers(item);
-  return true;
-}
-
-function offerCountLabel(count: number): string {
-  return count === 1 ? '1 Ersatzangebot' : `${count} Ersatzangebote`;
+function countText(total: number): string {
+  return total === 1 ? '1 Vorgang' : `${total} Vorgänge`;
 }
 
 /**
- * Admin landing view: open cancellation/replacement cases, exceptions first.
- * Read-only. Decision actions need an approved API contract and backend support.
+ * Admin landing `/arbeitsuebersicht`: open cancellation and replacement cases from
+ * the server. Filters, sorting and pages are URL state and are applied by the
+ * server; the list is never assembled or filtered in the browser.
  */
-export function WorkQueuePage({ source = defaultWorkQueueSource }: { source?: WorkQueueSource }) {
-  const { state, retry } = useReadSource(source, null);
-  const example = source.kind === 'preview';
+export function WorkQueuePage({ route, queue, projects, requestSessionRevalidation }: Props) {
+  const [params, setParams] = useSearchParams();
+  const [revision, setRevision] = useState(0);
+  const search = queueSearch(parseQueueQuery(params));
+  const query = useMemo(() => parseQueueQuery(new URLSearchParams(search)), [search]);
+  const request = useMemo<ListRequest>(() => ({ query, revision }), [query, revision]);
+
+  const source = useMemo<ReadSource<ListRequest, QueuePage>>(
+    () => ({
+      kind: 'api',
+      async load(current, signal) {
+        try {
+          return await queue.queue(current.query, signal);
+        } catch (error) {
+          if (!signal.aborted) revalidateOnForbidden(error, requestSessionRevalidation);
+          throw error;
+        }
+      },
+    }),
+    [queue, requestSessionRevalidation],
+  );
+  const { state, retry } = useReadSource(source, request);
+
+  const projectSource = useMemo<ReadSource<null, ProjectRef[]>>(
+    () => ({
+      kind: 'api',
+      async load(_query, signal) {
+        const items = await loadAllPages((page) => projects.list({ page, pageSize: 100 }, signal));
+        return items
+          .map((project) => ({ id: project.id, name: project.name }))
+          .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+      },
+    }),
+    [projects],
+  );
+  const projectState = useReadSource(projectSource, null);
+
+  function navigateTo(next: QueueQuery) {
+    setParams(new URLSearchParams(queueSearch(next)));
+  }
 
   return (
-    <div className="work-queue">
-      {example && <PreviewNotice />}
-      {state.status === 'loading' ? (
-        <LoadingState label="Offene Vorgänge werden geladen …" />
-      ) : state.status === 'error' ? (
-        <ErrorState error={state.error} onRetry={retry} />
-      ) : state.data.length === 0 ? (
-        <EmptyState
-          title="Keine offenen Vorgänge"
-          description="Aktuell gibt es keine offenen Absage- oder Ersatzvorgänge."
+    <PageFrame title={route.title} lead={route.lead}>
+      <div className="work-queue">
+        <QueueFilters
+          query={query}
+          projectsState={projectState.state}
+          onChange={navigateTo}
+          onRefresh={() => setRevision((current) => current + 1)}
         />
-      ) : (
-        <WorkQueueOverview cases={state.data} example={example} />
-      )}
-      <p className="work-queue__note">
-        Entscheidungen über Absagen und die Auswahl eines Ersatzes sind in dieser Ansicht noch nicht
-        möglich. Die Bearbeitung einzelner Vorgänge folgt in einer späteren Ausbaustufe.
-      </p>
+        <p className="work-queue__legend">
+          Offene Angebote sind alle eingereichten Angebote, die noch offen sind. Aktuell geeignet ist davon nur der Teil,
+          der die aktuellen Kriterien für ein neues Ersatzangebot erfüllt. Das ist keine Auswahl und keine Zuweisung.
+        </p>
+        {state.status === 'loading' ? (
+          <LoadingState label="Offene Vorgänge werden geladen …" />
+        ) : state.status === 'error' ? (
+          <QueueError error={state.error} query={query} retry={retry} onResetProject={() => navigateTo({ ...query, projectId: null, page: 1 })} />
+        ) : state.data.pagination.totalItems === 0 ? (
+          hasFilter(query) ? (
+            <EmptyState title="Keine Vorgänge für diese Auswahl" description="Entfernen Sie einen Filter oben, um weitere Vorgänge zu sehen." />
+          ) : (
+            <EmptyState
+              title="Keine offenen Vorgänge"
+              description="Aktuell gibt es keine offenen Absage- oder Ersatzvorgänge."
+            />
+          )
+        ) : state.data.items.length === 0 ? (
+          <div className="work-queue__empty">
+            <EmptyState title="Diese Seite ist leer" description="Die angeforderte Seite enthält keine Vorgänge mehr." />
+            <button type="button" className="work-queue__button" onClick={() => navigateTo({ ...query, page: 1 })}>
+              Zur ersten Seite
+            </button>
+          </div>
+        ) : (
+          <QueueTable
+            page={state.data}
+            backPath={`${route.path}${search ? `?${search}` : ''}`}
+            caseBasePath={route.path}
+            onPage={(page) => navigateTo({ ...query, page })}
+          />
+        )}
+      </div>
+    </PageFrame>
+  );
+}
+
+function QueueError({
+  error,
+  query,
+  retry,
+  onResetProject,
+}: {
+  error: Error;
+  query: QueueQuery;
+  retry: () => void;
+  onResetProject: () => void;
+}) {
+  // The server answers an unknown or hidden project filter with 404 (no tenant detail is revealed).
+  if (query.projectId !== null && error instanceof ApiError && error.status === 404) {
+    return (
+      <div className="work-queue__error">
+        <ApiErrorAlert
+          error={error}
+          text={{
+            title: 'Projekt nicht verfügbar',
+            description: 'Das gewählte Projekt ist für Ihr Unternehmen nicht verfügbar. Wählen Sie ein anderes Projekt.',
+          }}
+        />
+        <button type="button" className="work-queue__button" onClick={onResetProject}>
+          Projektfilter entfernen
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="work-queue__error">
+      <ErrorState error={error} onRetry={retry} />
     </div>
   );
 }
 
-function WorkQueueOverview({ cases, example }: { cases: WorkQueueCase[]; example: boolean }) {
-  const [segment, setSegment] = useState<WorkQueueSegment>('all');
-  const filterName = useId();
-  const listTitleId = useId();
-
-  const withOffers = cases.filter(hasOffers).length;
-  const counts: Record<WorkQueueSegment, number> = {
-    all: cases.length,
-    'with-offers': withOffers,
-    'without-offers': cases.length - withOffers,
-  };
-  const visible = cases
-    .filter((item) => inSegment(segment, item))
-    .sort((a, b) => a.shift.date.localeCompare(b.shift.date) || a.shift.start.localeCompare(b.shift.start));
+function QueueFilters({
+  query,
+  projectsState,
+  onChange,
+  onRefresh,
+}: {
+  query: QueueQuery;
+  projectsState: ReadState<ProjectRef[]>;
+  onChange: (next: QueueQuery) => void;
+  onRefresh: () => void;
+}) {
+  const presenceName = useId();
+  const typeId = useId();
+  const projectId = useId();
+  const monthId = useId();
+  const sortId = useId();
+  const orderId = useId();
+  const loadedProjects = projectsState.status === 'ready' ? projectsState.data : [];
+  // A project filter from the URL stays visible while the list loads or after it failed; the server still applies it.
+  const projectOptions =
+    query.projectId !== null && !loadedProjects.some((project) => project.id === query.projectId)
+      ? [{ id: query.projectId, name: 'Ausgewähltes Projekt' }, ...loadedProjects]
+      : loadedProjects;
 
   return (
-    <>
-      <section className="work-queue__summary" aria-label="Zusammenfassung">
-        <dl>
-          <div>
-            <dt>Offene Vorgänge</dt>
-            <dd>{counts.all}</dd>
-          </div>
-          <div>
-            <dt>Mit Ersatzangebot</dt>
-            <dd>{counts['with-offers']}</dd>
-          </div>
-          <div>
-            <dt>Ohne Ersatzangebot</dt>
-            <dd>{counts['without-offers']}</dd>
-          </div>
-        </dl>
-      </section>
+    <section className="work-queue__filters" aria-label="Filter und Sortierung">
+      <fieldset className="work-queue__presence">
+        <legend>Ersatzangebote</legend>
+        {PRESENCE_OPTIONS.map((option) => (
+          <label key={option.label}>
+            <input
+              type="radio"
+              name={presenceName}
+              checked={query.offerPresence === option.value}
+              onChange={() => onChange({ ...query, offerPresence: option.value, page: 1 })}
+            />
+            {option.label}
+          </label>
+        ))}
+      </fieldset>
 
-      <section className="work-queue__cases" aria-labelledby={listTitleId}>
-        <h2 id={listTitleId}>Vorgänge nach Dienstbeginn</h2>
-        <fieldset className="work-queue__filter">
-          <legend>Vorgänge filtern</legend>
-          {SEGMENTS.map((option) => (
-            <label key={option.value}>
-              <input
-                type="radio"
-                name={filterName}
-                value={option.value}
-                checked={segment === option.value}
-                onChange={() => setSegment(option.value)}
-              />
-              {option.label} ({counts[option.value]})
-            </label>
-          ))}
-        </fieldset>
-        <p className="work-queue__count" aria-live="polite">
-          {visible.length} von {cases.length} Vorgängen angezeigt
-        </p>
-        {visible.length === 0 ? (
-          <EmptyState
-            title="Keine Vorgänge in dieser Auswahl"
-            description="Wählen Sie einen anderen Filter, um weitere Vorgänge zu sehen."
-          />
-        ) : (
-          <ul className="work-queue__list">
-            {visible.map((item) => (
-              <li key={item.reference}>
-                <WorkQueueCaseCard item={item} example={example} />
-              </li>
+      <div className="work-queue__controls">
+        <label htmlFor={typeId}>
+          Vorgangsart
+          <select
+            id={typeId}
+            value={query.type ?? ''}
+            onChange={(event) => {
+              const next = TYPE_OPTIONS.find((option) => (option.value ?? '') === event.target.value);
+              onChange({ ...query, type: next?.value ?? null, page: 1 });
+            }}
+          >
+            {TYPE_OPTIONS.map((option) => (
+              <option key={option.label} value={option.value ?? ''}>
+                {option.label}
+              </option>
             ))}
-          </ul>
+          </select>
+        </label>
+
+        <label htmlFor={projectId}>
+          Projekt
+          <select
+            id={projectId}
+            value={query.projectId ?? ''}
+            disabled={projectsState.status === 'error'}
+            onChange={(event) => {
+              const next = projectOptions.find((project) => project.id === event.target.value);
+              onChange({ ...query, projectId: next?.id ?? null, page: 1 });
+            }}
+          >
+            <option value="">Alle Projekte</option>
+            {projectOptions.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {projectsState.status === 'error' && (
+          <p className="work-queue__hint" role="status">
+            Die Projektliste konnte nicht geladen werden. Der Projektfilter ist deshalb nicht verfügbar.
+          </p>
         )}
-      </section>
+
+        <label htmlFor={monthId}>
+          Dienstmonat
+          <input
+            id={monthId}
+            type="month"
+            min="0001-01"
+            max="9999-12"
+            value={query.month ?? ''}
+            onChange={(event) => onChange({ ...query, month: parsePlanMonth(event.target.value), page: 1 })}
+          />
+        </label>
+
+        <label htmlFor={sortId}>
+          Sortieren nach
+          <select
+            id={sortId}
+            value={query.sortBy}
+            onChange={(event) => {
+              const next = SORT_OPTIONS.find((option) => option.value === event.target.value);
+              onChange({ ...query, sortBy: next?.value ?? 'createdAt', page: 1 });
+            }}
+          >
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label htmlFor={orderId}>
+          Reihenfolge
+          <select
+            id={orderId}
+            value={query.sortOrder}
+            onChange={(event) => {
+              const next = ORDER_OPTIONS.find((option) => option.value === event.target.value);
+              onChange({ ...query, sortOrder: next?.value ?? 'asc', page: 1 });
+            }}
+          >
+            {ORDER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="work-queue__actions">
+        <button type="button" className="work-queue__button" onClick={onRefresh}>
+          Liste aktualisieren
+        </button>
+        {hasFilter(query) && (
+          <button type="button" className="work-queue__button" onClick={() => onChange({ ...query, ...DEFAULT_FILTERS })}>
+            Filter zurücksetzen
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function QueueTable({
+  page,
+  backPath,
+  caseBasePath,
+  onPage,
+}: {
+  page: QueuePage;
+  backPath: string;
+  caseBasePath: string;
+  onPage: (page: number) => void;
+}) {
+  const captionId = useId();
+  const { pagination } = page;
+  return (
+    <>
+      <p className="work-queue__summary" aria-live="polite">
+        {countText(pagination.totalItems)}
+        {pagination.totalPages > 1 && ` · Seite ${pagination.page} von ${pagination.totalPages}`}
+        <span className="work-queue__evaluated"> · Stand der Auswertung: {formatUtc(page.evaluatedAt)}</span>
+      </p>
+      <div className="work-queue__table-wrap">
+        <table className="work-queue__table" aria-labelledby={captionId}>
+          <caption id={captionId}>Offene Absagen und Ersatzbedarfe</caption>
+          <thead>
+            <tr>
+              <th scope="col">Mitarbeitende</th>
+              <th scope="col">Projekt</th>
+              <th scope="col">Dienst</th>
+              <th scope="col">Vorgang</th>
+              <th scope="col">Absage</th>
+              <th scope="col">Ersatzbedarf</th>
+              <th scope="col">Offene Angebote</th>
+              <th scope="col">Aktuell geeignet</th>
+              <th scope="col">Angelegt</th>
+              <th scope="col">
+                <span className="visually-hidden">Aktion</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {page.items.map((item) => (
+              <QueueRow key={item.replacementNeedId} item={item} backPath={backPath} caseBasePath={caseBasePath} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <QueuePager pagination={pagination} onPage={onPage} />
     </>
   );
 }
 
-function WorkQueueCaseCard({ item, example }: { item: WorkQueueCase; example: boolean }) {
-  const titleId = useId();
-  const offers = hasOffers(item);
-
+function QueueRow({ item, backPath, caseBasePath }: { item: QueueItem; backPath: string; caseBasePath: string }) {
+  const employee = item.requestingEmployee;
+  const name = `${employee.firstName} ${employee.lastName}`;
+  const cancellation = CANCELLATION_LABELS[item.cancellationStatus];
+  const need = NEED_LABELS[item.replacementNeedStatus];
   return (
-    <article className="wq-case" aria-labelledby={titleId}>
-      <div className="wq-case__header">
-        <h3 id={titleId}>{item.employeeName}</h3>
-        <StatusBadge tone={offers ? 'info' : 'attention'}>
-          {offers ? 'Ersatzangebote liegen vor' : 'Noch kein Ersatzangebot'}
-        </StatusBadge>
-      </div>
-      <dl className="wq-case__facts">
-        <div>
-          <dt>Dienst</dt>
-          <dd>
-            {formatDate(item.shift.date)} · {SHIFT_TYPE_LABELS[item.shift.type]}
-            <br />
-            <ShiftTime shift={item.shift} example={example} />
-          </dd>
-        </div>
-        <div>
-          <dt>Projekt</dt>
-          <dd>{item.projectName}</dd>
-        </div>
-        <div>
-          <dt>Absage eingegangen</dt>
-          <dd>{formatDate(item.cancellationReceivedOn)}</dd>
-        </div>
-        <div>
-          <dt>Ersatzangebote</dt>
-          <dd>{offerCountLabel(item.replacementOfferCount)}</dd>
-        </div>
-        <div>
-          <dt>Referenz</dt>
-          <dd>{item.reference}</dd>
-        </div>
-      </dl>
-    </article>
+    <tr>
+      <th scope="row">
+        <span className="work-queue__name">{name}</span>
+        <span className="work-queue__sub">Personalnummer {employee.employeeCode}</span>
+      </th>
+      <td data-label="Projekt">{item.project.name}</td>
+      <td data-label="Dienst">
+        <span className="work-queue__name">{planDateLabel(item.duty.dutyDate)}</span>
+        <span className="work-queue__sub">
+          {SHIFT_LABELS[item.duty.shiftKind]} · {dutyTimeText(item.duty, item.timeZone)}
+        </span>
+        <span className="work-queue__sub">Zeitzone {item.timeZone}</span>
+      </td>
+      <td data-label="Vorgang">{CASE_TYPE_LABELS[item.type]}</td>
+      <td data-label="Absage">
+        <StatusBadge tone={cancellation.tone}>{cancellation.label}</StatusBadge>
+      </td>
+      <td data-label="Ersatzbedarf">
+        <StatusBadge tone={need.tone}>{need.label}</StatusBadge>
+      </td>
+      <td data-label="Offene Angebote" className="work-queue__number">
+        {item.openOfferCount}
+      </td>
+      <td data-label="Aktuell geeignet" className="work-queue__number">
+        {item.eligibleOpenOfferCount}
+      </td>
+      <td data-label="Angelegt">{formatUtc(item.createdAt)}</td>
+      <td className="work-queue__action">
+        <Link to={`${caseBasePath}/${item.replacementNeedId}`} state={{ back: backPath }} aria-label={`Vorgang öffnen für ${name}`}>
+          Vorgang öffnen
+        </Link>
+      </td>
+    </tr>
+  );
+}
+
+function QueuePager({ pagination, onPage }: { pagination: Pagination; onPage: (page: number) => void }) {
+  if (pagination.totalPages <= 1) return null;
+  return (
+    <nav className="work-queue__pager" aria-label="Seiten">
+      <button type="button" className="work-queue__button" disabled={pagination.page <= 1} onClick={() => onPage(pagination.page - 1)}>
+        Vorherige Seite
+      </button>
+      <span>
+        Seite {pagination.page} von {pagination.totalPages}
+      </span>
+      <button
+        type="button"
+        className="work-queue__button"
+        disabled={pagination.page >= pagination.totalPages}
+        onClick={() => onPage(pagination.page + 1)}
+      >
+        Nächste Seite
+      </button>
+    </nav>
   );
 }

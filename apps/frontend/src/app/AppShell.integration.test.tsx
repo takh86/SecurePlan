@@ -96,6 +96,16 @@ function deferred() {
   return { handler: (() => promise) as Handler, resolve };
 }
 
+// SP-19: the administrative landing reads the work queue (and the project filter reads projects). Unless a test
+// queues an answer, the company is empty: both are documented GET reads with no mutation.
+const EMPTY_QUEUE = { items: [], pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 }, evaluatedAt: '2026-12-15T11:00:00.000Z' };
+function companyDefault(url: string): Handler | undefined {
+  const json = (body: unknown): Handler => () => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  if (url.startsWith('/api/v1/admin/work-queue?')) return json(EMPTY_QUEUE);
+  if (url === `${PROJECTS}?pageSize=100`) return json({ items: [], pagination: { page: 1, pageSize: 100, totalItems: 0, totalPages: 0 } });
+  return undefined;
+}
+
 /** Routes fetch calls by URL; each call consumes the next queued response. */
 function stubApi(queues: Partial<Record<string, Handler[]>>) {
   let currentIdentity: IdentityContext | null = null;
@@ -105,7 +115,7 @@ function stubApi(queues: Partial<Record<string, Handler[]>>) {
       return Promise.resolve(new Response(JSON.stringify({ ...currentIdentity, companyTimeZone: 'Europe/Berlin', currentCompanyMonth: '2026-12-01' }), { status: 200 }));
     }
     if (String(input).startsWith('/api/v1/me/monthly-plans?')) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
-    const next = queues[String(input)]?.shift();
+    const next = queues[String(input)]?.shift() ?? companyDefault(String(input));
     if (!next) return Promise.reject(new Error(`Unexpected request ${String(input)}`));
     return Promise.resolve(next()).then(async (response) => {
       if (response.ok && ['/api/v1/me','/api/v1/auth/login'].includes(String(input))) currentIdentity = await response.clone().json() as IdentityContext;
@@ -561,7 +571,8 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
 
     expect(setItemSpy).not.toHaveBeenCalled();
     for (const [url, init] of fetchMock.mock.calls) {
-      const read = planningReads.includes(String(url));
+      // The administrative landing reads its work queue (SP-19), a documented GET like the planning reads.
+      const read = planningReads.includes(String(url)) || String(url).startsWith('/api/v1/admin/work-queue?');
       expect(ALLOWED_REQUESTS.has(String(url)) || read, String(url)).toBe(true);
       if (read) {
         // Reads are GET without body; the CSRF token is reserved for unsafe methods.
@@ -578,6 +589,9 @@ describe('F1 — authenticated shell through <App/> (fetch mocked)', () => {
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
       '/api/v1/me',
       '/api/v1/auth/login',
+      // The administrative landing (SP-19) reads its queue and the project filter before the planning visit.
+      '/api/v1/admin/work-queue?page=1&pageSize=25&sortBy=createdAt&sortOrder=asc',
+      '/api/v1/projects?pageSize=100',
       ...planningReads,
       '/api/v1/auth/logout',
     ]);

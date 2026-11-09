@@ -33,14 +33,16 @@ describe('F1 — route table', () => {
     ]);
   });
 
-  it('marks employee monthly planning and the implemented admin areas as live', () => {
+  it('marks both landing pages and the implemented admin areas as live', () => {
     for (const role of ['COMPANY_ADMIN', 'EMPLOYEE'] as const) {
       const landing = APP_ROUTES.find((route) => route.path === landingPathFor(role));
       expect(landing?.role).toBe(role);
-      expect(landing?.availability).toBe(role === 'EMPLOYEE' ? 'available' : 'preview');
+      expect(landing?.availability).toBe('available');
     }
     const available = APP_ROUTES.filter((route) => route.availability === 'available');
     expect(available.map((route) => [route.id, route.role, route.nested])).toEqual([
+      // SP-19: read-only administrative work queue with a nested case view.
+      ['work-queue', 'COMPANY_ADMIN', true],
       ['employees', 'COMPANY_ADMIN', true],
       ['projects', 'COMPANY_ADMIN', true],
       // SP-11 PR-2: create/read slice of the monthly plan (admin only).

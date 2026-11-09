@@ -1,6 +1,6 @@
 import { OpenDutiesPage } from '../features/cancellation-replacement/open-duties/OpenDutiesPage';
 import { Navigate, Route, Routes } from 'react-router';
-import { WorkQueuePage } from '../features/cancellation-replacement/work-queue/WorkQueuePage';
+import { WorkQueueSection } from '../features/cancellation-replacement/work-queue/WorkQueueSection';
 import type { AuthenticatedSession } from '../features/auth/LoginScreen';
 import type { SessionApi } from '../features/auth/session-api';
 import { EmployeesSection } from '../features/employees/EmployeesSection';
@@ -54,9 +54,12 @@ function RouteView({ route, role, api, identity, requestSessionRevalidation }: {
       return <MonthlyPlanningSection route={route} api={api} />;
     case 'work-queue':
       return (
-        <PageFrame title={route.title} lead={route.lead}>
-          <WorkQueuePage />
-        </PageFrame>
+        <WorkQueueSection
+          route={route}
+          api={api}
+          identity={identity}
+          requestSessionRevalidation={requestSessionRevalidation}
+        />
       );
     case 'my-statistics':
       return (
