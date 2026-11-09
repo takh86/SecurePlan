@@ -328,8 +328,8 @@ export class ReplacementOffersService {
         const created = (
           await c.query<{ id: string }>(
             `WITH moment AS MATERIALIZED (SELECT clock_timestamp() AS at)
-     INSERT INTO public.replacement_offers(company_id,need_id,employee_id,created_at,updated_at) SELECT $1,$2,$3,at,at FROM moment RETURNING id`,
-            [t.companyId, id, employee.id],
+     INSERT INTO public.replacement_offers(company_id,need_id,duty_id,employee_id,created_at,updated_at) SELECT $1,$2,$4,$3,at,at FROM moment RETURNING id`,
+            [t.companyId, id, employee.id, found.duty_id],
           )
         ).rows[0];
         await assertSessionInTransaction(c, t);

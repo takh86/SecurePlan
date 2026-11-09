@@ -43,6 +43,7 @@ import {
 } from './employee-month.store.js';
 import { EmployeeMonthIdempotencyService } from './employee-month-idempotency.service.js';
 import { assertPlanningSchemaComplete } from './planning-schema.js';
+import { assertNoResolvedReplacementChange } from './resolved-replacement-guard.js';
 
 type Delta = {
   duty: DutyRow;
@@ -496,6 +497,8 @@ export class EmployeeMonthService {
               [t.companyId, old.id],
             )
           ).rows[0];
+      // SP-20 D-8: removal or role change of a selected replacement membership on a RESOLVED duty is refused.
+      if (x.before) await assertNoResolvedReplacementChange(c, t.companyId, d.id, { membershipIds: [x.before.id] });
       let member: MembershipRow | undefined, removedAt: string | undefined;
       if (x.before && x.role === null) {
         const r = await c.query<{ removed_at: string }>(

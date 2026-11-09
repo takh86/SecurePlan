@@ -7,7 +7,14 @@ import type { App } from 'supertest/types.js';
 import { BusinessAuditService, type BusinessAuditAction, type BusinessAuditEntry } from '../src/modules/audit/business-audit.service.js';
 import { ORIGIN, RecordingDelivery, bootEmployeesApp } from './helpers/employees-test-app.js';
 import { openLocalTestPool, removeSyntheticTenants, type TestPool, type SyntheticSession } from './helpers/synthetic-tenants.js';
-import { createStaff, insertDuty, insertMembership, insertPlan, planningState } from './helpers/planning-fixtures.js';
+import {
+  createStaff,
+  insertDuty,
+  insertMembership,
+  insertPlan,
+  planningState,
+  asReplacementMembership,
+} from './helpers/planning-fixtures.js';
 import { dutyMutationFixture, dutyPath, MUTATION_DAY, MUTATION_MONTH, MUTATION_NOW, type DutyMutationFixture } from './helpers/duty-mutation-fixtures.js';
 
 // Fail after a real mandatory audit INSERT, forcing PostgreSQL to abort the transaction.
@@ -137,7 +144,7 @@ describe('SP-12 — effective edits, audit and retained history', () => {
   });
 
   it('role changes retain membership identity/source, additions use NORMAL, and a removed/rejoined member gets a new row', async () => {
-    await pool.query("UPDATE plan_assignments SET source = 'REPLACEMENT' WHERE id = $1", [f.membership]);
+    await asReplacementMembership(pool, f.membership);
     token = await lease();
     const before = (await get().expect(200)).body;
     const changed = await write('patch', dutyPath(f), { assignments: [

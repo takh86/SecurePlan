@@ -49,13 +49,17 @@ export async function reserveCommand<Result>(
   // INITIAL_PUBLISH remains usable with its original 0013 columns and codec.
   const cancellation = operation === 'CREATE_CANCELLATION';
   const offer = operation === 'CREATE_REPLACEMENT_OFFER';
-  const extra = offer
-    ? ',result_replacement_offer_id'
-    : cancellation
-      ? ',result_cancellation_request_id'
-      : context
-        ? ',context_plan_id,context_employee_id,result_json,result_schema_version'
-        : '';
+  // DECIDE_REPLACEMENT_SELECTION stores both typed results (cancellation and selected offer).
+  const decision = operation === 'DECIDE_REPLACEMENT_SELECTION';
+  const extra = decision
+    ? ',result_cancellation_request_id,result_replacement_offer_id'
+    : offer
+      ? ',result_replacement_offer_id'
+      : cancellation
+        ? ',result_cancellation_request_id'
+        : context
+          ? ',context_plan_id,context_employee_id,result_json,result_schema_version'
+          : '';
   const prior = (
     await c.query<CommandReservation>(
       `SELECT id,attempt_id,state,request_hash,result_plan_id${extra},
@@ -75,13 +79,15 @@ export async function reserveCommand<Result>(
   // Operation-specific context parents are acquired before implicit FK checks.
   await input.beforeWrite?.();
   if (prior) {
-    const fields = offer
-      ? ',result_replacement_offer_id=NULL'
-      : cancellation
-        ? ',result_cancellation_request_id=NULL'
-        : context
-          ? ',context_plan_id=$5,context_employee_id=$6,result_json=NULL,result_schema_version=NULL'
-          : '';
+    const fields = decision
+      ? ',result_cancellation_request_id=NULL,result_replacement_offer_id=NULL'
+      : offer
+        ? ',result_replacement_offer_id=NULL'
+        : cancellation
+          ? ',result_cancellation_request_id=NULL'
+          : context
+            ? ',context_plan_id=$5,context_employee_id=$6,result_json=NULL,result_schema_version=NULL'
+            : '';
     const r = await c.query<CommandClaim>(
       `WITH moment AS (SELECT clock_timestamp() AS at)
       UPDATE public.idempotency_records SET attempt_id=gen_random_uuid(),state='IN_PROGRESS',request_hash=$3,

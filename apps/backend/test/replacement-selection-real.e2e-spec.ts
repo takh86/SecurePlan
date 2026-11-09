@@ -223,6 +223,13 @@ async function snapshot(f: Fixture) {
   };
 }
 
+/** A refused command leaves every business table unchanged; its durable idempotency record may only be FAILED. */
+async function expectNoBusinessWrite(f: Fixture, before: Awaited<ReturnType<typeof snapshot>>) {
+  const after = await snapshot(f);
+  expect({ ...after, idempotency: undefined }).toEqual({ ...before, idempotency: undefined });
+  expect(after.idempotency.every((row) => row.state !== 'COMPLETED')).toBe(true);
+}
+
 async function selectionRows(f: Fixture) {
   const replacement = (
     await pool.query(
@@ -267,7 +274,7 @@ describe('SP-20 fixture (arrange) — must pass before any selection test is mea
     const s = await snapshot(f);
     expect(s.cancellation).toEqual([expect.objectContaining({ id: f.caseId, status: 'OPEN' })]);
     expect(s.need).toEqual([expect.objectContaining({ id: f.needId, status: 'OPEN' })]);
-    expect(s.offers.map((o) => o.status).sort()).toEqual(['OPEN', 'OPEN']);
+    expect(s.offers.map((o) => o.status).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))).toEqual(['OPEN', 'OPEN']);
   });
 });
 
@@ -291,7 +298,9 @@ describe('SP-20 happy path', () => {
     );
     const after = await snapshot(f);
     expect(after.cancellation).toEqual([expect.objectContaining({ id: f.caseId, status: 'APPROVED' })]);
-    expect(after.need).toEqual([expect.objectContaining({ id: f.needId, status: 'RESOLVED', concurrency_version: 2 })]);
+    expect(after.need).toEqual([expect.objectContaining({ id: f.needId, status: 'RESOLVED' })]);
+    const version = (await pool.query('SELECT concurrency_version::int AS v FROM replacement_needs WHERE id = $1', [f.needId])).rows[0].v;
+    expect(version).toBe(2);
     const rows = await selectionRows(f);
     expect(rows.replacement).toEqual([
       expect.objectContaining({ employee_id: f.jonasId, duty_function: 'MITARBEITER', state: 'ACTIVE', replacement_offer_id: f.offerJonasId }),
@@ -311,7 +320,7 @@ describe('SP-20 concurrency (real PostgreSQL row locks)', () => {
       select(f, f.admin, { offerId: f.offerJonasId }),
       select(f, f.admin2, { offerId: f.offerLenaId }),
     ]);
-    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    expect([a.status, b.status].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))).toEqual([200, 409]);
     const loser = a.status === 409 ? a : b;
     expect(loser.body.code).toBe('CANCELLATION_ALREADY_RESOLVED');
     const selected = (await pool.query("SELECT id FROM replacement_offers WHERE company_id = $1 AND status = 'SELECTED'", [f.companyId])).rows;
@@ -325,7 +334,7 @@ describe('SP-20 concurrency (real PostgreSQL row locks)', () => {
       select(f, f.admin, { offerId: f.offerJonasId }),
       select(f, f.admin2, { offerId: f.offerJonasId }),
     ]);
-    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    expect([a.status, b.status].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))).toEqual([200, 409]);
     expect((await selectionRows(f)).replacement).toHaveLength(1);
   });
 
@@ -487,7 +496,7 @@ describe('SP-20 eligibility and authorization', () => {
     const res = await select(f, f.admin, { offerId: f.offerJonasId });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('REPLACEMENT_CANDIDATE_UNAVAILABLE');
-    expect(await snapshot(f)).toEqual(before);
+    await expectNoBusinessWrite(f, before);
   });
 
   it('a SCHICHTLEITER original is refused fail-closed, because no qualification rule exists (A1)', async () => {
@@ -497,7 +506,7 @@ describe('SP-20 eligibility and authorization', () => {
     const res = await select(f, f.admin, { offerId: f.offerJonasId });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('REPLACEMENT_CANDIDATE_INELIGIBLE');
-    expect(await snapshot(f)).toEqual(before);
+    await expectNoBusinessWrite(f, before);
   });
 
   it('an employee cannot select; a missing session is unauthenticated; a missing Origin is refused', async () => {

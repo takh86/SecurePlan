@@ -151,3 +151,48 @@ export async function planningState(pool: TestPool, companyId: string) {
     audit: await query('SELECT id, action FROM audit_event WHERE company_id = $1 ORDER BY id'),
   };
 }
+
+/**
+ * SP-20: turns a synthetic membership into a REPLACEMENT membership through a real offer chain, because the
+ * database requires the origin (ck_plan_assignments__replacement_origin). The membership is also the assignment
+ * of a WITHDRAWN cancellation; its need is CLOSED and its only offer is SELECTED for the same employee and duty.
+ * No other membership or employee is created, so duty rosters are unchanged.
+ */
+export async function asReplacementMembership(pool: TestPool, membershipId: string): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const m = (await client.query<{ company_id: string; duty_id: string; employee_id: string }>(
+      'SELECT company_id, duty_id, employee_id FROM plan_assignments WHERE id = $1',
+      [membershipId],
+    )).rows[0];
+    // Required-need FK is DEFERRABLE INITIALLY DEFERRED: the cancellation and its need commit together.
+    const cancellation = randomUUID();
+    await client.query(
+      `INSERT INTO cancellation_requests (id, company_id, assignment_id, duty_id, employee_id, submission_version, status)
+       VALUES ($1, $2, $3, $4, $5, 1, 'WITHDRAWN')`,
+      [cancellation, m.company_id, membershipId, m.duty_id, m.employee_id],
+    );
+    const need = randomUUID();
+    await client.query(
+      `INSERT INTO replacement_needs (id, company_id, cancellation_request_id, duty_id, status)
+       VALUES ($1, $2, $3, $4, 'CLOSED')`,
+      [need, m.company_id, cancellation, m.duty_id],
+    );
+    const offer = randomUUID();
+    // One instant for created, updated and decided (ck_replacement_offers__time requires decided <= updated).
+    const at = (await client.query<{ at: string }>('SELECT clock_timestamp()::text AS at')).rows[0].at;
+    await client.query(
+      `INSERT INTO replacement_offers (id, company_id, need_id, duty_id, employee_id, status, created_at, updated_at, decided_at)
+       VALUES ($1, $2, $3, $4, $5, 'SELECTED', $6::timestamptz, $6::timestamptz, $6::timestamptz)`,
+      [offer, m.company_id, need, m.duty_id, m.employee_id, at],
+    );
+    await client.query("UPDATE plan_assignments SET source = 'REPLACEMENT', replacement_offer_id = $2 WHERE id = $1", [membershipId, offer]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}

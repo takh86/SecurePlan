@@ -70,6 +70,7 @@ import { assertPlanningSchemaComplete } from './planning-schema.js';
 import { acquireDutyLease, assertDutyLease, editLeaseTtl, releaseDutyLease, renewDutyLease, type EditLeaseResponse } from './duty-edit-leases.js';
 import { PublishIdempotencyService } from './publish-idempotency.service.js';
 import { assertOperatingDay } from './operating-calendar-guard.js';
+import { assertNoResolvedReplacementChange } from './resolved-replacement-guard.js';
 import { assertSessionInTransaction } from '../../auth/session.service.js';
 
 const ADMIN_ONLY = ['COMPANY_ADMIN'] as const;
@@ -704,6 +705,13 @@ export class MonthlyPlansService implements OnModuleInit {
       await this.assertStaffing(client, tenant, employees.filter((employee) => roster.has(employee.id)), links,
         plan.project_id, day, kind, interval, dutyId, new Set(changedEmployees.map((employee) => employee.id)));
 
+      // SP-20 D-8: date/shift changes and removal or role change of a selected replacement are refused for a RESOLVED duty.
+      await assertNoResolvedReplacementChange(client, tenant.companyId, dutyId, {
+        timingChanged: timeChanged,
+        membershipIds: members
+          .filter((member) => !roster.has(member.employee_id) || roster.get(member.employee_id) !== member.duty_function)
+          .map((member) => member.id),
+      });
       let updated: DutyRow;
       try {
         const result = await client.query<DutyRow>(
@@ -778,6 +786,8 @@ export class MonthlyPlansService implements OnModuleInit {
   ): Promise<void> {
     await this.database.withTransaction(async (client) => {
       const { plan, duty } = await this.lockMutation(client, tenant, planId, dutyId, expectedVersion, token);
+      // SP-20 D-8: a duty with a RESOLVED replacement cannot be removed while the selection stands.
+      await assertNoResolvedReplacementChange(client, tenant.companyId, dutyId, { removesDuty: true });
       const removed = await client.query<DutyRow & { removed_at: string }>(
         `UPDATE public.duties AS d SET removed_at = clock_timestamp(), concurrency_version = concurrency_version + 1, updated_at = clock_timestamp()
          WHERE d.company_id = $1 AND d.monthly_plan_id = $2 AND d.id = $3 AND d.concurrency_version = $4 AND d.removed_at IS NULL

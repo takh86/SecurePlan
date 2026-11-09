@@ -122,11 +122,15 @@ it('shows all retained terminal offer states without implying a new-offer decisi
   expect((await createOffer()).status).toBe(201);
   await pool.query("UPDATE plan_assignments SET state='REMOVED',removed_at=clock_timestamp() WHERE id=$1", [f.membership]);
   await pool.query("WITH t AS (SELECT clock_timestamp() AS now) UPDATE cancellation_requests SET status='APPROVED',decided_at=t.now,updated_at=t.now,decided_by_account_id=$2 FROM t WHERE id=$1", [requestId, f.tenant.admin.accountId]);
-  await pool.query("WITH t AS (SELECT clock_timestamp() AS now) UPDATE replacement_needs SET status='RESOLVED',resolved_at=t.now,updated_at=t.now FROM t WHERE id=$1", [needId]);
+  // The selected offer exists before the need points at it (ck_replacement_needs__selection).
   await pool.query("WITH t AS (SELECT clock_timestamp() AS now) UPDATE replacement_offers SET status='SELECTED',decided_at=t.now,updated_at=t.now FROM t WHERE need_id=$1", [needId]);
+  await pool.query("WITH t AS (SELECT clock_timestamp() AS now) UPDATE replacement_needs SET status='RESOLVED',resolved_at=t.now,updated_at=t.now,selected_offer_id=(SELECT id FROM replacement_offers WHERE need_id=$1 AND status='SELECTED') FROM t WHERE id=$1", [needId]);
+  // A RESOLVED case also has its REPLACEMENT membership, derived from the selected offer (R-1 consistency).
+  await pool.query(`INSERT INTO plan_assignments(company_id,duty_id,employee_id,duty_function,source,state,replacement_offer_id)
+    SELECT o.company_id,o.duty_id,o.employee_id,'MITARBEITER','REPLACEMENT','ACTIVE',o.id FROM replacement_offers o WHERE o.need_id=$1 AND o.status='SELECTED'`, [needId]);
   for (const status of ['NOT_SELECTED', 'INVALIDATED', 'WITHDRAWN']) {
-    await pool.query(`WITH t AS (SELECT clock_timestamp() AS now) INSERT INTO replacement_offers(company_id,need_id,employee_id,status,created_at,updated_at,decided_at)
-      SELECT $1,$2,$3,$4,t.now,t.now,t.now FROM t`, [f.tenant.companyId, needId, f.jonas.employeeId, status]);
+    await pool.query(`WITH t AS (SELECT clock_timestamp() AS now) INSERT INTO replacement_offers(company_id,need_id,duty_id,employee_id,status,created_at,updated_at,decided_at)
+      SELECT $1,$2,(SELECT duty_id FROM replacement_needs WHERE company_id=$1 AND id=$2),$3,$4,t.now,t.now,t.now FROM t`, [f.tenant.companyId, needId, f.jonas.employeeId, status]);
   }
   expect((await queue()).body.pagination.totalItems).toBe(0);
   const response = await offers();
@@ -461,7 +465,7 @@ it.runIf(Boolean(process.env.SECUREPLAN_SP19_PLAN_OUTPUT))('records PostgreSQL p
     SELECT i.employee_id,$1,i.account_id,i.employee_id::text,'Synthetic','Candidate','BOTH','2020-01-01' FROM ids i JOIN accounts_added a ON a.id=i.account_id RETURNING id),
   assignments_added AS (INSERT INTO project_assignments(company_id,employee_id,project_id,planning_month)
     SELECT $1,id,$4,'2027-01-01' FROM employees_added RETURNING employee_id)
-  INSERT INTO replacement_offers(company_id,need_id,employee_id) SELECT $1,$2,employee_id FROM assignments_added`, [f.tenant.companyId, needId, count, f.project.projectId]);
+  INSERT INTO replacement_offers(company_id,need_id,duty_id,employee_id) SELECT $1,$2,(SELECT duty_id FROM replacement_needs WHERE company_id=$1 AND id=$2),employee_id FROM assignments_added`, [f.tenant.companyId, needId, count, f.project.projectId]);
   await add(99);
   await explain(100);
   await add(900);

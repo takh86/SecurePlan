@@ -193,6 +193,10 @@ export async function removeSyntheticTenants(pool: TestPool, companyIds: string[
     // Fail visibly (lock_not_available) instead of hanging into a hook timeout
     // if a leaked test transaction still holds a fixture row lock.
     await client.query("SET LOCAL lock_timeout = '5s'");
+    // SP-20: needs, offers and memberships reference each other (selected offer, replacement origin, cancellation),
+    // so no single parent-first order exists. Synthetic cleanup is scoped to the companies below and runs as the
+    // disposable superuser, so referential triggers are disabled for this transaction only.
+    await client.query("SET LOCAL session_replication_role = replica");
     // Children before parents (composite FKs ON DELETE RESTRICT): duty
     // memberships, duties and monthly plans (SP-11) first, then project
     // assignments (SP-09) and shift configurations (SP-08b) before projects
