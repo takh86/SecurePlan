@@ -229,17 +229,27 @@ export class SessionService {
       if (session.revoked_at !== null) unauthorized('SESSION_REVOKED');
       if (session.expired) unauthorized('SESSION_EXPIRED');
 
+      // The touch repeats the NEGATION of the expiry predicate above, so an idle or absolute deadline that passes
+      // between the locked read and this statement is not touched. The row lock is still held, so only the clock can
+      // have moved; a zero-row result is therefore an expiry unless the row shows a revocation.
       const updated = await client.query(
         `UPDATE sessions
          SET last_seen_at = clock_timestamp()
          WHERE id = $1
            AND revoked_at IS NULL
-           AND absolute_expires_at > clock_timestamp()
-           AND last_seen_at <= clock_timestamp()
+           AND clock_timestamp() < least(absolute_expires_at, created_at + $2::double precision * interval '1 millisecond')
+           AND clock_timestamp() < last_seen_at + $3::double precision * interval '1 millisecond'
+           AND clock_timestamp() >= last_seen_at
          RETURNING id`,
-        [session.id],
+        [session.id, SESSION_POLICY[role].absoluteMs, SESSION_POLICY[role].idleMs],
       );
-      if (updated.rowCount !== 1) unauthorized('SESSION_REVOKED');
+      if (updated.rowCount !== 1) {
+        const { rows: [current] } = await client.query<{ revoked_at: Date | null }>(
+          'SELECT revoked_at FROM sessions WHERE id = $1',
+          [session.id],
+        );
+        unauthorized(current?.revoked_at ? 'SESSION_REVOKED' : 'SESSION_EXPIRED');
+      }
 
       return {
         sessionId: session.id,

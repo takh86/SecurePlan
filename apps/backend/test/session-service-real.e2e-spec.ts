@@ -318,4 +318,60 @@ describe('SP-05 — SessionService (real PostgreSQL)', () => {
       ).rejects.toMatchObject({ response: { code: 'SESSION_EXPIRED' } });
     });
   });
+
+  // PR #117 review. validateAndTouch decides expiry on its locked SELECT, then runs a guarded UPDATE. A deadline that
+  // passes between those two statements is an expiry, so it must answer SESSION_EXPIRED (never SESSION_REVOKED) and
+  // must not touch the session. Timing is controlled, not delayed: the hook runs on the same transaction right after
+  // the locked SELECT returns and moves the stored state past its deadline, which is the state the clock would reach.
+  describe('PR #117 review: expiry between the locked read and the touch (real PostgreSQL)', () => {
+    /** A SessionService whose transaction runs `afterLockedRead` once, immediately after validateAndTouch's locked read. */
+    function serviceWithStepAfterLockedRead(afterLockedRead: () => Promise<void>): SessionService {
+      const tx = db();
+      let fired = false;
+      const hooked = {
+        query: async (text: string, params: unknown[] = []) => {
+          const result = await tx.query(text, params);
+          if (!fired && text.includes('AS expired') && text.includes('FOR UPDATE')) {
+            fired = true;
+            await afterLockedRead();
+          }
+          return result;
+        },
+      } as unknown as PoolClient;
+      return new SessionService({
+        withTransaction: async <T>(work: (c: PoolClient) => Promise<T>): Promise<T> => work(hooked),
+      } as unknown as DatabaseService);
+    }
+
+    it('the absolute deadline passing after the locked read answers SESSION_EXPIRED, not SESSION_REVOKED', async () => {
+      const created = await service.createForAccount(credentials());
+      const digest = digestOf(created.rawToken);
+      const racing = serviceWithStepAfterLockedRead(async () => {
+        await db().query(
+          "UPDATE sessions SET absolute_expires_at = clock_timestamp() - interval '1 millisecond' WHERE token_hash = $1",
+          [digest],
+        );
+      });
+      await expectSessionError(racing.validateAndTouch(created.rawToken), 'SESSION_EXPIRED');
+    });
+
+    it('the idle deadline passing after the locked read answers SESSION_EXPIRED and does not touch the session', async () => {
+      const created = await service.createForAccount(credentials());
+      const digest = digestOf(created.rawToken);
+      const racing = serviceWithStepAfterLockedRead(async () => {
+        await db().query(
+          "UPDATE sessions SET created_at = clock_timestamp() - interval '9 hours', last_seen_at = clock_timestamp() - interval '8 hours 1 minute' WHERE token_hash = $1",
+          [digest],
+        );
+      });
+      await expectSessionError(racing.validateAndTouch(created.rawToken), 'SESSION_EXPIRED');
+      const row = (
+        await db().query<{ still_idle: boolean }>(
+          "SELECT (clock_timestamp() - last_seen_at) > interval '8 hours' AS still_idle FROM sessions WHERE token_hash = $1",
+          [digest],
+        )
+      ).rows[0];
+      expect(row.still_idle).toBe(true);
+    });
+  });
 });
