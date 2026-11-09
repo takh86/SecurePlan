@@ -149,16 +149,17 @@ Page errors 0. Secret scan of the exported JSON and screenshots: no CSRF value, 
 
 ## Blockers and open items
 
-- **Product Owner sign-off of the administrative read API contract is pending.** The
-  implementation (PR #112) and this acceptance evidence do not record formal Product Owner
-  approval (see `docs/api/README.md`). Required before SP-19 closeout. Not verified here.
+- **Product Owner approval recorded on 2026-11-09**, after run 5, in the
+  [PR #113 conversation](https://github.com/takh86/SecurePlan/pull/113#issuecomment-6735765615)
+  and `docs/api/README.md`. This approval covers the SP19-P1 administrative read contract;
+  it is a separate governance decision, not a browser-test result.
 - Mid-page revocation in the UI against the real backend (not run; covered by the stub run).
 - Desktop Chrome only; mobile is emulation.
 
 ## Merge recommendation
 
 **READY FOR HUMAN REVIEW / MERGE CANDIDATE**, conditional on the GitHub CI run for the final
-PR head being green (recorded in the PR description after the push). The pending Product Owner
-sign-off of the API contract is a closeout item for SP-19, not a code blocker for this PR, but
-it must be resolved before the SP-19 closeout. The remaining risks above must be accepted by the
-reviewer. Merging is a human decision; nothing has been merged.
+PR head being green (recorded in the PR description after the push). Product Owner
+approval of the administrative read contract was recorded on 2026-11-09 after this run.
+The remaining risks above must be accepted by the reviewer. Merging remains a
+separate repository action; this acceptance report itself does not establish a merge.
