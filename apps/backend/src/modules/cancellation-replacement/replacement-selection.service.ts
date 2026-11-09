@@ -301,7 +301,7 @@ export class ReplacementSelectionService {
         );
         if (need.rowCount !== 1) throw new Error('Need changed under selection locks');
 
-        // Z: mandatory audit rows in the same transaction. Action names: NEEDS-PO (amendment A8) except the approved membership and duty names.
+        // Z: mandatory audit rows in the same transaction. Action names: the four SP-20 actions approved in ADR-0004 (SP-20 supplement) and the approved SP-12 duty names.
         const base = { companyId: t.companyId, actorAccountId: t.accountId, correlationId };
         await this.audit.recordBusinessAction(c, { ...base, action: 'CANCELLATION_APPROVED', resourceType: 'CANCELLATION_REQUEST', resourceId: after.cancellation_id, oldValues: { status: 'OPEN' }, newValues: { status: 'APPROVED' } });
         await this.audit.recordBusinessAction(c, { ...base, action: 'REPLACEMENT_NEED_RESOLVED', resourceType: 'REPLACEMENT_NEED', resourceId: needId, oldValues: { status: 'OPEN' }, newValues: { status: 'RESOLVED', selectedOfferId: offerId } });

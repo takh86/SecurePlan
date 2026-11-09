@@ -69,8 +69,8 @@ export type BusinessAuditAction =
   | 'REPLACEMENT_OFFER_CREATED'
   | 'REPLACEMENT_OFFER_INVALIDATED'
   /**
-   * SP-20 atomic replacement selection. NEEDS-PO (amendment A8, docs/private/sp20-design-amendments-r3.md):
-   * not yet in ADR-0004. Draft PR only; these names must be approved before merge.
+   * SP-20 atomic replacement selection. Approved by the Product Owner on 2026-11-09 (ADR-0004, SP-20 supplement):
+   * the exact payloads are enforced by selectionAudit below.
    */
   | 'CANCELLATION_APPROVED'
   | 'REPLACEMENT_NEED_RESOLVED'
