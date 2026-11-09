@@ -157,6 +157,7 @@ async function buildFixture() {
     foreignCompanyId: foreign.companyId,
     admin,
     admin2,
+    adminAccountId: tenant.admin.accountId,
     foreignAdmin,
     miraS,
     jonasS,
@@ -646,5 +647,283 @@ describe('SP-20 administrative read contract', () => {
     expect((await select(f, f.admin, { offerId: f.offerJonasId })).status).toBe(200);
     const after = await request(app.getHttpServer()).get(`/api/v1/replacement-needs/${f.needId}`).set('Cookie', f.admin.cookie);
     expect(after.body).toEqual(expect.objectContaining({ concurrencyVersion: 2, selectedOfferId: f.offerJonasId }));
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// PR #116 review remediation: exact audit contract, employee-facing /me integration, deterministic lock barriers.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const REMOVED_AT_SQL = `to_char(removed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+
+/** audit_event.id is a random UUID and occurred_at is the transaction start, so rows are identified by a baseline set. */
+async function auditBaseline(companyId: string): Promise<string[]> {
+  return (await pool.query<{ id: string }>('SELECT id FROM audit_event WHERE company_id = $1', [companyId])).rows.map((r) => r.id);
+}
+
+/** Rows written after the baseline, ordered by action (every action of one selection is distinct). */
+async function auditSince(companyId: string, baseline: string[]) {
+  const rows = (
+    await pool.query<{
+      action: string;
+      resource_type: string;
+      resource_id: string;
+      actor_account_id: string;
+      old_values: unknown;
+      new_values: unknown;
+      correlation_id: string;
+    }>(
+      'SELECT action, resource_type, resource_id, actor_account_id, old_values, new_values, correlation_id FROM audit_event WHERE company_id = $1 AND NOT (id = ANY($2::uuid[]))',
+      [companyId, baseline],
+    )
+  ).rows;
+  return rows.sort((a, b) => (a.action < b.action ? -1 : a.action > b.action ? 1 : 0));
+}
+
+async function replacementMembershipId(f: Fixture, offerId: string): Promise<string> {
+  return (
+    await pool.query<{ id: string }>(
+      "SELECT id FROM plan_assignments WHERE company_id = $1 AND source = 'REPLACEMENT' AND replacement_offer_id = $2",
+      [f.companyId, offerId],
+    )
+  ).rows[0].id;
+}
+
+async function removedAtOf(membershipId: string): Promise<string> {
+  return (await pool.query<{ v: string }>(`SELECT ${REMOVED_AT_SQL} AS v FROM plan_assignments WHERE id = $1`, [membershipId])).rows[0].v;
+}
+
+/** Waits (polls pg_blocking_pids live) until some backend is blocked by the given blocker and returns that waiter. */
+async function waitForLockWaiter(blockerPid: number, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const waiters = (
+      await pool.query<{ pid: number; blockers: number[]; wait_event_type: string; wait_event: string; query: string }>(
+        `SELECT pid, pg_blocking_pids(pid) AS blockers, wait_event_type, wait_event, left(query, 90) AS query
+         FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+      )
+    ).rows;
+    const hit = waiters.find((w) => w.blockers.includes(blockerPid));
+    if (hit) return hit;
+    if (Date.now() > deadline) {
+      const observed = waiters.map((w) => `pid ${w.pid} waits(${w.wait_event}) on [${w.blockers.join(',')}]: ${w.query}`);
+      throw new Error(`no lock waiter observed behind pid ${blockerPid}; lock waiters: ${JSON.stringify(observed)}`);
+    }
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
+
+async function backendPid(client: PoolClient): Promise<number> {
+  return Number((await client.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0].pid);
+}
+
+/** The seven rows of one selection with one losing offer, in the action order that auditSince returns. */
+const SELECTED_ACTIONS = [
+  'CANCELLATION_APPROVED',
+  'DUTY_MEMBERSHIP_ADDED',
+  'DUTY_MEMBERSHIP_REMOVED',
+  'DUTY_UPDATED',
+  'REPLACEMENT_NEED_RESOLVED',
+  'REPLACEMENT_OFFER_NOT_SELECTED',
+  'REPLACEMENT_OFFER_SELECTED',
+];
+
+describe('SP-20 audit contract (exact, real PostgreSQL)', () => {
+  it('a successful selection writes exactly the seven approved rows, with exact action, resource IDs, old and new values and one correlation ID', async () => {
+    const f = await buildFixture();
+    const mark = await auditBaseline(f.companyId);
+    const res = await select(f, f.admin, { offerId: f.offerJonasId });
+    expect(res.status).toBe(200);
+    const replacementId = await replacementMembershipId(f, f.offerJonasId);
+    const rows = await auditSince(f.companyId, mark);
+    expect(rows.map((r) => r.action)).toEqual(SELECTED_ACTIONS);
+    const correlation = rows[0].correlation_id;
+    expect(rows).toHaveLength(7);
+    expect(correlation).toMatch(UUID_RE);
+    expect(new Set(rows.map((r) => r.correlation_id))).toEqual(new Set([correlation]));
+    expect(new Set(rows.map((r) => r.actor_account_id))).toEqual(new Set([f.adminAccountId]));
+    const dutyOld = { planId: f.planId, dutyDate: DAY, shiftKind: 'DAY', startsAt: `${DAY}T05:00:00Z`, endsAt: `${DAY}T17:00:00Z`, version: 1 };
+    const removedAt = await removedAtOf(f.membershipId);
+    expect(removedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/);
+    const actual = rows.map((r) => ({
+      action: r.action,
+      resourceType: r.resource_type,
+      resourceId: r.resource_id,
+      oldValues: r.old_values,
+      newValues: r.new_values,
+    }));
+    // Exact per-row equality; the rows are unordered in the table (see auditSince), so match them by action.
+    expect(actual).toEqual(expect.arrayContaining([
+      { action: 'CANCELLATION_APPROVED', resourceType: 'CANCELLATION_REQUEST', resourceId: f.caseId, oldValues: { status: 'OPEN' }, newValues: { status: 'APPROVED' } },
+      { action: 'REPLACEMENT_NEED_RESOLVED', resourceType: 'REPLACEMENT_NEED', resourceId: f.needId, oldValues: { status: 'OPEN' }, newValues: { status: 'RESOLVED', selectedOfferId: f.offerJonasId } },
+      { action: 'REPLACEMENT_OFFER_SELECTED', resourceType: 'REPLACEMENT_OFFER', resourceId: f.offerJonasId, oldValues: { status: 'OPEN' }, newValues: { status: 'SELECTED' } },
+      { action: 'REPLACEMENT_OFFER_NOT_SELECTED', resourceType: 'REPLACEMENT_OFFER', resourceId: f.offerLenaId, oldValues: { status: 'OPEN' }, newValues: { status: 'NOT_SELECTED' } },
+      { action: 'DUTY_UPDATED', resourceType: 'DUTY', resourceId: f.dutyId, oldValues: dutyOld, newValues: { ...dutyOld, version: 2 } },
+      {
+        action: 'DUTY_MEMBERSHIP_REMOVED',
+        resourceType: 'DUTY_ASSIGNMENT',
+        resourceId: f.membershipId,
+        oldValues: { dutyId: f.dutyId, employeeId: f.miraId, dutyRole: 'EMPLOYEE', source: 'NORMAL' },
+        newValues: { dutyId: f.dutyId, state: 'REMOVED', removedAt },
+      },
+      {
+        action: 'DUTY_MEMBERSHIP_ADDED',
+        resourceType: 'DUTY_ASSIGNMENT',
+        resourceId: replacementId,
+        oldValues: null,
+        newValues: { dutyId: f.dutyId, employeeId: f.jonasId, dutyRole: 'EMPLOYEE', source: 'REPLACEMENT' },
+      },
+    ]));
+  });
+});
+
+describe('SP-20 employee-facing plan changes (committed /me integration)', () => {
+  const planPath = `/api/v1/me/monthly-plans?monthStart=${MONTH}`;
+  const dutiesOf = async (s: SyntheticSession) => {
+    const res = await request(app.getHttpServer()).get(planPath).set('Cookie', s.cookie);
+    expect(res.status).toBe(200);
+    return res.body.items[0].duties as Array<Record<string, unknown>>;
+  };
+
+  it('the original employee loses the duty, the replacement gains it, the rejected candidate gains nothing, and the published plan stays consistent', async () => {
+    const f = await buildFixture();
+    expect(await dutiesOf(f.miraS)).toEqual([expect.objectContaining({ dutyId: f.dutyId, assignmentId: f.membershipId, version: 1 })]);
+    expect(await dutiesOf(f.jonasS)).toEqual([]);
+    expect(await dutiesOf(f.lenaS)).toEqual([]);
+
+    expect((await select(f, f.admin, { offerId: f.offerJonasId })).status).toBe(200);
+    const replacementId = await replacementMembershipId(f, f.offerJonasId);
+
+    expect(await dutiesOf(f.miraS)).toEqual([]);
+    expect(await dutiesOf(f.jonasS)).toEqual([
+      expect.objectContaining({ dutyId: f.dutyId, assignmentId: replacementId, version: 2, dutyRole: 'EMPLOYEE', dutyDate: DAY, shiftKind: 'DAY' }),
+    ]);
+    expect(await dutiesOf(f.lenaS)).toEqual([]);
+
+    const plan = await request(app.getHttpServer()).get(`/api/v1/monthly-plans/${f.planId}`).set('Cookie', f.admin.cookie);
+    expect(plan.status).toBe(200);
+    expect(plan.body).toEqual(expect.objectContaining({ id: f.planId, status: 'PUBLISHED' }));
+    const members = (
+      await pool.query<{ id: string; employee_id: string; state: string; source: string }>(
+        'SELECT id, employee_id, state, source FROM plan_assignments WHERE company_id = $1 AND duty_id = $2 ORDER BY id',
+        [f.companyId, f.dutyId],
+      )
+    ).rows;
+    expect(members.filter((m) => m.state === 'ACTIVE')).toEqual([
+      expect.objectContaining({ id: replacementId, employee_id: f.jonasId, source: 'REPLACEMENT' }),
+    ]);
+    expect(members.filter((m) => m.state === 'REMOVED')).toEqual([
+      expect.objectContaining({ id: f.membershipId, employee_id: f.miraId, source: 'NORMAL' }),
+    ]);
+    expect((await pool.query('SELECT concurrency_version::int AS v FROM duties WHERE id = $1', [f.dutyId])).rows[0].v).toBe(2);
+  });
+});
+
+describe('SP-20 deterministic lock barrier (real PostgreSQL, two administrators)', () => {
+  /**
+   * The test holds the duty row lock on its own connection, so the first selection is parked at a known lock.
+   * The second selection then queues behind the first one (pg_blocking_pids), and the first is released.
+   */
+  async function parkFirstSelection(f: Fixture) {
+    const holder = await pool.connect();
+    let held = true;
+    const release = async () => {
+      if (held) {
+        held = false;
+        await holder.query('COMMIT');
+      }
+    };
+    await holder.query('BEGIN');
+    await holder.query('SELECT id FROM public.duties WHERE company_id = $1 AND id = $2 FOR UPDATE', [f.companyId, f.dutyId]);
+    const holderPid = await backendPid(holder);
+    // supertest requests are lazy thenables; Promise.resolve starts each HTTP request now, not when it is awaited.
+    const first = Promise.resolve(select(f, f.admin, { offerId: f.offerJonasId }));
+    const firstWaiter = await waitForLockWaiter(holderPid);
+    const second = Promise.resolve(select(f, f.admin2, { offerId: f.offerLenaId }));
+    const secondWaiter = await waitForLockWaiter(firstWaiter.pid);
+    return { holder, holderPid, release, first, second, firstWaiter, secondWaiter };
+  }
+
+  it('the second administrator waits on the first transaction, the first commits, and the second receives 409 with no further change', async () => {
+    const f = await buildFixture();
+    const mark = await auditBaseline(f.companyId);
+    const parked = await parkFirstSelection(f);
+    try {
+      // Which transaction waits on which: the first selection is parked only behind the test's duty lock,
+      // the second only behind the first selection's transaction.
+      expect(parked.firstWaiter.wait_event_type).toBe('Lock');
+      expect(parked.firstWaiter.blockers).toEqual([parked.holderPid]);
+      expect(parked.secondWaiter.wait_event_type).toBe('Lock');
+      expect(parked.secondWaiter.blockers).toEqual([parked.firstWaiter.pid]);
+      expect(parked.secondWaiter.pid).not.toBe(parked.firstWaiter.pid);
+      await parked.release();
+    } finally {
+      await parked.release().catch(() => undefined);
+      parked.holder.release();
+    }
+    const [a, b] = await Promise.all([parked.first, parked.second]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(409);
+    expect(b.body.code).toBe('CANCELLATION_ALREADY_RESOLVED');
+
+    expect((await pool.query("SELECT id FROM replacement_offers WHERE company_id = $1 AND status = 'SELECTED'", [f.companyId])).rows).toEqual([
+      { id: f.offerJonasId },
+    ]);
+    expect(await replacementMembershipId(f, f.offerJonasId)).toEqual(expect.any(String));
+    expect((await selectionRows(f)).replacement).toHaveLength(1);
+    expect((await pool.query('SELECT concurrency_version::int AS v FROM duties WHERE id = $1', [f.dutyId])).rows[0].v).toBe(2);
+    expect((await auditSince(f.companyId, mark)).map((r) => r.action)).toEqual(SELECTED_ACTIONS);
+    const keys = (
+      await pool.query<{ state: string }>(
+        "SELECT state FROM idempotency_records WHERE company_id = $1 AND operation = 'DECIDE_REPLACEMENT_SELECTION' ORDER BY state",
+        [f.companyId],
+      )
+    ).rows.map((r) => r.state);
+    expect(keys).toEqual(['COMPLETED', 'FAILED']);
+  });
+
+  it('the first writer fails at its first audit row after waiting, rolls back completely, and the second writer then commits exactly one selection', async () => {
+    const f = await buildFixture();
+    const mark = await auditBaseline(f.companyId);
+    const parked = await parkFirstSelection(f);
+    db.failOnce = 'INSERT INTO audit_event';
+    try {
+      await parked.release();
+    } finally {
+      await parked.release().catch(() => undefined);
+      parked.holder.release();
+    }
+    const [a, b] = await Promise.all([parked.first, parked.second]);
+    expect(a.status).toBeGreaterThanOrEqual(500);
+    expect(b.status).toBe(200);
+    expect(b.body.selectedOffer.id).toBe(f.offerLenaId);
+
+    // Exact invariants: only the second writer's decision survives the rollback of the first.
+    expect((await pool.query("SELECT id FROM replacement_offers WHERE company_id = $1 AND status = 'SELECTED'", [f.companyId])).rows).toEqual([
+      { id: f.offerLenaId },
+    ]);
+    const offerStatuses = Object.fromEntries(
+      (await pool.query<{ id: string; status: string }>('SELECT id, status FROM replacement_offers WHERE company_id = $1', [f.companyId])).rows
+        .map((r) => [r.id, r.status]),
+    );
+    expect(offerStatuses).toEqual({ [f.offerJonasId]: 'NOT_SELECTED', [f.offerLenaId]: 'SELECTED' });
+    const replacement = (await selectionRows(f)).replacement;
+    expect(replacement).toEqual([expect.objectContaining({ employee_id: f.lenaId, state: 'ACTIVE', replacement_offer_id: f.offerLenaId })]);
+    expect((await pool.query('SELECT concurrency_version::int AS v FROM duties WHERE id = $1', [f.dutyId])).rows[0].v).toBe(2);
+    expect((await pool.query("SELECT status FROM cancellation_requests WHERE id = $1", [f.caseId])).rows[0].status).toBe('APPROVED');
+    const rows = await auditSince(f.companyId, mark);
+    expect(rows.map((r) => r.action)).toEqual(SELECTED_ACTIONS);
+    expect(rows.find((r) => r.action === 'REPLACEMENT_OFFER_SELECTED')?.resource_id).toBe(f.offerLenaId);
+    expect(rows.find((r) => r.action === 'DUTY_MEMBERSHIP_ADDED')?.new_values).toEqual(
+      { dutyId: f.dutyId, employeeId: f.lenaId, dutyRole: 'EMPLOYEE', source: 'REPLACEMENT' },
+    );
+    const states = (
+      await pool.query<{ state: string }>(
+        "SELECT state FROM idempotency_records WHERE company_id = $1 AND operation = 'DECIDE_REPLACEMENT_SELECTION' ORDER BY state",
+        [f.companyId],
+      )
+    ).rows.map((r) => r.state);
+    expect(states).toEqual(['COMPLETED', 'FAILED']);
   });
 });

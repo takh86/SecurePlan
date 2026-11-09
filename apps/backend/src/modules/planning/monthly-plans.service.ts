@@ -53,7 +53,6 @@ import {
   monthlyPlanColumns,
   toMonthlyPlanEntryResponse,
   toMonthlyPlanResponse,
-  toDutyAssignmentResponse,
   toDutyVersion,
   type DutyRow,
   type MembershipRow,
@@ -72,6 +71,7 @@ import { PublishIdempotencyService } from './publish-idempotency.service.js';
 import { assertOperatingDay } from './operating-calendar-guard.js';
 import { assertNoResolvedReplacementChange } from './resolved-replacement-guard.js';
 import { assertSessionInTransaction } from '../../auth/session.service.js';
+import { dutyValues, memberValues, removalColumn } from './duty-audit-values.js';
 
 const ADMIN_ONLY = ['COMPANY_ADMIN'] as const;
 const DEFAULT_PAGE_SIZE = 25;
@@ -116,15 +116,6 @@ type DutySnapshot = DutyRow & {
 const snapshotColumns = (alias: string) => `${dutyColumns(alias)}, ${alias}.time_zone,
   to_char(${alias}.config_effective_from_month, 'YYYY-MM-DD') AS config_month,
   left(${alias}.start_local::text, 5) AS start_local, left(${alias}.end_local::text, 5) AS end_local`;
-const removalColumn = `to_char(removed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS removed_at`;
-const memberValues = (row: MembershipRow) => {
-  const member = toDutyAssignmentResponse(row);
-  return { dutyId: row.duty_id, employeeId: member.employeeId, dutyRole: member.dutyRole, source: member.source };
-};
-const dutyValues = (planId: string, row: DutyRow) => {
-  const entry = toMonthlyPlanEntryResponse(row, [], new Set());
-  return { planId, dutyDate: entry.dutyDate, shiftKind: entry.shiftKind, startsAt: entry.startsAt, endsAt: entry.endsAt, version: entry.version };
-};
 const memberSignature = (members: MembershipRow[]) => JSON.stringify([...members].sort((a, b) => a.id.localeCompare(b.id)));
 
 @Injectable()

@@ -15,6 +15,8 @@ import { lockAccountsPrefix } from '../identity/account-prefix-lock.js';
 import { lockReplacementProject, replacementCandidateFacts, replacementCandidateJoin } from '../workforce/employees/replacement-candidate.js';
 import { lockReplacementDuty, replacementPlanningFacts, replacementPlanningJoin } from '../planning/replacement-planning.js';
 import { assertPlanningSchemaComplete } from '../planning/planning-schema.js';
+import { dutyColumns, type DutyRow, type MembershipRow } from '../planning/monthly-plan.mapper.js';
+import { dutyValues, memberValues, removalColumn } from '../planning/duty-audit-values.js';
 import { assertEmployeeMonthReceiptSchema } from '../planning/employee-month-receipt-schema.js';
 import { PLANNING_WRITER_TIMEOUTS } from '../planning/planning-locks.js';
 import { BusinessAuditService } from '../audit/business-audit.service.js';
@@ -248,19 +250,34 @@ export class ReplacementSelectionService {
 
         // Writes. One database timestamp for every change in this command.
         const at = (await c.query<{ at: string }>('SELECT clock_timestamp()::text AS at')).rows[0].at;
-        const duty = await c.query<{ v: string }>(
-          'UPDATE public.duties SET concurrency_version=concurrency_version+1,updated_at=$3::timestamptz WHERE company_id=$1 AND id=$2 AND removed_at IS NULL RETURNING concurrency_version::text AS v',
+        // Previous D and M are read under the duty and membership locks, before the first write (ADR-0004 SP-12 supplement).
+        const dutyBefore = (await c.query<DutyRow>(
+          `SELECT ${dutyColumns('d')} FROM public.duties AS d WHERE d.company_id=$1 AND d.id=$2 AND d.removed_at IS NULL`,
+          [t.companyId, after.duty_id],
+        )).rows[0];
+        if (!dutyBefore) throw new Error('Duty changed under selection locks');
+        const originalBefore = (await c.query<MembershipRow>(
+          "SELECT pa.id,pa.duty_id,pa.employee_id,pa.duty_function,pa.source FROM public.plan_assignments AS pa WHERE pa.company_id=$1 AND pa.id=$2 AND pa.state='ACTIVE' AND pa.removed_at IS NULL",
+          [t.companyId, after.assignment_id],
+        )).rows[0];
+        if (!originalBefore) throw new Error('Original membership changed under selection locks');
+        const duty = await c.query<DutyRow>(
+          `UPDATE public.duties AS d SET concurrency_version=d.concurrency_version+1,updated_at=$3::timestamptz
+           WHERE d.company_id=$1 AND d.id=$2 AND d.removed_at IS NULL RETURNING ${dutyColumns('d')}`,
           [t.companyId, after.duty_id, at],
         );
         if (duty.rowCount !== 1) throw new Error('Duty changed under selection locks');
-        const closed = await c.query(
-          "UPDATE public.plan_assignments SET state='REMOVED',removed_at=$3::timestamptz,updated_at=$3::timestamptz WHERE company_id=$1 AND id=$2 AND state='ACTIVE' AND removed_at IS NULL RETURNING id",
+        const closed = await c.query<MembershipRow & { removed_at: string }>(
+          `UPDATE public.plan_assignments AS pa SET state='REMOVED',removed_at=$3::timestamptz,updated_at=$3::timestamptz
+           WHERE pa.company_id=$1 AND pa.id=$2 AND pa.state='ACTIVE' AND pa.removed_at IS NULL
+           RETURNING pa.id,pa.duty_id,pa.employee_id,pa.duty_function,pa.source,${removalColumn}`,
           [t.companyId, after.assignment_id, at],
         );
         if (closed.rowCount !== 1) throw new Error('Original membership changed under selection locks');
-        const added = (await c.query<{ id: string }>(
+        const added = (await c.query<MembershipRow>(
           `INSERT INTO public.plan_assignments(company_id,duty_id,employee_id,duty_function,source,state,replacement_offer_id,created_at,updated_at)
-           VALUES($1,$2,$3,$4,'REPLACEMENT','ACTIVE',$5,$6::timestamptz,$6::timestamptz) RETURNING id`,
+           VALUES($1,$2,$3,$4,'REPLACEMENT','ACTIVE',$5,$6::timestamptz,$6::timestamptz)
+           RETURNING id,duty_id,employee_id,duty_function,source`,
           [t.companyId, after.duty_id, after.candidate_id, after.duty_function, offerId, at],
         )).rows[0];
         const selectedRow = await c.query(
@@ -290,9 +307,18 @@ export class ReplacementSelectionService {
         await this.audit.recordBusinessAction(c, { ...base, action: 'REPLACEMENT_NEED_RESOLVED', resourceType: 'REPLACEMENT_NEED', resourceId: needId, oldValues: { status: 'OPEN' }, newValues: { status: 'RESOLVED', selectedOfferId: offerId } });
         await this.audit.recordBusinessAction(c, { ...base, action: 'REPLACEMENT_OFFER_SELECTED', resourceType: 'REPLACEMENT_OFFER', resourceId: offerId, oldValues: { status: 'OPEN' }, newValues: { status: 'SELECTED' } });
         for (const o of rejected.rows) await this.audit.recordBusinessAction(c, { ...base, action: 'REPLACEMENT_OFFER_NOT_SELECTED', resourceType: 'REPLACEMENT_OFFER', resourceId: o.id, oldValues: { status: 'OPEN' }, newValues: { status: 'NOT_SELECTED' } });
-        await this.audit.recordBusinessAction(c, { ...base, action: 'DUTY_UPDATED', resourceType: 'DUTY', resourceId: after.duty_id, oldValues: { concurrencyVersion: Number(duty.rows[0].v) - 1 }, newValues: { concurrencyVersion: Number(duty.rows[0].v) } });
-        await this.audit.recordBusinessAction(c, { ...base, action: 'DUTY_MEMBERSHIP_REMOVED', resourceType: 'DUTY_ASSIGNMENT', resourceId: after.assignment_id, oldValues: { dutyId: after.duty_id, employeeId: after.original_id, state: 'ACTIVE' }, newValues: { dutyId: after.duty_id, state: 'REMOVED' } });
-        await this.audit.recordBusinessAction(c, { ...base, action: 'DUTY_MEMBERSHIP_ADDED', resourceType: 'DUTY_ASSIGNMENT', resourceId: added.id, newValues: { dutyId: after.duty_id, employeeId: after.candidate_id, dutyRole: after.duty_function, source: 'REPLACEMENT' } });
+        // SP-12 duty audit contract (ADR-0004): one DUTY_UPDATED with previous and resulting D, one removal and one addition with M.
+        await this.audit.recordBusinessAction(c, {
+          ...base, action: 'DUTY_UPDATED', resourceType: 'DUTY', resourceId: after.duty_id,
+          oldValues: dutyValues(after.plan_id, dutyBefore), newValues: dutyValues(after.plan_id, duty.rows[0]),
+        });
+        await this.audit.recordBusinessAction(c, {
+          ...base, action: 'DUTY_MEMBERSHIP_REMOVED', resourceType: 'DUTY_ASSIGNMENT', resourceId: originalBefore.id,
+          oldValues: memberValues(originalBefore), newValues: { dutyId: after.duty_id, state: 'REMOVED', removedAt: closed.rows[0].removed_at },
+        });
+        await this.audit.recordBusinessAction(c, {
+          ...base, action: 'DUTY_MEMBERSHIP_ADDED', resourceType: 'DUTY_ASSIGNMENT', resourceId: added.id, newValues: memberValues(added),
+        });
 
         const done = await c.query(
           `WITH moment AS MATERIALIZED (SELECT clock_timestamp() AS at)

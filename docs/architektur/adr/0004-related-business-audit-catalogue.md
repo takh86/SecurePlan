@@ -202,3 +202,30 @@ audits and any command completion share the planning writer's transaction.
 A repeated handler call has no further effect or audit. Retained assignments
 and terminal cancellations remain unchanged. This prerequisite introduces no
 cancellation command, read resource, offer or decision API.
+
+## SP-20 supplement — replacement selection audit (PENDING PRODUCT OWNER APPROVAL)
+
+**Status: PENDING PRODUCT OWNER APPROVAL.** The four actions below are proposed, not approved. No approval is inferred from the implementation, from the Draft PR or from the earlier approvals in this document. Independent technical, security and documentary review remains separate. Until the Product Owner records a decision here, the actions must not be treated as part of the approved catalogue.
+
+Scope: one successful `POST /api/v1/replacement-needs/:needId/selection` by a COMPANY_ADMIN. The operation changes one cancellation (OPEN to APPROVED), one replacement need (OPEN to RESOLVED), the selected offer (OPEN to SELECTED) and every other OPEN offer of that need (OPEN to NOT_SELECTED). Refusals, idempotent replays and rejected stale requests emit no success audit.
+
+| Action | Resource | `oldValues` | `newValues` | Events per successful selection |
+|---|---|---|---|---|
+| `CANCELLATION_APPROVED` | `CANCELLATION_REQUEST`, cancellation ID | `{status: "OPEN"}` | `{status: "APPROVED"}` | exactly 1 |
+| `REPLACEMENT_NEED_RESOLVED` | `REPLACEMENT_NEED`, need ID | `{status: "OPEN"}` | `{status: "RESOLVED", selectedOfferId}` | exactly 1 |
+| `REPLACEMENT_OFFER_SELECTED` | `REPLACEMENT_OFFER`, selected offer ID | `{status: "OPEN"}` | `{status: "SELECTED"}` | exactly 1 |
+| `REPLACEMENT_OFFER_NOT_SELECTED` | `REPLACEMENT_OFFER`, each rejected offer ID | `{status: "OPEN"}` | `{status: "NOT_SELECTED"}` | 1 per OPEN offer rejected |
+
+Envelope, identical to the other administrative events: trusted company ID, the COMPANY_ADMIN actor account ID after the transactional session recheck, the server-issued correlation ID and the database event time. All rows are written in the selection transaction; any audit failure rolls back the whole selection.
+
+The duty and membership rows written by the same transaction are not new actions. They use the already approved SP-12 contract in API vocabulary (`dutyRole` EMPLOYEE, never the stored duty-function word):
+
+| Action | Resource | `oldValues` | `newValues` |
+|---|---|---|---|
+| `DUTY_UPDATED` | `DUTY`, duty ID | previous D | resulting D |
+| `DUTY_MEMBERSHIP_REMOVED` | `DUTY_ASSIGNMENT`, original membership ID | previous M | `{dutyId, state: "REMOVED", removedAt}` |
+| `DUTY_MEMBERSHIP_ADDED` | `DUTY_ASSIGNMENT`, replacement membership ID | SQL null | M of the replacement (source `REPLACEMENT`) |
+
+A successful selection with one losing OPEN offer therefore produces seven rows in one transaction. The payloads contain IDs, statuses, bounded duty values and persisted timestamps only. No names, e-mail addresses, absence reasons, tokens or complete plan copies are recorded.
+
+**Decision requested from the Product Owner:** approve or reject the four actions and their payloads above. Record the result here with the approver and date. Recorded decision: **PENDING**.
