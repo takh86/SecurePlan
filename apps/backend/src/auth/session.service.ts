@@ -47,10 +47,10 @@ type LockedSession = {
   company_id: string;
   account_id: string;
   csrf_secret: Buffer;
-  created_at: Date;
-  last_seen_at: Date;
   absolute_expires_at: Date;
   revoked_at: Date | null;
+  /** Computed by PostgreSQL on the database clock while the row lock is held (SP-115). */
+  expired: boolean;
 };
 
 export type CreateSessionInput = {
@@ -124,11 +124,6 @@ export function assertSessionCsrf(
 export class SessionService {
   constructor(private readonly database: DatabaseService) {}
 
-  /** Override in tests to precisely simulate idle/absolute expiration. */
-  protected now(): Date {
-    return new Date();
-  }
-
   /** Call ONLY after AuthService has verified the password. */
   async createForAccount(input: CreateSessionInput): Promise<CreatedSession> {
     return this.database.withTransaction(async (client) => {
@@ -155,25 +150,29 @@ export class SessionService {
       const role = trustedRole(owner.rows[0].role);
       if (role === null) invalidCredentials();
 
-      const now = this.now();
-      const expiresAt = new Date(now.getTime() + SESSION_POLICY[role].absoluteMs);
       const rawToken = randomBytes(TOKEN_BYTES).toString('base64url');
       const digest = createHash('sha256').update(rawToken, 'utf8').digest();
       const csrfSecret = randomBytes(TOKEN_BYTES);
 
-      await client.query(
-        `INSERT INTO sessions
+      // SP-115: every session instant is a database-clock value, the same clock that assertSessionInTransaction
+      // compares against. The application clock is never written into a session row.
+      const inserted = await client.query<{ absolute_expires_at: Date }>(
+        `WITH moment AS MATERIALIZED (SELECT clock_timestamp() AS at)
+         INSERT INTO sessions
            (company_id, account_id, token_hash, csrf_secret,
             created_at, last_seen_at, absolute_expires_at)
-         VALUES ($1, $2, $3, $4, $5, $5, $6)`,
-        [input.companyId, input.accountId, digest, csrfSecret, now, expiresAt],
+         SELECT $1, $2, $3, $4, moment.at, moment.at,
+                moment.at + ($5::double precision * interval '1 millisecond')
+         FROM moment
+         RETURNING absolute_expires_at`,
+        [input.companyId, input.accountId, digest, csrfSecret, SESSION_POLICY[role].absoluteMs],
       );
 
       // Returned only once the INSERT succeeded and the transaction commits.
       return {
         rawToken,
         csrfToken: csrfSecret.toString('base64url'),
-        absoluteExpiresAt: expiresAt,
+        absoluteExpiresAt: inserted.rows[0].absolute_expires_at,
       };
     });
   }
@@ -212,41 +211,33 @@ export class SessionService {
       const role = trustedRole(owner.rows[0].role);
       if (role === null) unauthorized('SESSION_REVOKED');
 
+      // SP-115: expiry is evaluated by PostgreSQL on the database clock, the same predicate as
+      // assertSessionInTransaction. clock_timestamp() is read per row while its lock is held, so the
+      // clock is captured after every lock wait above and never from the application.
       const locked = await client.query<LockedSession>(
-        `SELECT id, company_id, account_id, csrf_secret,
-                created_at, last_seen_at, absolute_expires_at, revoked_at
+        `SELECT id, company_id, account_id, csrf_secret, absolute_expires_at, revoked_at,
+                (clock_timestamp() >= least(absolute_expires_at, created_at + $4::double precision * interval '1 millisecond')
+                 OR clock_timestamp() >= last_seen_at + $5::double precision * interval '1 millisecond'
+                 OR clock_timestamp() < last_seen_at) AS expired
          FROM sessions
          WHERE token_hash = $1 AND company_id = $2 AND account_id = $3
          FOR UPDATE`,
-        [digest, companyId, accountId],
+        [digest, companyId, accountId, SESSION_POLICY[role].absoluteMs, SESSION_POLICY[role].idleMs],
       );
       if (locked.rowCount !== 1) unauthorized('SESSION_REQUIRED');
       const session = locked.rows[0];
       if (session.revoked_at !== null) unauthorized('SESSION_REVOKED');
-
-      // Capture the clock AFTER acquiring row locks, not before waiting.
-      const now = this.now();
-      const time = now.getTime();
-      if (
-        time >= Math.min(
-          session.absolute_expires_at.getTime(),
-          session.created_at.getTime() + SESSION_POLICY[role].absoluteMs,
-        ) ||
-        time >= session.last_seen_at.getTime() + SESSION_POLICY[role].idleMs ||
-        time < session.last_seen_at.getTime()
-      ) {
-        unauthorized('SESSION_EXPIRED');
-      }
+      if (session.expired) unauthorized('SESSION_EXPIRED');
 
       const updated = await client.query(
         `UPDATE sessions
-         SET last_seen_at = $1
-         WHERE id = $2
+         SET last_seen_at = clock_timestamp()
+         WHERE id = $1
            AND revoked_at IS NULL
-           AND absolute_expires_at > $1
-           AND last_seen_at <= $1
+           AND absolute_expires_at > clock_timestamp()
+           AND last_seen_at <= clock_timestamp()
          RETURNING id`,
-        [now, session.id],
+        [session.id],
       );
       if (updated.rowCount !== 1) unauthorized('SESSION_REVOKED');
 
@@ -290,8 +281,8 @@ export class SessionService {
       if (session.rowCount !== 1 || session.rows[0].revoked_at !== null) return false;
 
       const result = await client.query(
-        'UPDATE sessions SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL',
-        [this.now(), session.rows[0].id],
+        'UPDATE sessions SET revoked_at = clock_timestamp() WHERE id = $1 AND revoked_at IS NULL',
+        [session.rows[0].id],
       );
       return result.rowCount === 1;
     });
@@ -307,9 +298,9 @@ export class SessionService {
     accountId: string,
   ): Promise<number> {
     const result = await client.query(
-      `UPDATE sessions SET revoked_at = $3
+      `UPDATE sessions SET revoked_at = clock_timestamp()
        WHERE company_id = $1 AND account_id = $2 AND revoked_at IS NULL`,
-      [companyId, accountId, this.now()],
+      [companyId, accountId],
     );
     return result.rowCount ?? 0;
   }
