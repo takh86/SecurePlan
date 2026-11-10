@@ -212,6 +212,17 @@ test('populated D15 -> D16 -> D17 through actual migration runner preserves rece
     assert.equal(d18.length, 18);
     run();
     assert.deepEqual((await c.query('SELECT name,checksum FROM schema_migrations ORDER BY name')).rows, d18);
+    // SP-21 S1: populated D18 -> D19 -> D20 keeps every historical receipt byte-identical.
+    for (const file of ['0019_replacement_selection.sql', '0020_cancellation_decision_receipt.sql'])
+      copyFileSync(join(migrationDir, file), join(scratch, 'apps/backend/migrations', file));
+    run();
+    assert.deepEqual((await c.query("SELECT (to_jsonb(r)-'result_replacement_offer_id')::text AS bytes FROM idempotency_records r ORDER BY id")).rows, d17);
+    const d20 = (await c.query('SELECT name,checksum FROM schema_migrations ORDER BY name')).rows;
+    assert.equal(d20.length, 20);
+    run();
+    assert.deepEqual((await c.query('SELECT name,checksum FROM schema_migrations ORDER BY name')).rows, d20);
+    for (const row of d20)
+      assert.equal(row.checksum, createHash('sha256').update(readFileSync(join(migrationDir, row.name))).digest('hex'));
     const verified = spawnSync(
       process.execPath,
       [fileURLToPath(new URL('./verify-db.mjs', import.meta.url))],
@@ -224,7 +235,7 @@ test('populated D15 -> D16 -> D17 through actual migration runner preserves rece
     assert.equal(
       verified.status,
       0,
-      'database verification after populated D17 -> D18',
+      'database verification after populated D17 -> D20',
     );
   } finally {
     await c?.end();

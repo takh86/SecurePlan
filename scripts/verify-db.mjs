@@ -90,6 +90,16 @@ try {
       AND conname='fk_idempotency_records__offer_result' AND convalidated
       AND confrelid='public.replacement_offers'::regclass) AS valid`);
   if (!offers.rows[0]?.valid) throw new Error("Missing replacement offer integrity catalogue");
+  const decisionReceipt = await client.query(`SELECT
+    EXISTS(SELECT 1 FROM schema_migrations WHERE name='0020_cancellation_decision_receipt.sql')
+    AND (SELECT count(*)=3 FROM pg_constraint WHERE conrelid='public.idempotency_records'::regclass
+      AND conname IN ('ck_idempotency_records__operation','ck_idempotency_records__state','ck_idempotency_records__employee_month')
+      AND contype='c' AND convalidated AND pg_get_constraintdef(oid) LIKE '%DECIDE_CANCELLATION%')
+    AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.idempotency_records'::regclass
+      AND conname='ck_idempotency_records__employee_month' AND pg_get_constraintdef(oid) LIKE '%<= 8192%')
+    AND NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='public.idempotency_records'::regclass AND NOT tgisinternal) AS valid`);
+  if (!decisionReceipt.rows[0]?.valid) throw new Error("Missing cancellation decision receipt catalogue");
+  console.log("SP-21 decision receipt operation, typed 8192-byte receipt and trigger-free table verified.");
   console.log("Replacement offer history, partial uniqueness and typed receipt verified.");
   console.log("Typed cancellation receipt reference and migration verified.");
   console.log("CR-03 historical identity and deferred workflow cardinality verified.");

@@ -45,13 +45,20 @@ export async function reserveCommand<Result>(
     context,
   } = input;
   const scope = [t.companyId, t.accountId, operation, keyHash];
+  // SP-21: DECIDE_CANCELLATION stores its typed cancellation result plus the decision-time
+  // response snapshot (result_json, schema 1). It never uses the employee-month context columns.
+  const cancellationDecision = operation === 'DECIDE_CANCELLATION';
+  if (cancellationDecision && context)
+    throw new Error('DECIDE_CANCELLATION takes no context');
   await reservationLock(c, lockId);
   // INITIAL_PUBLISH remains usable with its original 0013 columns and codec.
   const cancellation = operation === 'CREATE_CANCELLATION';
   const offer = operation === 'CREATE_REPLACEMENT_OFFER';
   // DECIDE_REPLACEMENT_SELECTION stores both typed results (cancellation and selected offer).
   const decision = operation === 'DECIDE_REPLACEMENT_SELECTION';
-  const extra = decision
+  const extra = cancellationDecision
+    ? ',result_cancellation_request_id,result_json,result_schema_version'
+    : decision
     ? ',result_cancellation_request_id,result_replacement_offer_id'
     : offer
       ? ',result_replacement_offer_id'
@@ -79,7 +86,10 @@ export async function reserveCommand<Result>(
   // Operation-specific context parents are acquired before implicit FK checks.
   await input.beforeWrite?.();
   if (prior) {
-    const fields = decision
+    // A reclaimed FAILED or expired row must not carry a stale snapshot into the new attempt.
+    const fields = cancellationDecision
+      ? ',result_cancellation_request_id=NULL,result_json=NULL,result_schema_version=NULL'
+      : decision
       ? ',result_cancellation_request_id=NULL,result_replacement_offer_id=NULL'
       : offer
         ? ',result_replacement_offer_id=NULL'
