@@ -5,6 +5,7 @@ import {
 import { ReplacementOffersService } from './modules/cancellation-replacement/replacement-offers.service.js';
 import { ReplacementSelectionController } from './modules/cancellation-replacement/replacement-selection.controller.js';
 import { ReplacementSelectionService } from './modules/cancellation-replacement/replacement-selection.service.js';
+import { CancellationDecisionService } from './modules/cancellation-replacement/cancellation-decision.service.js';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 
@@ -131,6 +132,8 @@ import { AdminWorkQueueService } from './modules/cancellation-replacement/admin-
     AdminWorkQueueService,
     ReplacementOffersService,
     ReplacementSelectionService,
+    // SP-21 S2: service only; the route is S3.
+    CancellationDecisionService,
     AssignmentRemovalReconciler,
     {
       provide: PLANNING_MUTATION_HANDLER,

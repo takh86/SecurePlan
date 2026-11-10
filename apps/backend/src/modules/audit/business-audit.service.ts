@@ -75,13 +75,26 @@ export type BusinessAuditAction =
   | 'CANCELLATION_APPROVED'
   | 'REPLACEMENT_NEED_RESOLVED'
   | 'REPLACEMENT_OFFER_SELECTED'
-  | 'REPLACEMENT_OFFER_NOT_SELECTED';
+  | 'REPLACEMENT_OFFER_NOT_SELECTED'
+  /**
+   * SP-21 cancellation decisions (REJECT, APPROVE without replacement). Approved by the Product Owner on
+   * 2026-11-10 (ADR-0004, SP-21 supplement). CANCELLATION_APPROVED and REPLACEMENT_OFFER_NOT_SELECTED reuse the
+   * SP-20 payloads; REPLACEMENT_NEED_CLOSED keeps its existing payload. Exact payloads: decisionAudit below.
+   */
+  | 'CANCELLATION_REJECTED'
+  | 'REPLACEMENT_NEED_OPEN_UNFILLED';
 
 const SELECTION_ACTIONS: readonly BusinessAuditAction[] = [
   'CANCELLATION_APPROVED',
   'REPLACEMENT_NEED_RESOLVED',
   'REPLACEMENT_OFFER_SELECTED',
   'REPLACEMENT_OFFER_NOT_SELECTED',
+];
+
+const DECISION_ACTIONS: readonly BusinessAuditAction[] = [
+  'CANCELLATION_REJECTED',
+  'REPLACEMENT_NEED_OPEN_UNFILLED',
+  'REPLACEMENT_NEED_CLOSED',
 ];
 
 export type BusinessAuditEntry = {
@@ -102,6 +115,9 @@ export class BusinessAuditService {
   async recordBusinessAction(client: Queryable, entry: BusinessAuditEntry): Promise<void> {
     if (entry.action === 'REPLACEMENT_OFFER_CREATED' || entry.action === 'REPLACEMENT_OFFER_INVALIDATED') {
       if (!offerAudit(entry)) throw new Error('Invalid bounded replacement offer audit');
+    }
+    if (DECISION_ACTIONS.includes(entry.action)) {
+      if (!decisionAudit(entry)) throw new Error('Invalid bounded cancellation decision audit');
     }
     if (SELECTION_ACTIONS.includes(entry.action)) {
       if (!selectionAudit(entry)) throw new Error('Invalid bounded replacement selection audit');
@@ -166,6 +182,27 @@ function selectionAudit(entry: BusinessAuditEntry): boolean {
       return entry.resourceType === 'REPLACEMENT_OFFER' && exactKeys(value, 'status') && value.status === 'SELECTED';
     case 'REPLACEMENT_OFFER_NOT_SELECTED':
       return entry.resourceType === 'REPLACEMENT_OFFER' && exactKeys(value, 'status') && value.status === 'NOT_SELECTED';
+    default:
+      return false;
+  }
+}
+
+/**
+ * SP-21 status transitions: {status: OPEN} -> {status: <target>} with no other keys. REPLACEMENT_NEED_CLOSED is shared
+ * with the withdrawal and planning-reconciliation writers, which already emit exactly this shape.
+ */
+function decisionAudit(entry: BusinessAuditEntry): boolean {
+  if (![entry.companyId, entry.resourceId, entry.correlationId].every((id) => UUID.test(id))) return false;
+  if (entry.actorAccountId !== null && !UUID.test(entry.actorAccountId)) return false;
+  const old = entry.oldValues, value = entry.newValues;
+  if (old == null || !exactKeys(old, 'status') || old.status !== 'OPEN' || value == null || !exactKeys(value, 'status')) return false;
+  switch (entry.action) {
+    case 'CANCELLATION_REJECTED':
+      return entry.actorAccountId !== null && entry.resourceType === 'CANCELLATION_REQUEST' && value.status === 'REJECTED';
+    case 'REPLACEMENT_NEED_OPEN_UNFILLED':
+      return entry.actorAccountId !== null && entry.resourceType === 'REPLACEMENT_NEED' && value.status === 'OPEN_UNFILLED';
+    case 'REPLACEMENT_NEED_CLOSED':
+      return entry.resourceType === 'REPLACEMENT_NEED' && value.status === 'CLOSED';
     default:
       return false;
   }
