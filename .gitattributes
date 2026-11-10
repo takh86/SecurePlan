@@ -8,3 +8,4 @@ apps/backend/migrations/0010_employee_availability.sql text eol=lf
 apps/backend/migrations/0011_planning_foundation.sql text eol=lf
 apps/backend/migrations/0014_project_operating_calendars.sql text eol=lf
 apps/backend/migrations/0019_replacement_selection.sql text eol=lf
+apps/backend/migrations/0020_cancellation_decision_receipt.sql text eol=lf
