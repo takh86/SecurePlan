@@ -122,6 +122,16 @@ afterAll(async () => {
 });
 
 describe('SP-11 — planning schema signature, real PostgreSQL', () => {
+  it('rejects a weakened month CHECK after accepting the canonical PostgreSQL deparse', async () => {
+    await inRolledBackTransaction(async (client) => {
+      expect(await readPlanningSchema(client)).toMatchObject({ state: 'COMPLETE' });
+      await client.query('ALTER TABLE public.monthly_plans DROP CONSTRAINT ck_monthly_plans__month');
+      await client.query(`ALTER TABLE public.monthly_plans ADD CONSTRAINT ck_monthly_plans__month
+        CHECK (planning_month >= DATE '0001-01-01' AND extract(day FROM planning_month) = 1)`);
+      expect(await readPlanningSchema(client)).toMatchObject({ state: 'INVALID' });
+    });
+  });
+
   it.each(['public', 'pg_catalog, public', 'pg_catalog'])('constraint signatures are independent of search_path = %s', async (searchPath) => {
     await inRolledBackTransaction(async (client) => {
       await client.query(`SET LOCAL search_path = ${searchPath}`);
