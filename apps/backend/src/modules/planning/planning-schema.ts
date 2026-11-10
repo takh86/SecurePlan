@@ -182,7 +182,7 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
     "u UNIQUE (company_id, id)",
   ],
   project_operating_calendars: [
-    "c CHECK ((((effective_from_month >= '0001-01-01'::date) AND (effective_from_month <= '9999-12-01'::date)) AND (EXTRACT(day FROM effective_from_month) = (1)::numeric)))",
+    "c CHECK (((effective_from_month >= '0001-01-01'::date) AND (effective_from_month <= '9999-12-01'::date) AND (EXTRACT(day FROM effective_from_month) = (1)::numeric)))",
     'c CHECK ((isfinite(created_at) AND isfinite(updated_at)))',
     "c CHECK (((version >= 1) AND (version <= '9007199254740991'::bigint)))",
     'c CHECK (((weekday_mask >= 1) AND (weekday_mask <= 127)))',
@@ -201,7 +201,7 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
     'u UNIQUE (company_id, id)',
   ],
   monthly_plans: [
-    "c CHECK ((((planning_month >= '0001-01-01'::date) AND (planning_month <= '9999-12-01'::date)) AND (EXTRACT(day FROM planning_month) = (1)::numeric)))",
+    "c CHECK (((planning_month >= '0001-01-01'::date) AND (planning_month <= '9999-12-01'::date) AND (EXTRACT(day FROM planning_month) = (1)::numeric)))",
     "c CHECK ((((status = 'UNPUBLISHED'::text) AND (published_at IS NULL) AND (published_by_account_id IS NULL)) OR ((status = 'PUBLISHED'::text) AND (published_at IS NOT NULL) AND isfinite(published_at) AND (published_by_account_id IS NOT NULL))))",
     'f FOREIGN KEY (company_id, project_id) REFERENCES public.projects(company_id, id) ON DELETE RESTRICT',
     'f FOREIGN KEY (company_id, published_by_account_id) REFERENCES public.accounts(company_id, id) ON DELETE RESTRICT',
@@ -212,8 +212,8 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
   ],
   duties: [
     "c CHECK (((concurrency_version >= 1) AND (concurrency_version <= '9007199254740991'::bigint)))",
-    "c CHECK ((((config_effective_from_month >= '0001-01-01'::date) AND (config_effective_from_month <= '9999-12-01'::date)) AND (EXTRACT(day FROM config_effective_from_month) = (1)::numeric) AND (config_effective_from_month <= planning_month)))",
-    "c CHECK ((((duty_date >= '0001-01-01'::date) AND (duty_date <= '9999-12-31'::date)) AND (EXTRACT(day FROM planning_month) = (1)::numeric) AND (EXTRACT(year FROM duty_date) = EXTRACT(year FROM planning_month)) AND (EXTRACT(month FROM duty_date) = EXTRACT(month FROM planning_month))))",
+    "c CHECK (((config_effective_from_month >= '0001-01-01'::date) AND (config_effective_from_month <= '9999-12-01'::date) AND (EXTRACT(day FROM config_effective_from_month) = (1)::numeric) AND (config_effective_from_month <= planning_month)))",
+    "c CHECK (((duty_date >= '0001-01-01'::date) AND (duty_date <= '9999-12-31'::date) AND (EXTRACT(day FROM planning_month) = (1)::numeric) AND (EXTRACT(year FROM duty_date) = EXTRACT(year FROM planning_month)) AND (EXTRACT(month FROM duty_date) = EXTRACT(month FROM planning_month))))",
     "c CHECK (((EXTRACT(second FROM start_local) = (0)::numeric) AND (EXTRACT(second FROM end_local) = (0)::numeric) AND (start_local < '24:00:00'::time without time zone) AND (end_local < '24:00:00'::time without time zone) AND (start_local <> end_local) AND ((shift_kind <> 'TAG'::text) OR (end_local > start_local))))",
     'c CHECK ((isfinite(starts_at) AND isfinite(ends_at) AND (ends_at > starts_at)))',
     'c CHECK (((length(time_zone) >= 1) AND (length(time_zone) <= 255)))',
