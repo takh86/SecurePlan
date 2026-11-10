@@ -214,11 +214,14 @@ const receipts = async (f: Fixture) =>
 async function auditBaseline(companyId: string): Promise<string[]> {
   return (await pool.query<{ id: string }>('SELECT id FROM audit_event WHERE company_id = $1', [companyId])).rows.map((r) => r.id);
 }
-/** New rows in heap insertion order (audit_event is append-only in this suite; occurred_at is the transaction start). */
+/**
+ * New rows as a deterministic MULTISET (sorted by action, resource): audit_event has no logical sequence column and
+ * occurred_at is the transaction start, so no intra-transaction order is asserted (TL review PR #127).
+ */
 async function auditSince(companyId: string, mark: string[]) {
   return (
     await pool.query<{ action: string; resource_type: string; resource_id: string; old_values: unknown; new_values: unknown; actor_account_id: string; correlation_id: string }>(
-      'SELECT action, resource_type, resource_id, old_values, new_values, actor_account_id, correlation_id FROM audit_event WHERE company_id = $1 AND NOT (id = ANY($2::uuid[])) ORDER BY ctid',
+      'SELECT action, resource_type, resource_id, old_values, new_values, actor_account_id, correlation_id FROM audit_event WHERE company_id = $1 AND NOT (id = ANY($2::uuid[])) ORDER BY action, resource_id',
       [companyId, mark],
     )
   ).rows;
@@ -301,10 +304,10 @@ describe('S2 successful transitions (exact state, audit and snapshot)', () => {
     expect(after.memberships).toEqual(before.memberships);
     expect(after.offers.map((o) => o.status)).toEqual(Array(k).fill('NOT_SELECTED'));
     const rows = await auditSince(f.companyId, mark);
-    expect(rows.map((r) => [r.action, r.resource_id, r.old_values, r.new_values])).toEqual([
-      ['CANCELLATION_REJECTED', f.caseId, { status: 'OPEN' }, { status: 'REJECTED' }],
-      ['REPLACEMENT_NEED_CLOSED', f.needId, { status: 'OPEN' }, { status: 'CLOSED' }],
-      ...f.offerIds.map((id) => ['REPLACEMENT_OFFER_NOT_SELECTED', id, { status: 'OPEN' }, { status: 'NOT_SELECTED' }]),
+    expect(rows.map((r) => [r.action, r.resource_type, r.resource_id, r.old_values, r.new_values])).toEqual([
+      ['CANCELLATION_REJECTED', 'CANCELLATION_REQUEST', f.caseId, { status: 'OPEN' }, { status: 'REJECTED' }],
+      ['REPLACEMENT_NEED_CLOSED', 'REPLACEMENT_NEED', f.needId, { status: 'OPEN' }, { status: 'CLOSED' }],
+      ...f.offerIds.map((id) => ['REPLACEMENT_OFFER_NOT_SELECTED', 'REPLACEMENT_OFFER', id, { status: 'OPEN' }, { status: 'NOT_SELECTED' }]),
     ]);
     expect(rows).toHaveLength(2 + k);
     expect(new Set(rows.map((r) => `${r.actor_account_id}/${r.correlation_id}`))).toEqual(new Set([`${f.admin.accountId}/${correlationId}`]));
@@ -329,9 +332,15 @@ describe('S2 successful transitions (exact state, audit and snapshot)', () => {
     expect(after.memberships[0].removed_at).not.toBeNull();
     expect(after.offers.map((o) => o.status)).toEqual(Array(k).fill('NOT_SELECTED'));
     const rows = await auditSince(f.companyId, mark);
-    expect(rows.map((r) => r.action)).toEqual([
-      'CANCELLATION_APPROVED', 'REPLACEMENT_NEED_OPEN_UNFILLED', ...Array(k).fill('REPLACEMENT_OFFER_NOT_SELECTED'), 'DUTY_UPDATED', 'DUTY_MEMBERSHIP_REMOVED',
+    expect(rows.map((r) => [r.action, r.resource_type, r.resource_id, r.old_values, r.new_values])).toEqual([
+      ['CANCELLATION_APPROVED', 'CANCELLATION_REQUEST', f.caseId, { status: 'OPEN' }, { status: 'APPROVED' }],
+      ['DUTY_MEMBERSHIP_REMOVED', 'DUTY_ASSIGNMENT', f.membershipId, expect.anything(), expect.anything()],
+      ['DUTY_UPDATED', 'DUTY', f.dutyId, expect.anything(), expect.anything()],
+      ['REPLACEMENT_NEED_OPEN_UNFILLED', 'REPLACEMENT_NEED', f.needId, { status: 'OPEN' }, { status: 'OPEN_UNFILLED' }],
+      ...f.offerIds.map((id) => ['REPLACEMENT_OFFER_NOT_SELECTED', 'REPLACEMENT_OFFER', id, { status: 'OPEN' }, { status: 'NOT_SELECTED' }]),
     ]);
+    expect(new Set(rows.map((r) => r.actor_account_id))).toEqual(new Set([f.admin.accountId]));
+    expect(new Set(rows.map((r) => r.correlation_id)).size).toBe(1);
     expect(rows).toHaveLength(4 + k);
     const dutyUpdated = rows.find((r) => r.action === 'DUTY_UPDATED')!;
     expect([(dutyUpdated.old_values as { version: number }).version, (dutyUpdated.new_values as { version: number }).version]).toEqual([1, 2]);
@@ -685,5 +694,37 @@ describe('S2 races with real row locks (barrier on the duty row)', () => {
     expect(httpStatus(rem)).toBe(204);
     expect(await value('SELECT status FROM cancellation_requests WHERE id = $1', [f.caseId])).toBe('REJECTED');
     expect(await value('SELECT removed_at IS NOT NULL AS r FROM duties WHERE id = $1', [f.dutyId])).toBe(true);
+  });
+});
+
+describe('S2 runtime command validation (TL review PR #127, fail closed)', () => {
+  const invalid: [string, (f: Fixture) => unknown][] = [
+    ['unsupported decision CANCEL', (f) => ({ decision: 'CANCEL', requestId: f.caseId })],
+    ['missing decision', (f) => ({ requestId: f.caseId })],
+    ['lower-case reject', (f) => ({ decision: 'reject', requestId: f.caseId })],
+    ['null command', () => null],
+    ['REJECT with a non-null replacementOfferId', (f) => ({ decision: 'REJECT', requestId: f.caseId, replacementOfferId: f.offerIds[0] })],
+    ['APPROVE with a non-null replacementOfferId', (f) => ({ ...approve(f), replacementOfferId: f.offerIds[0] })],
+    ['APPROVE without versions', (f) => ({ decision: 'APPROVE', requestId: f.caseId })],
+    ['APPROVE with string versions', (f) => ({ decision: 'APPROVE', requestId: f.caseId, expectedNeedVersion: '1', expectedDutyVersion: '1' })],
+    ['APPROVE with version 0', (f) => approve(f, 0, 1)],
+    ['REJECT carrying expectedDutyVersion', (f) => ({ decision: 'REJECT', requestId: f.caseId, expectedDutyVersion: 1 })],
+    ['unknown field', (f) => ({ decision: 'REJECT', requestId: f.caseId, companyId: f.companyId })],
+  ];
+  it.each(invalid)('%s: 400 VALIDATION_FAILED, no claim, no business write, no audit', async (_n, build) => {
+    const f = await buildFixture();
+    const before = await snapshot(f);
+    const key = randomUUID();
+    expect(await codeOf(service.decide(f.admin, build(f) as CancellationDecisionCommand, key, randomUUID()))).toBe('VALIDATION_FAILED');
+    expect(await snapshot(f)).toEqual(before);
+    expect(await receipts(f)).toEqual([]);
+    // The same key is still unused: a valid command afterwards decides normally.
+    expect((await decide(f.admin, reject(f), key)).result.cancellation.status).toBe('REJECTED');
+  });
+  it('valid APPROVE and REJECT with an explicit null replacementOfferId still decide', async () => {
+    const a = await buildFixture();
+    expect((await decide(a.admin, { ...approve(a), replacementOfferId: null })).result.cancellation.status).toBe('APPROVED');
+    const r = await buildFixture();
+    expect((await decide(r.admin, { ...reject(r), replacementOfferId: null })).result.cancellation.status).toBe('REJECTED');
   });
 });

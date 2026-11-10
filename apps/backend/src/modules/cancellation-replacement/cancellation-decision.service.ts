@@ -14,7 +14,7 @@
  *
  * No route, DTO or OpenAPI here (S3).
  */
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { TenantContext } from '../../auth/authorization/tenant-context.js';
@@ -43,8 +43,36 @@ import {
 import { assertUnresolvedOffers, lockReplacementOffers } from './replacement-offer-invalidation.js';
 
 export type CancellationDecisionCommand =
-  | { decision: 'APPROVE'; requestId: string; expectedNeedVersion: number; expectedDutyVersion: number }
-  | { decision: 'REJECT'; requestId: string };
+  | { decision: 'APPROVE'; requestId: string; expectedNeedVersion: number; expectedDutyVersion: number; replacementOfferId?: null }
+  | { decision: 'REJECT'; requestId: string; replacementOfferId?: null };
+
+const ALLOWED_KEYS = {
+  APPROVE: ['decision', 'requestId', 'expectedNeedVersion', 'expectedDutyVersion', 'replacementOfferId'],
+  REJECT: ['decision', 'requestId', 'replacementOfferId'],
+} as const;
+const isVersion = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 1;
+
+/**
+ * Runtime validation at the service boundary (TypeScript unions are not runtime checks). Fail closed: only the exact
+ * APPROVE and REJECT shapes pass; anything else is 400 VALIDATION_FAILED before any database access, so it can create
+ * no idempotency claim, business write or audit. A non-null replacementOfferId is refused (offer selection is SP-20);
+ * REJECT carries no version (an optional Expected-Version header is syntax-checked by the S3 route and never reaches
+ * here). requestId format is left to the 404 concealment path.
+ */
+export function validateDecisionCommand(input: unknown): CancellationDecisionCommand {
+  const invalid = () => new BadRequestException({ code: 'VALIDATION_FAILED' });
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) throw invalid();
+  const c = input as Record<string, unknown>;
+  const decision = c.decision;
+  if (decision !== 'APPROVE' && decision !== 'REJECT') throw invalid();
+  const allowed: readonly string[] = ALLOWED_KEYS[decision];
+  if (Object.keys(c).some((k) => !allowed.includes(k))) throw invalid();
+  if (c.replacementOfferId !== undefined && c.replacementOfferId !== null) throw invalid();
+  if (typeof c.requestId !== 'string') throw invalid();
+  if (decision === 'REJECT') return { decision, requestId: c.requestId };
+  if (!isVersion(c.expectedNeedVersion) || !isVersion(c.expectedDutyVersion)) throw invalid();
+  return { decision, requestId: c.requestId, expectedNeedVersion: c.expectedNeedVersion, expectedDutyVersion: c.expectedDutyVersion };
+}
 export type CancellationDecisionResult = { result: DecisionReceiptV1; replayed: boolean };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -84,7 +112,9 @@ export class CancellationDecisionService {
     return { ...row, context };
   }
 
-  async decide(t: TenantContext, command: CancellationDecisionCommand, key: string, correlationId: string): Promise<CancellationDecisionResult> {
+  async decide(t: TenantContext, input: CancellationDecisionCommand, key: string, correlationId: string): Promise<CancellationDecisionResult> {
+    // First statement: every later branch uses the validated variant, never the raw input.
+    const command = validateDecisionCommand(input);
     if (typeof key !== 'string' || key.length === 0) throw new Error('Idempotency key required');
     // The expected resource is the validated command input; it is never taken from a receipt.
     const requestId = typeof command.requestId === 'string' ? command.requestId.toLowerCase() : '';
