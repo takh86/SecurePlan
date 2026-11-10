@@ -1,4 +1,12 @@
-/** Admin read projections. Every query runs as one READ COMMITTED statement. */
+/**
+ * Admin read projections. Every query runs as one READ COMMITTED statement.
+ *
+ * Validity of a case is judged against its own history, not against the current duty state:
+ * - an APPROVED case that was RESOLVED keeps its selected offer's replacement membership. That membership
+ *   may be ACTIVE, or REMOVED only when a later APPROVED cancellation was filed against that exact membership
+ *   (a chained replacement, GitHub #119). Any other removal, or a missing membership, stays INVALID.
+ * - `diagnostics` still scans every case in scope, so genuinely inconsistent data keeps failing closed.
+ */
 const core = `WITH moment AS MATERIALIZED (SELECT clock_timestamp() AS at),
 cases AS MATERIALIZED (
  SELECT r.id AS request_id,r.assignment_id,r.employee_id AS requester_id,r.duty_id,
@@ -15,8 +23,11 @@ cases AS MATERIALIZED (
         WHEN r.status='APPROVED' AND n.status='RESOLVED' THEN n.selected_offer_id IS NOT NULL AND a.state='REMOVED' AND p.status='PUBLISHED'
           AND EXISTS(SELECT 1 FROM public.replacement_offers so JOIN public.plan_assignments ra
             ON ra.company_id=so.company_id AND ra.replacement_offer_id=so.id AND ra.employee_id=so.employee_id AND ra.duty_id=so.duty_id
-            AND ra.source='REPLACEMENT' AND ra.state='ACTIVE' AND ra.removed_at IS NULL
-            WHERE so.company_id=r.company_id AND so.id=n.selected_offer_id AND so.need_id=n.id AND so.status='SELECTED')
+            AND ra.source='REPLACEMENT'
+            WHERE so.company_id=r.company_id AND so.id=n.selected_offer_id AND so.need_id=n.id AND so.status='SELECTED'
+              AND ((ra.state='ACTIVE' AND ra.removed_at IS NULL)
+                OR (ra.state='REMOVED' AND ra.removed_at IS NOT NULL AND EXISTS(SELECT 1 FROM public.cancellation_requests later
+                  WHERE later.company_id=ra.company_id AND later.assignment_id=ra.id AND later.status='APPROVED'))))
         WHEN r.status IN ('WITHDRAWN','REJECTED','OBSOLETE') THEN n.status='CLOSED'
         ELSE false END,false) AS valid
  FROM public.cancellation_requests r
