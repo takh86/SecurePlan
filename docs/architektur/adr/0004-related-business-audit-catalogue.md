@@ -229,3 +229,21 @@ The duty and membership rows written by the same transaction are not new actions
 A successful selection with one losing OPEN offer therefore produces seven rows in one transaction. The payloads contain IDs, statuses, bounded duty values and persisted timestamps only. No names, e-mail addresses, absence reasons, tokens or complete plan copies are recorded.
 
 **Recorded decision: APPROVED — Product Owner, 2026-11-09.** Approved scope is limited to the four new SP-20 audit actions and their exact resource identities, bounded old/new payloads, occurrence rules and shared transactional envelope specified above. Existing SP-12 audit actions remain governed by their previously approved contract. This approval does **not** authorize merging PR #116, merging PR #117, deployment, or closure of technical acceptance findings.
+
+## SP-21 supplement — cancellation decision audit (PRODUCT OWNER APPROVED)
+
+**Status: PRODUCT OWNER APPROVED (2026-11-10, PO-2; public record: GitHub issue #38).** Approval covers the business audit vocabulary only; code review, security review, browser acceptance, release and merge gates remain separate.
+
+Scope: one successful cancellation decision by a COMPANY_ADMIN, either `REJECT` or `APPROVE` without a replacement offer. Refusals, idempotent replays and stale requests emit no success audit.
+
+| Action | Resource | `oldValues` | `newValues` | REJECT | APPROVE without replacement |
+|---|---|---|---|---|---|
+| `CANCELLATION_REJECTED` (new) | `CANCELLATION_REQUEST`, cancellation ID | `{status: "OPEN"}` | `{status: "REJECTED"}` | exactly 1 | — |
+| `CANCELLATION_APPROVED` (scope extended) | `CANCELLATION_REQUEST`, cancellation ID | `{status: "OPEN"}` | `{status: "APPROVED"}` | — | exactly 1 |
+| `REPLACEMENT_NEED_CLOSED` (scope extended) | `REPLACEMENT_NEED`, need ID | `{status: "OPEN"}` | `{status: "CLOSED"}` | exactly 1 | — |
+| `REPLACEMENT_NEED_OPEN_UNFILLED` (new) | `REPLACEMENT_NEED`, need ID | `{status: "OPEN"}` | `{status: "OPEN_UNFILLED"}` | — | exactly 1 |
+| `REPLACEMENT_OFFER_NOT_SELECTED` (scope extended) | `REPLACEMENT_OFFER`, each finalized offer ID | `{status: "OPEN"}` | `{status: "NOT_SELECTED"}` | 1 per OPEN offer | 1 per OPEN offer |
+| `DUTY_UPDATED` (SP-12, reused) | `DUTY`, duty ID | previous D | resulting D | — | exactly 1 |
+| `DUTY_MEMBERSHIP_REMOVED` (SP-12, reused) | `DUTY_ASSIGNMENT`, original membership ID | previous M | `{dutyId, state: "REMOVED", removedAt}` | — | exactly 1 |
+
+Counts, with k = number of OPEN offers finalized: REJECT writes **2 + k** rows, APPROVE without replacement writes **4 + k** rows. Order inside the transaction: business rows first, then the cancellation event, the need event, the offer events, and for APPROVE the duty and membership events. The envelope is the same as for SP-20 (trusted company, COMPANY_ADMIN actor after the transactional session recheck, server correlation ID, database event time). Every row belongs to the decision transaction; any audit failure rolls back the whole decision. Payloads contain IDs, statuses and the bounded SP-12 duty and membership values only: no names, e-mail addresses, absence reasons, tokens, free text or plan copies. No other action changes meaning.
