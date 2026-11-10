@@ -1,6 +1,6 @@
 /**
  * SP-21 S1: the shared reservation codec. The inline snapshot of the five pre-existing operations
- * was captured from the unmodified origin/main codec (3dbeaef) before DECIDE_CANCELLATION was
+ * (whitespace-normalized) was captured from the unmodified origin/main codec (3dbeaef) before DECIDE_CANCELLATION was
  * added, so any change to their SQL fails here.
  */
 import type { PoolClient } from 'pg';
@@ -58,7 +58,7 @@ const existing: [string, { planId: string; employeeId: string } | undefined][] =
 ];
 
 describe('reserveCommand codec', () => {
-  it('keeps the SQL of the five pre-existing operations byte-identical', async () => {
+  it('keeps the whitespace-normalized SQL of the five pre-existing operations unchanged', async () => {
     const out: Record<string, unknown> = {};
     for (const [operation, ctx] of existing)
       for (const scenario of ['insert', 'reclaim'] as const) out[`${operation} ${scenario}`] = (await run(operation, scenario, ctx)).calls;

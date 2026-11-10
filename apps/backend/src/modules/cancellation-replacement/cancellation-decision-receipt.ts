@@ -143,7 +143,10 @@ export function decodeDecisionReceipt(value: unknown, expectedCancellationId: st
 
 /**
  * Stores the snapshot and completes the attempt in ONE fenced statement, inside the caller's
- * final business transaction. The returned receipt (decoded from RETURNING) is the first 200 body.
+ * final business transaction. `expectedCancellationRequestId` is the request id of the reserved
+ * command (the one that was fingerprinted), supplied independently by the caller; it is never
+ * inferred from the receipt. A receipt for any other cancellation is refused before any write.
+ * The returned receipt (decoded from RETURNING) is the first 200 body.
  * Zero rows means the attempt lost its fence (stale reclaim, already completed, other actor or
  * tenant); the caller's transaction must then roll back.
  */
@@ -151,9 +154,12 @@ export async function completeDecisionReceipt(
   c: PoolClient,
   t: TenantContext,
   claim: CommandClaim,
+  expectedCancellationRequestId: string,
   receipt: DecisionReceiptV1,
 ): Promise<DecisionReceiptV1> {
-  const cancellationId = receipt.cancellation.id;
+  const cancellationId = typeof expectedCancellationRequestId === 'string' ? expectedCancellationRequestId.toLowerCase() : '';
+  if (!UUID.test(cancellationId)) throw new ReceiptError('expected cancellation id');
+  // Resource binding: validated against the command's request id BEFORE the completion UPDATE.
   decodeDecisionReceipt(receipt, cancellationId);
   const done = await c.query<{ result_json: unknown }>(
     `WITH moment AS MATERIALIZED (SELECT clock_timestamp() AS at)

@@ -26,11 +26,11 @@ import { assertEmployeeMonthReceiptSchema } from '../src/modules/planning/employ
 import { employeeSummary } from '../src/modules/workforce/employees/employee-context.js';
 import { dutyMutationFixture, type DutyMutationFixture } from './helpers/duty-mutation-fixtures.js';
 import { isolatedPlanningDatabase } from './helpers/isolated-planning-database.js';
-import { adminContext } from './helpers/planning-fixtures.js';
+import { adminContext, insertMembership } from './helpers/planning-fixtures.js';
 
 let db: Awaited<ReturnType<typeof isolatedPlanningDatabase>>;
 let f: DutyMutationFixture, other: DutyMutationFixture;
-let cancellation: string, need: string, foreignCancellation: string;
+let cancellation: string, need: string, foreignCancellation: string, sameTenantB: string;
 let admin: TenantContext, admin2: TenantContext, foreignAdmin: TenantContext;
 const digest = (s: string) => createHash('sha256').update(s).digest();
 
@@ -126,7 +126,8 @@ async function receipt(decision: 'APPROVE' | 'REJECT', companyId = f.tenant.comp
     };
   });
 }
-const complete = (t: TenantContext, claim: CommandClaim, r: DecisionReceiptV1) => tx((c) => completeDecisionReceipt(c, t, claim, r));
+const complete = (t: TenantContext, claim: CommandClaim, r: DecisionReceiptV1, expected: string = cancellation) =>
+  tx((c) => completeDecisionReceipt(c, t, claim, expected, r));
 const rowBytes = async (key: string, t = admin) =>
   (
     await db.pool.query<{ bytes: string }>(
@@ -182,6 +183,9 @@ beforeAll(async () => {
     });
   ({ id: cancellation, need } = await pair(f));
   ({ id: foreignCancellation } = await pair(other));
+  // Cancellation B: a second real OPEN case in the SAME tenant (other employee on the same duty).
+  const jonasMembership = await insertMembership(db.pool, f.tenant.companyId, f.dutyId, f.jonas.employeeId);
+  ({ id: sameTenantB } = await pair({ ...f, membership: jonasMembership, mira: f.jonas }));
   admin = adminContext(f.tenant.admin);
   admin2 = adminContext(f.second);
   foreignAdmin = adminContext(other.tenant.admin);
@@ -436,7 +440,7 @@ describe('receipt codec lifecycle (codec level, no decision service)', () => {
     const auditService = new BusinessAuditService();
     await expect(
       tx(async (c) => {
-        await completeDecisionReceipt(c, admin, claim, snapshot);
+        await completeDecisionReceipt(c, admin, claim, cancellation, snapshot);
         await auditService.recordBusinessAction(c, {
           companyId: admin.companyId, actorAccountId: admin.accountId, action: 'CANCELLATION_APPROVED',
           resourceType: 'CANCELLATION_REQUEST', resourceId: cancellation,
@@ -450,7 +454,7 @@ describe('receipt codec lifecycle (codec level, no decision service)', () => {
     // A failing audit insert inside the completion transaction also rolls the snapshot back.
     await expect(
       tx(async (c) => {
-        await completeDecisionReceipt(c, admin, claim, snapshot);
+        await completeDecisionReceipt(c, admin, claim, cancellation, snapshot);
         await c.query("INSERT INTO audit_event(company_id) VALUES('not-a-uuid')");
       }),
     ).rejects.toBeTruthy();
@@ -482,5 +486,37 @@ describe('receipt codec lifecycle (codec level, no decision service)', () => {
     await expect(complete(admin, claim, bad)).rejects.toThrow('Invalid cancellation decision receipt');
     expect(await row(key)).toMatchObject({ state: 'IN_PROGRESS', result_json: null });
     expect(need).toBeTruthy();
+  });
+});
+
+describe('resource binding of completion (TL review PR #126)', () => {
+  it.each(['APPROVE', 'REJECT'] as const)(
+    '%s: a claim for cancellation A refuses a valid same-tenant receipt for cancellation B, then completes for A',
+    async (decision) => {
+      const key = randomUUID();
+      const hashA = decision === 'APPROVE' ? approveHash() : rejectHash();
+      const claim = claimOf(await reserve(admin, key, hashA));
+      const receiptB = await receipt(decision, f.tenant.companyId, sameTenantB);
+      expect(receiptB.cancellation.id).toBe(sameTenantB);
+      const before = await rowBytes(key);
+      await expect(complete(admin, claim, receiptB, cancellation)).rejects.toThrow('Invalid cancellation decision receipt: cancellation.id');
+      expect(await rowBytes(key)).toBe(before);
+      expect(await row(key)).toMatchObject({ state: 'IN_PROGRESS', result_json: null, result_cancellation_request_id: null, attempt_id: claim.attempt_id });
+      const receiptA = await receipt(decision);
+      const first = await complete(admin, claim, receiptA, cancellation);
+      expect(first.cancellation.id).toBe(cancellation);
+      expect(await row(key)).toMatchObject({ state: 'COMPLETED', result_cancellation_request_id: cancellation });
+      expect(await reserve(admin, key, hashA)).toEqual({ result: first, replayed: true });
+    },
+  );
+  it.each(['APPROVE', 'REJECT'] as const)('%s: completion for B succeeds only when B is the expected command resource', async (decision) => {
+    const key = randomUUID();
+    const hashB = decision === 'APPROVE'
+      ? decisionFingerprint({ decision: 'APPROVE', requestId: sameTenantB, needVersion: 1, dutyVersion: 1 })
+      : decisionFingerprint({ decision: 'REJECT', requestId: sameTenantB });
+    const claim = claimOf(await reserve(admin, key, hashB, sameTenantB));
+    await expect(complete(admin, claim, await receipt(decision), sameTenantB)).rejects.toThrow('cancellation.id');
+    const done = await complete(admin, claim, await receipt(decision, f.tenant.companyId, sameTenantB), sameTenantB);
+    expect(await reserve(admin, key, hashB, sameTenantB)).toEqual({ result: done, replayed: true });
   });
 });

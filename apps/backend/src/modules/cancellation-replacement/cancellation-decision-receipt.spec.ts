@@ -1,6 +1,8 @@
 /** SP-21 S1 unit tests: fingerprint and strict receipt decoder (no database, no HTTP). */
 import { createHash } from 'node:crypto';
+import type { PoolClient } from 'pg';
 import {
+  completeDecisionReceipt,
   decisionFingerprint,
   decodeDecisionReceipt,
   pgJsonTextBytes,
@@ -148,4 +150,31 @@ describe('replayDecisionReceipt', () => {
   ])('fails closed on %s', (_n, over) => {
     expect(() => replayDecisionReceipt(prior(over as Partial<CommandReservation>), REQUEST)).toThrow('Invalid cancellation decision receipt');
   });
+});
+
+describe('completeDecisionReceipt resource binding', () => {
+  const B = '22222222-2222-4222-8222-222222222222';
+  const tenant = { sessionId: REQUEST, accountId: REQUEST, companyId: REQUEST, role: 'COMPANY_ADMIN' as const };
+  const claim = { id: 'row', attempt_id: 'attempt' };
+  const client = (rows: unknown[]) => {
+    const calls: string[] = [];
+    return { calls, c: { query: (sql: string) => (calls.push(sql), Promise.resolve({ rowCount: rows.length, rows })) } as unknown as PoolClient };
+  };
+  it.each([['APPROVE', approveReceipt], ['REJECT', rejectReceipt]] as const)(
+    '%s: a receipt for another cancellation is refused before any SQL is issued',
+    async (_d, make) => {
+      const { c, calls } = client([]);
+      await expect(completeDecisionReceipt(c, tenant, claim, B, make())).rejects.toThrow('cancellation.id');
+      await expect(completeDecisionReceipt(c, tenant, claim, 'not-a-uuid', make())).rejects.toThrow('expected cancellation id');
+      expect(calls).toHaveLength(0);
+    },
+  );
+  it.each([['APPROVE', approveReceipt], ['REJECT', rejectReceipt]] as const)(
+    '%s: the expected id (not the receipt) is bound as the typed result',
+    async (_d, make) => {
+      const { c, calls } = client([{ result_json: make() }]);
+      await expect(completeDecisionReceipt(c, tenant, claim, REQUEST.toUpperCase(), make())).resolves.toEqual(make());
+      expect(calls).toHaveLength(1);
+    },
+  );
 });
