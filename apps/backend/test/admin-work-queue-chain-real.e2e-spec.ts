@@ -214,7 +214,7 @@ describe('admin work queue after a chained replacement (RED for issue #119)', ()
   it('still fails closed when a replaced membership was removed without an approved decision on it', async () => {
     const f = await fixture();
     const first = await replaceMember(f, await session(f.mira.account), f.membership, 1, await session(f.jonas.account));
-    await pool.query("UPDATE plan_assignments SET state='REMOVED', removed_at=clock_timestamp(), updated_at=clock_timestamp() WHERE id=$1", [first.replacementId]);
+    await pool.query("WITH moment AS (SELECT clock_timestamp() AS at) UPDATE plan_assignments SET state='REMOVED', removed_at=moment.at, updated_at=moment.at FROM moment WHERE id=$1", [first.replacementId]);
     const response = await queue(f.admin);
     expect(response.status).toBe(500);
     expect(response.body.code).toBe('INTERNAL_ERROR');
@@ -231,9 +231,9 @@ describe('admin work queue after a chained replacement (RED for issue #119)', ()
     const pending = await cancel(jonas, first.replacementId, first.dutyVersion);
     expect(pending.status).toBe(201);
     const secondNeed = pending.body.replacementNeed.id as string;
-    await pool.query("UPDATE cancellation_requests SET status='REJECTED', decided_at=clock_timestamp(), decided_by_account_id=$2, updated_at=clock_timestamp() WHERE id=$1", [pending.body.id, f.tenant.admin.accountId]);
+    await pool.query("WITH moment AS (SELECT clock_timestamp() AS at) UPDATE cancellation_requests SET status='REJECTED', decided_at=moment.at, decided_by_account_id=$2, updated_at=moment.at FROM moment WHERE id=$1", [pending.body.id, f.tenant.admin.accountId]);
     await pool.query("UPDATE replacement_needs SET status='CLOSED', updated_at=clock_timestamp() WHERE id=$1", [secondNeed]);
-    await pool.query("UPDATE plan_assignments SET state='REMOVED', removed_at=clock_timestamp(), updated_at=clock_timestamp() WHERE id=$1", [first.replacementId]);
+    await pool.query("WITH moment AS (SELECT clock_timestamp() AS at) UPDATE plan_assignments SET state='REMOVED', removed_at=moment.at, updated_at=moment.at FROM moment WHERE id=$1", [first.replacementId]);
     expect((await queue(f.admin)).status).toBe(500);
     expect((await caseContext(f.admin, first.needId)).status).toBe(500);
   });
@@ -242,10 +242,10 @@ describe('admin work queue after a chained replacement (RED for issue #119)', ()
     const f = await fixture();
     const first = await replaceMember(f, await session(f.mira.account), f.membership, 1, await session(f.jonas.account));
     const unrelated = await unrelatedOpenCase(f);
-    await pool.query("UPDATE plan_assignments SET state='REMOVED', removed_at=clock_timestamp(), updated_at=clock_timestamp() WHERE id=$1", [unrelated.membershipId]);
-    await pool.query("UPDATE cancellation_requests SET status='APPROVED', decided_at=clock_timestamp(), decided_by_account_id=$2, updated_at=clock_timestamp() WHERE id=$1", [unrelated.caseId, f.tenant.admin.accountId]);
+    await pool.query("WITH moment AS (SELECT clock_timestamp() AS at) UPDATE plan_assignments SET state='REMOVED', removed_at=moment.at, updated_at=moment.at FROM moment WHERE id=$1", [unrelated.membershipId]);
+    await pool.query("WITH moment AS (SELECT clock_timestamp() AS at) UPDATE cancellation_requests SET status='APPROVED', decided_at=moment.at, decided_by_account_id=$2, updated_at=moment.at FROM moment WHERE id=$1", [unrelated.caseId, f.tenant.admin.accountId]);
     await pool.query("UPDATE replacement_needs SET status='OPEN_UNFILLED', updated_at=clock_timestamp() WHERE id=$1", [unrelated.needId]);
-    await pool.query("UPDATE plan_assignments SET state='REMOVED', removed_at=clock_timestamp(), updated_at=clock_timestamp() WHERE id=$1", [first.replacementId]);
+    await pool.query("WITH moment AS (SELECT clock_timestamp() AS at) UPDATE plan_assignments SET state='REMOVED', removed_at=moment.at, updated_at=moment.at FROM moment WHERE id=$1", [first.replacementId]);
     expect((await queue(f.admin)).status).toBe(500);
     expect((await caseContext(f.admin, first.needId)).status).toBe(500);
   });
@@ -262,9 +262,10 @@ describe('admin work queue after a chained replacement (RED for issue #119)', ()
     const { f, first, second, kira } = await chainedTenant();
     // Lifetime uniqueness: the first offer already produced its only replacement membership.
     const duplicate = await errorCode(() => pool.query(
-      `INSERT INTO plan_assignments (id, company_id, duty_id, employee_id, duty_function, source, state, replacement_offer_id, created_at, updated_at)
-       SELECT gen_random_uuid(), o.company_id, o.duty_id, o.employee_id, 'MITARBEITER', 'REPLACEMENT', 'ACTIVE', o.id, clock_timestamp(), clock_timestamp()
-         FROM replacement_offers o WHERE o.company_id = $1 AND o.id = (SELECT selected_offer_id FROM replacement_needs WHERE id = $2)`,
+      `WITH moment AS (SELECT clock_timestamp() AS at)
+       INSERT INTO plan_assignments (id, company_id, duty_id, employee_id, duty_function, source, state, replacement_offer_id, created_at, updated_at)
+       SELECT gen_random_uuid(), o.company_id, o.duty_id, o.employee_id, 'MITARBEITER', 'REPLACEMENT', 'ACTIVE', o.id, moment.at, moment.at
+         FROM replacement_offers o CROSS JOIN moment WHERE o.company_id = $1 AND o.id = (SELECT selected_offer_id FROM replacement_needs WHERE id = $2)`,
       [f.tenant.companyId, first.needId],
     ));
     expect(duplicate.code, duplicate.message).toBe('23505');
@@ -273,8 +274,9 @@ describe('admin work queue after a chained replacement (RED for issue #119)', ()
     const pendingOffer = await offer(kira.session, unrelated.needId);
     expect(pendingOffer.status).toBe(201);
     const crossing = await errorCode(() => pool.query(
-      `INSERT INTO plan_assignments (id, company_id, duty_id, employee_id, duty_function, source, state, replacement_offer_id, created_at, updated_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, 'MITARBEITER', 'REPLACEMENT', 'ACTIVE', $4, clock_timestamp(), clock_timestamp())`,
+      `WITH moment AS (SELECT clock_timestamp() AS at)
+       INSERT INTO plan_assignments (id, company_id, duty_id, employee_id, duty_function, source, state, replacement_offer_id, created_at, updated_at)
+       SELECT gen_random_uuid(), $1, $2, $3, 'MITARBEITER', 'REPLACEMENT', 'ACTIVE', $4, moment.at, moment.at FROM moment`,
       [f.tenant.companyId, f.dutyId, f.jonas.employeeId, pendingOffer.body.id],
     ));
     expect(crossing.code, crossing.message).toBe('23503');
