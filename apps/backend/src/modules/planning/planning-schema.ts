@@ -182,7 +182,7 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
     "u UNIQUE (company_id, id)",
   ],
   project_operating_calendars: [
-    "c CHECK ((((effective_from_month >= '0001-01-01'::date) AND (effective_from_month <= '9999-12-01'::date)) AND (EXTRACT(day FROM effective_from_month) = (1)::numeric)))",
+    "c CHECK (((effective_from_month >= '0001-01-01'::date) AND (effective_from_month <= '9999-12-01'::date) AND (EXTRACT(day FROM effective_from_month) = (1)::numeric)))",
     'c CHECK ((isfinite(created_at) AND isfinite(updated_at)))',
     "c CHECK (((version >= 1) AND (version <= '9007199254740991'::bigint)))",
     'c CHECK (((weekday_mask >= 1) AND (weekday_mask <= 127)))',
@@ -201,7 +201,7 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
     'u UNIQUE (company_id, id)',
   ],
   monthly_plans: [
-    "c CHECK ((((planning_month >= '0001-01-01'::date) AND (planning_month <= '9999-12-01'::date)) AND (EXTRACT(day FROM planning_month) = (1)::numeric)))",
+    "c CHECK (((planning_month >= '0001-01-01'::date) AND (planning_month <= '9999-12-01'::date) AND (EXTRACT(day FROM planning_month) = (1)::numeric)))",
     "c CHECK ((((status = 'UNPUBLISHED'::text) AND (published_at IS NULL) AND (published_by_account_id IS NULL)) OR ((status = 'PUBLISHED'::text) AND (published_at IS NOT NULL) AND isfinite(published_at) AND (published_by_account_id IS NOT NULL))))",
     'f FOREIGN KEY (company_id, project_id) REFERENCES public.projects(company_id, id) ON DELETE RESTRICT',
     'f FOREIGN KEY (company_id, published_by_account_id) REFERENCES public.accounts(company_id, id) ON DELETE RESTRICT',
@@ -212,8 +212,8 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
   ],
   duties: [
     "c CHECK (((concurrency_version >= 1) AND (concurrency_version <= '9007199254740991'::bigint)))",
-    "c CHECK ((((config_effective_from_month >= '0001-01-01'::date) AND (config_effective_from_month <= '9999-12-01'::date)) AND (EXTRACT(day FROM config_effective_from_month) = (1)::numeric) AND (config_effective_from_month <= planning_month)))",
-    "c CHECK ((((duty_date >= '0001-01-01'::date) AND (duty_date <= '9999-12-31'::date)) AND (EXTRACT(day FROM planning_month) = (1)::numeric) AND (EXTRACT(year FROM duty_date) = EXTRACT(year FROM planning_month)) AND (EXTRACT(month FROM duty_date) = EXTRACT(month FROM planning_month))))",
+    "c CHECK (((config_effective_from_month >= '0001-01-01'::date) AND (config_effective_from_month <= '9999-12-01'::date) AND (EXTRACT(day FROM config_effective_from_month) = (1)::numeric) AND (config_effective_from_month <= planning_month)))",
+    "c CHECK (((duty_date >= '0001-01-01'::date) AND (duty_date <= '9999-12-31'::date) AND (EXTRACT(day FROM planning_month) = (1)::numeric) AND (EXTRACT(year FROM duty_date) = EXTRACT(year FROM planning_month)) AND (EXTRACT(month FROM duty_date) = EXTRACT(month FROM planning_month))))",
     "c CHECK (((EXTRACT(second FROM start_local) = (0)::numeric) AND (EXTRACT(second FROM end_local) = (0)::numeric) AND (start_local < '24:00:00'::time without time zone) AND (end_local < '24:00:00'::time without time zone) AND (start_local <> end_local) AND ((shift_kind <> 'TAG'::text) OR (end_local > start_local))))",
     'c CHECK ((isfinite(starts_at) AND isfinite(ends_at) AND (ends_at > starts_at)))',
     'c CHECK (((length(time_zone) >= 1) AND (length(time_zone) <= 255)))',
@@ -236,6 +236,32 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
     "f FOREIGN KEY (company_id, replacement_offer_id, duty_id, employee_id) REFERENCES public.replacement_offers(company_id, id, duty_id, employee_id) ON DELETE RESTRICT",
   ],
 };
+
+/** PostgreSQL 17 patch levels can deparse these four identical CHECK expressions
+ * with or without one redundant group of parentheses. Only the four exact
+ * migration-derived alternate signatures are accepted; all other schema drift
+ * remains INVALID. This is NOT general SQL/parenthesis normalization.
+ */
+const PG17_CHECK_DEPARSE_ALIASES = new Map<string, string>();
+for (const [relation, field] of [
+  ['monthly_plans', 'planning_month'],
+  ['duties', 'config_effective_from_month'],
+  ['duties', 'duty_date'],
+  ['project_operating_calendars', 'effective_from_month'],
+] as const) {
+  const expected = EXPECTED_CONSTRAINTS[relation].filter(
+    (signature) => signature.startsWith(`c CHECK (((${field} >= '0001-01-01'::date)`),
+  );
+  if (expected.length !== 1) throw new Error(`Unrecognized signed CHECK: ${relation}.${field}`);
+  const canonical = expected[0];
+  const alternate = canonical
+    .replace('c CHECK (((', 'c CHECK ((((')
+    .replace('::date) AND (EXTRACT', '::date)) AND (EXTRACT');
+  if (alternate === canonical || PG17_CHECK_DEPARSE_ALIASES.has(alternate)) {
+    throw new Error(`Ambiguous CHECK deparse alias: ${relation}.${field}`);
+  }
+  PG17_CHECK_DEPARSE_ALIASES.set(alternate, canonical);
+}
 
 /** pg_get_indexdef of valid indexes that do not back a constraint, index name normalized to `?`. */
 const EXPECTED_INDEXES: Record<PlanningRelation, readonly string[]> = {
@@ -350,7 +376,7 @@ export function classifyPlanningSchema(catalog: CatalogRow): PlanningSchemaRepor
     if (JSON.stringify(of(catalog.columns)) !== JSON.stringify(EXPECTED_COLUMNS[relation])) {
       return { state: 'INVALID', reason: `columns of public.${relation} differ from migrations 0011/0012/0014/0016/0018` };
     }
-    if (!sameSet(of(catalog.constraints), EXPECTED_CONSTRAINTS[relation])) {
+    if (!sameSet(of(catalog.constraints).map((s) => PG17_CHECK_DEPARSE_ALIASES.get(s) ?? s), EXPECTED_CONSTRAINTS[relation])) {
       return { state: 'INVALID', reason: `constraints of public.${relation} differ from migrations 0011/0012/0014/0016/0018` };
     }
     if (!sameSet(of(catalog.indexes), EXPECTED_INDEXES[relation])) {
