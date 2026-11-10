@@ -237,6 +237,32 @@ const EXPECTED_CONSTRAINTS: Record<PlanningRelation, readonly string[]> = {
   ],
 };
 
+/** PostgreSQL 17 patch levels can deparse these four identical CHECK expressions
+ * with or without one redundant group of parentheses. Only the four exact
+ * migration-derived alternate signatures are accepted; all other schema drift
+ * remains INVALID. This is NOT general SQL/parenthesis normalization.
+ */
+const PG17_CHECK_DEPARSE_ALIASES = new Map<string, string>();
+for (const [relation, field] of [
+  ['monthly_plans', 'planning_month'],
+  ['duties', 'config_effective_from_month'],
+  ['duties', 'duty_date'],
+  ['project_operating_calendars', 'effective_from_month'],
+] as const) {
+  const expected = EXPECTED_CONSTRAINTS[relation].filter(
+    (signature) => signature.startsWith(`c CHECK (((${field} >= '0001-01-01'::date)`),
+  );
+  if (expected.length !== 1) throw new Error(`Unrecognized signed CHECK: ${relation}.${field}`);
+  const canonical = expected[0];
+  const alternate = canonical
+    .replace('c CHECK (((', 'c CHECK ((((')
+    .replace('::date) AND (EXTRACT', '::date)) AND (EXTRACT');
+  if (alternate === canonical || PG17_CHECK_DEPARSE_ALIASES.has(alternate)) {
+    throw new Error(`Ambiguous CHECK deparse alias: ${relation}.${field}`);
+  }
+  PG17_CHECK_DEPARSE_ALIASES.set(alternate, canonical);
+}
+
 /** pg_get_indexdef of valid indexes that do not back a constraint, index name normalized to `?`. */
 const EXPECTED_INDEXES: Record<PlanningRelation, readonly string[]> = {
   replacement_offers: [
@@ -350,7 +376,7 @@ export function classifyPlanningSchema(catalog: CatalogRow): PlanningSchemaRepor
     if (JSON.stringify(of(catalog.columns)) !== JSON.stringify(EXPECTED_COLUMNS[relation])) {
       return { state: 'INVALID', reason: `columns of public.${relation} differ from migrations 0011/0012/0014/0016/0018` };
     }
-    if (!sameSet(of(catalog.constraints), EXPECTED_CONSTRAINTS[relation])) {
+    if (!sameSet(of(catalog.constraints).map((s) => PG17_CHECK_DEPARSE_ALIASES.get(s) ?? s), EXPECTED_CONSTRAINTS[relation])) {
       return { state: 'INVALID', reason: `constraints of public.${relation} differ from migrations 0011/0012/0014/0016/0018` };
     }
     if (!sameSet(of(catalog.indexes), EXPECTED_INDEXES[relation])) {
