@@ -9,11 +9,23 @@
  * other environment yet, so delivery there fails explicitly instead of
  * pretending success.
  */
-import { ActivationMailService } from '../../auth/activation-mail.service.js';
+import { ActivationMailService, isSyntheticTestRecipient } from '../../auth/activation-mail.service.js';
 
 export const ACTIVATION_DELIVERY = Symbol('ACTIVATION_DELIVERY');
 
 export interface ActivationDelivery {
+  /**
+   * false when no approved transport exists in this environment. The caller
+   * must then refuse to provision an account (503) before persisting anything,
+   * instead of committing an account whose activation can never be delivered.
+   */
+  readonly available: boolean;
+  /**
+   * Pre-commit recipient policy of the active transport. false means delivery
+   * is known to be refused for this address, so the caller must reject the
+   * request before persisting anything. true does NOT guarantee delivery.
+   */
+  acceptsRecipient(email: string): boolean;
   deliver(email: string, rawToken: string): Promise<void>;
 }
 
@@ -51,11 +63,19 @@ export class ActivationDeliveryUnavailableError extends Error {
 
 export function createActivationDelivery(): ActivationDelivery {
   if (process.env.NODE_ENV !== 'development') {
-    return { deliver: () => Promise.reject(new ActivationDeliveryUnavailableError()) };
+    // No transport: fail closed. Production delivery and recipient policy are a
+    // separate gate; the development-only allowlist is not applied here.
+    return {
+      available: false,
+      acceptsRecipient: () => false,
+      deliver: () => Promise.reject(new ActivationDeliveryUnavailableError()),
+    };
   }
   // Lazy: a misconfigured local mail adapter must not prevent application start.
   let mailer: ActivationMailService | undefined;
   return {
+    available: true,
+    acceptsRecipient: isSyntheticTestRecipient,
     async deliver(email, rawToken) {
       mailer ??= new ActivationMailService();
       await withDeadline(mailer.sendActivationEmail(email, rawToken), ACTIVATION_DELIVERY_DEADLINE_MS);

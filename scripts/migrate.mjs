@@ -1,6 +1,15 @@
 import { readdir, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import pg from "pg";
+// Checksums cover the exact file bytes, so a Git checkout that rewrites line
+// endings (core.autocrlf) changes them. That stays a hard failure; the report
+// only names the file and whether the bytes differ solely in line endings.
+class ChecksumMismatch extends Error {}
+const sha256 = (text) => createHash("sha256").update(text).digest("hex");
+function lineEndingOnly(sql, recorded) {
+  const lf = sql.replace(/\r\n/g, "\n");
+  return sha256(lf) === recorded || sha256(lf.replace(/\n/g, "\r\n")) === recorded;
+}
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 const client = new pg.Client({
   connectionString: process.env.DATABASE_URL,
@@ -19,14 +28,19 @@ try {
     .filter((n) => /^\d+.*\.sql$/.test(n))
     .sort()) {
     const sql = await readFile(new URL(name, dir), "utf8");
-    const checksum = createHash("sha256").update(sql).digest("hex");
+    const checksum = sha256(sql);
     const prior = await client.query(
       "SELECT checksum FROM schema_migrations WHERE name = $1",
       [name],
     );
     if (prior.rowCount) {
       if (prior.rows[0].checksum !== checksum)
-        throw new Error(`Applied migration changed: ${name}`);
+        throw new ChecksumMismatch(
+          lineEndingOnly(sql, prior.rows[0].checksum)
+            ? `Applied migration ${name} differs from the ledger only in line endings (CRLF/LF). ` +
+              "Restore the recorded bytes in the working tree; do not edit the ledger. See docs/docker.md."
+            : `Applied migration ${name} does not match its recorded checksum.`,
+        );
       console.log(`Already applied: ${name}`);
       continue;
     }
@@ -44,8 +58,10 @@ try {
       throw error;
     }
   }
-} catch {
-  // Database errors can contain credentials or SQL values. Keep CLI output neutral.
+} catch (error) {
+  // Database errors can contain credentials or SQL values. Keep CLI output neutral;
+  // a checksum report names only the file.
+  if (error instanceof ChecksumMismatch) console.error(error.message);
   console.error(
     "Migration failed. Check database availability and immutable migration files.",
   );

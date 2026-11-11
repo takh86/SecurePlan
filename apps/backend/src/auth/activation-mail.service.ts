@@ -10,13 +10,22 @@ import nodemailer from 'nodemailer';
  * nodemailer does not retry a failed sendMail (no pool), so a timeout is one attempt.
  */
 export const LOCAL_SMTP_OPTIONS = {
-  host: '127.0.0.1',
+  host: process.env.SECUREPLAN_SMTP_HOST ?? '127.0.0.1',
   port: 1025,
   secure: false,
   connectionTimeout: 5_000,
   greetingTimeout: 5_000,
   socketTimeout: 10_000,
 } as const;
+
+/**
+ * Development-only recipient policy: the local adapter never sends to real
+ * addresses. Shared with the pre-commit check in employee creation (issue #129)
+ * so an unsupported recipient is rejected before anything is persisted.
+ */
+export function isSyntheticTestRecipient(email: string): boolean {
+  return /^[^@\s]+@secureplan\.test$/i.test(email);
+}
 
 @Injectable()
 export class ActivationMailService {
@@ -57,7 +66,7 @@ export class ActivationMailService {
 
   async sendActivationEmail(email: string, rawToken: string): Promise<void> {
     // Never send demo emails to real addresses.
-    if (!/^[^@\s]+@secureplan\.test$/i.test(email)) {
+    if (!isSyntheticTestRecipient(email)) {
       throw new Error('Only synthetic test addresses are allowed');
     }
 

@@ -16,6 +16,7 @@
  */
 import {
   BadRequestException,
+  ServiceUnavailableException,
   ConflictException,
   Inject,
   Injectable,
@@ -27,6 +28,7 @@ import { assertActorInTransaction } from '../../../auth/authorization/actor-in-t
 import { requireRow } from '../../../auth/authorization/require-row.js';
 import type { TenantContext } from '../../../auth/authorization/tenant-context.js';
 import { uniqueViolationConstraint } from '../../../common/database/unique-violation.js';
+import { validationSubcodeDetails } from '../../../common/errors/error-contract.js';
 import { WALL_CLOCK, type WallClock } from '../../../common/time/wall-clock.js';
 import { checkEmploymentPeriodImpact, type EmploymentPeriodImpact } from './employment-period-impact.js';
 import { lockAccountsPrefix } from '../../identity/account-prefix-lock.js';
@@ -56,6 +58,19 @@ const EMPLOYEE_CODE_CONSTRAINT = 'uq_employees__company_employee_number';
 
 function codeTaken(): never {
   throw new ConflictException({ code: 'EMPLOYEE_CODE_ALREADY_EXISTS' });
+}
+
+function unsupportedRecipient(): never {
+  throw new BadRequestException({
+    code: 'VALIDATION_FAILED',
+    errors: [{ pointer: '#/email', code: 'INVALID_FORMAT', detail: validationSubcodeDetails.INVALID_FORMAT }],
+  });
+}
+
+function deliveryUnavailable(): never {
+  // Provisioning without a way to deliver the activation would commit an
+  // account nobody can activate; the operational 503 code is reused as is.
+  throw new ServiceUnavailableException({ code: 'SERVICE_UNAVAILABLE' });
 }
 
 /** Escapes LIKE metacharacters so `q` is matched literally (ESCAPE '\'). */
@@ -168,6 +183,11 @@ export class EmployeesService {
   ): Promise<EmployeeResponse> {
     const created = await this.database.withTransaction(async (client) => {
       await assertActorInTransaction(client, tenant, ADMIN_ONLY);
+      // Issue #129: refuse before any write (after authorization, so 401/403
+      // keep precedence): no transport at all -> 503; a recipient the active
+      // transport is known to refuse -> 400 #/email.
+      if (!this.delivery.available) deliveryUnavailable();
+      if (!this.delivery.acceptsRecipient(dto.email)) unsupportedRecipient();
       // Deterministic 409 for the common case; the UNIQUE constraint remains
       // the authority for concurrent creates (mapped below).
       const taken = await client.query(

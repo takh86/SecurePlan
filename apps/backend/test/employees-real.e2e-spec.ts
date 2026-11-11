@@ -423,6 +423,59 @@ describe('SP-07 — create and activation', () => {
     expect(await tenantState(tenantA.companyId)).toEqual(before);
     expect(delivery.sent).toEqual([]);
   });
+  it('issue #129: a recipient the transport refuses is rejected before any write; 403 keeps precedence', async () => {
+    delivery.recipientPolicy = (email) => email.endsWith('@secureplan.test');
+    try {
+      const employee = await createSyntheticSession(sessions, tenantA.employee);
+      const beforeA = await tenantState(tenantA.companyId);
+      const beforeB = await tenantState(tenantB.companyId);
+      const email = `i129-${randomUUID()}@example.com`;
+
+      const forbidden = await write('post', BASE, employee, createBody({ employeeCode: 'I129-1', email })).expect(403);
+      expect(forbidden.body.code).toBe('ACTION_FORBIDDEN');
+
+      const rejected = await write('post', BASE, adminA, createBody({ employeeCode: 'I129-1', email })).expect(400);
+      expect(rejected.body.code).toBe('VALIDATION_FAILED');
+      expect(rejected.body.errors).toEqual([expect.objectContaining({ pointer: '#/email', code: 'INVALID_FORMAT' })]);
+      expect(JSON.stringify(rejected.body)).not.toContain(email);
+
+      expect(await tenantState(tenantA.companyId)).toEqual(beforeA);
+      expect(await tenantState(tenantB.companyId)).toEqual(beforeB);
+      const leaked = await db().query('SELECT count(*)::int AS n FROM accounts WHERE lower(email) = lower($1)', [email]);
+      expect(leaked.rows[0].n).toBe(0);
+      expect(delivery.sent).toEqual([]);
+
+      const ok = `i129-${randomUUID()}@secureplan.test`;
+      const created = await write('post', BASE, adminA, createBody({ employeeCode: 'I129-2', email: ok })).expect(201);
+      expect(created.body.accountStatus).toBe('PENDING_ACTIVATION');
+      expect(delivery.sent.map((entry) => entry.email)).toEqual([ok]);
+    } finally {
+      delivery.recipientPolicy = null;
+    }
+  });
+  it('issue #129: without an activation transport provisioning fails closed with 503 before any write', async () => {
+    delivery.available = false;
+    try {
+      const employee = await createSyntheticSession(sessions, tenantA.employee);
+      const beforeA = await tenantState(tenantA.companyId);
+      const email = `i129-${randomUUID()}@secureplan.test`;
+
+      const forbidden = await write('post', BASE, employee, createBody({ employeeCode: 'I129-3', email })).expect(403);
+      expect(forbidden.body.code).toBe('ACTION_FORBIDDEN');
+
+      const unavailable = await write('post', BASE, adminA, createBody({ employeeCode: 'I129-3', email })).expect(503);
+      expect(unavailable.body.code).toBe('SERVICE_UNAVAILABLE');
+      expect(unavailable.body).not.toHaveProperty('errors');
+      expect(JSON.stringify(unavailable.body)).not.toContain(email);
+
+      expect(await tenantState(tenantA.companyId)).toEqual(beforeA);
+      const leaked = await db().query('SELECT count(*)::int AS n FROM accounts WHERE lower(email) = lower($1)', [email]);
+      expect(leaked.rows[0].n).toBe(0);
+      expect(delivery.sent).toEqual([]);
+    } finally {
+      delivery.available = true;
+    }
+  });
 });
 
 describe('SP-07 — update', () => {

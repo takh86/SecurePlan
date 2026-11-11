@@ -56,7 +56,8 @@ function resolveError(exception: unknown): ErrorResolution {
   if (status === 500) return { status: 500, code: 'INTERNAL_ERROR' };
   if (status === 404) return { status: 404, code: 'RESOURCE_NOT_FOUND' };
 
-  // Provisional operational readiness exception. Not in the approved 8.5 code catalogue.
+  // PO-approved operational exception for readiness and unavailable activation
+  // mail transport during employee creation; see ADR-0001 and ADR-0007.
   if (status === 503 && explicit === 'SERVICE_UNAVAILABLE') {
     return { status: 503, code: 'SERVICE_UNAVAILABLE' };
   }
