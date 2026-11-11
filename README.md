@@ -43,7 +43,7 @@ npm run db:migrate
 npm run db:verify
 ```
 
-PowerShell: `Copy-Item .env.example .env` statt `cp`, falls nötig.
+PowerShell: `Copy-Item .env.example .env` statt `cp`, falls nötig. Vor `db:up` in `.env` zusätzlich `SECUREPLAN_LOGIN_HMAC_KEY`, `SECUREPLAN_PASSWORD_DENYLIST_PATH` und `APP_ORIGIN=https://localhost:8443` setzen; Details und der vollständige Docker-Stack (Frontend über nginx, Backend, PostgreSQL, Mailpit) stehen in [docs/docker.md](docs/docker.md).
 
 Zwei Terminals starten:
 
@@ -79,9 +79,9 @@ npm run start:backend
 
 ## Datenbank und Migrationen
 
-`npm run db:down` stoppt die lokale Datenbank, erhält aber das Volume. Für eine vorhandene PostgreSQL-Instanz genügt eine angepasste `DATABASE_URL`; Docker ist dann optional. `.env` wird nicht eingecheckt.
+`npm run db:down` stoppt die lokale Datenbank (und Mailpit), erhält aber das Volume. Für eine vorhandene PostgreSQL-Instanz genügt eine angepasste `DATABASE_URL`; Docker ist dann optional. `.env` wird nicht eingecheckt.
 
-Migrationen liegen in `apps/backend/migrations`. Der Runner serialisiert Aufrufe über einen Advisory Lock, prüft SHA-256-Prüfsummen und führt jede neue Datei samt Ledger-Eintrag atomar aus. Bereits angewendete Dateien nicht verändern; neue Änderungen erhalten eine neue Migration. Ein zweiter Lauf muss ohne erneuten Effekt funktionieren.
+Migrationen liegen in `apps/backend/migrations`. Der Runner serialisiert Aufrufe über einen Advisory Lock, prüft SHA-256-Prüfsummen und führt jede neue Datei samt Ledger-Eintrag atomar aus. Bereits angewendete Dateien nicht verändern; neue Änderungen erhalten eine neue Migration. Ein zweiter Lauf muss ohne erneuten Effekt funktionieren. Die Prüfsummen hängen von den Zeilenenden der Arbeitskopie ab; siehe [Migrationen und Zeilenenden](docs/docker.md#migrationen-und-zeilenenden).
 
 Migrationen bis `0010` enthalten Foundation, Identity/Sessions/Audit, Workforce-/Projekt-/Monatszuordnungs-/Schichtkonfigurations-Persistenz und tägliche Verfügbarkeitsmarker samt technischen Batch-Datensätzen. Planungstabellen fehlen noch. Ihr Einführen erfordert die gleichzeitige freigegebene Integration beider [SP-11-Abhängigkeitsprüfungen](docs/datenbank/sp11-integrity-handoff.md); die temporären Guards bleiben bis dahin fail closed. Interne Spezifikationen werden separat gepflegt.
 
@@ -91,7 +91,7 @@ Migrationen bis `0010` enthalten Foundation, Identity/Sessions/Audit, Workforce-
 | --- | --- |
 | `apps/backend` | API, Backendtests, Migrationen |
 | `apps/frontend` | React-Webclient für die implementierten Auth-/Verwaltungsabläufe |
-| `infra/docker` | Lokale PostgreSQL-Instanz |
+| `infra/docker` | Lokaler Compose-Stack (nginx-Frontend, Backend, PostgreSQL, Mailpit) |
 | `scripts` | Migration und DB-Verifikation |
 | `.github/workflows` | Build, Lint, Tests, PostgreSQL-Smoke-Checks |
 | `docs` | Anforderungen, öffentliche Designzusammenfassungen, Planung und Review-Nachweise |
