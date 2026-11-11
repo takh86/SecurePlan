@@ -140,7 +140,8 @@ const codeStatuses: Record<KnownErrorCode, number> = {
   CANCELLATION_PLAN_CHANGED: 409,
   PLAN_CONCURRENT_MODIFICATION: 409,
   INTERNAL_ERROR: 500,
-  // Operational 503 extension is NOT in the approved 8.5 catalogue; decision pending.
+  // PO-approved operational 503 extension (ADR-0001 readiness, ADR-0007
+  // activation mail transport), not in the original Phase 8.5 catalogue.
   SERVICE_UNAVAILABLE: 503,
   ACTIVATION_TOKEN_INVALID_OR_EXPIRED: 400,
   PASSWORD_POLICY_VIOLATION: 400,
