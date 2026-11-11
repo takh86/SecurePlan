@@ -17,7 +17,7 @@
     "test:scripts": "node scripts/verified-test-command.mjs scripts",
     "db:up": "docker compose --env-file .env -f infra/docker/compose.yaml up -d --wait postgres mailpit",
     "db:down": "docker compose --env-file .env -f infra/docker/compose.yaml stop postgres mailpit",
-    "stack:up": "docker compose --env-file .env -f infra/docker/compose.yaml up -d --build --wait",
+    "stack:up": "npm run db:up && npm run db:migrate && docker compose --env-file .env -f infra/docker/compose.yaml up -d --build --wait",
     "stack:down": "docker compose --env-file .env -f infra/docker/compose.yaml down",
     "stack:ps": "docker compose --env-file .env -f infra/docker/compose.yaml ps",
     "db:migrate": "node --env-file=.env scripts/migrate.mjs",

@@ -83,7 +83,7 @@ npm run start:backend
 
 Migrationen liegen in `apps/backend/migrations`. Der Runner serialisiert Aufrufe über einen Advisory Lock, prüft SHA-256-Prüfsummen und führt jede neue Datei samt Ledger-Eintrag atomar aus. Bereits angewendete Dateien nicht verändern; neue Änderungen erhalten eine neue Migration. Ein zweiter Lauf muss ohne erneuten Effekt funktionieren. Die Prüfsummen hängen von den Zeilenenden der Arbeitskopie ab; siehe [Migrationen und Zeilenenden](docs/docker.md#migrationen-und-zeilenenden).
 
-Migrationen bis `0010` enthalten Foundation, Identity/Sessions/Audit, Workforce-/Projekt-/Monatszuordnungs-/Schichtkonfigurations-Persistenz und tägliche Verfügbarkeitsmarker samt technischen Batch-Datensätzen. Planungstabellen fehlen noch. Ihr Einführen erfordert die gleichzeitige freigegebene Integration beider [SP-11-Abhängigkeitsprüfungen](docs/datenbank/sp11-integrity-handoff.md); die temporären Guards bleiben bis dahin fail closed. Interne Spezifikationen werden separat gepflegt.
+Migrationen bis `0010` enthalten Foundation, Identity/Sessions/Audit, Workforce-/Projekt-/Monatszuordnungs-/Schichtkonfigurations-Persistenz und tägliche Verfügbarkeitsmarker samt technischen Batch-Datensätzen. Ab `0011` folgen Planungsgrundlage, Bearbeitungs-Leases, Erstveröffentlichung, Projekt-Betriebskalender, Mitarbeiter-Monatsspeicherung sowie Absage- und Ersatzdaten (`0011`–`0020`); der aktuelle Stand ist das höchste nummerierte Skript in `apps/backend/migrations`. Interne Spezifikationen werden separat gepflegt.
 
 ## Repository-Struktur
 

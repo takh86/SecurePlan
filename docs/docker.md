@@ -9,7 +9,7 @@ Lokale Entwicklungsumgebung mit synthetischen Daten. **Kein Produktions-Deployme
 | `postgres` | `postgres:17` | `127.0.0.1:5432` | Volume `docker_secureplan_pgdata` |
 | `mailpit` | `axllent/mailpit:v1.31.5` | UI `http://127.0.0.1:8025`, SMTP `127.0.0.1:1025` | fängt Aktivierungsmails ab |
 
-Alle Dienste haben Healthchecks; `frontend` startet erst bei gesundem Backend (Readiness inkl. DB).
+Alle Dienste haben Healthchecks; `frontend` startet erst bei gesundem Backend. Die Backend-Readiness prüft die DB **einschließlich Schema** (`foundation_probe` aus Migration `0001`) – ein nicht migriertes Schema ist bewusst „nicht bereit“. Das Backend migriert nicht selbst; `stack:up` migriert deshalb vom Host, bevor es Backend und Frontend startet.
 
 ## Voraussetzungen
 
@@ -26,29 +26,33 @@ Alle Dienste haben Healthchecks; `frontend` startet erst bei gesundem Backend (R
    - `APP_ORIGIN=https://localhost:8443` (der Wert aus `.env.example` wird vom Login-Origin-Guard abgelehnt)
 
    Fehlt einer der ersten beiden Werte, bricht jeder `docker compose`-Aufruf mit einem Hinweis auf diese Datei ab.
-3. TLS-Zertifikat (gitignored, nie committen): `mkcert -install`, dann
-   `mkcert -cert-file infra/tls/localhost.pem -key-file infra/tls/localhost-key.pem localhost 127.0.0.1`
+3. TLS-Zertifikat (gitignored, nie committen). `infra/tls/` existiert in einem frischen Klon nicht und wird zuerst angelegt:
+
+   ```powershell
+   New-Item -ItemType Directory -Force infra/tls | Out-Null   # Bash: mkdir -p infra/tls
+   mkcert -install
+   mkcert -cert-file infra/tls/localhost.pem -key-file infra/tls/localhost-key.pem localhost 127.0.0.1
+   ```
 
 Zertifikat, Schlüssel, `.env` und Denylist werden zur Laufzeit read-only gemountet bzw. als Variable übergeben; `.dockerignore` hält sie aus den Images heraus.
 
 ## Start, Status, Stopp (Repository-Root)
 
 ```powershell
-npm run stack:up      # baut beide Images und wartet, bis alle Dienste healthy sind
+npm run stack:up      # 1. postgres + mailpit (healthy)  2. db:migrate vom Host  3. Images bauen, backend + frontend (healthy)
 npm run stack:ps
-npm run db:migrate    # vom Host gegen 127.0.0.1:5432; idempotent
 npm run db:verify
 npm run stack:down    # entfernt Container und Netz, NICHT das Volume
 ```
 
 `npm run db:up` / `db:down` starten bzw. stoppen nur `postgres` und `mailpit` – für den Host-Entwicklungsmodus (`dev:backend` + `dev:frontend`). Host-Modus und Docker-`frontend` belegen beide Port 8443; nur eins davon gleichzeitig.
 
-Migrationen laufen bewusst nur vom Host (das Backend-Image enthält weder `scripts/` noch Migrationsdateien). Nach einem neuen Pull also `npm run db:migrate` vor bzw. nach `stack:up`.
+Migrationen laufen bewusst nur vom Host (das Backend-Image enthält weder `scripts/` noch Migrationsdateien). `stack:up` führt `db:migrate` bei jedem Start aus (idempotent; ein zweiter Lauf wendet nichts an) und bricht ab, bevor das Backend startet, wenn die Migration scheitert – z. B. bei einer Prüfsummenabweichung (siehe unten). Ein direktes `docker compose … up` ohne vorherige Migration lässt das Backend auf einer frischen Datenbank unhealthy.
 
 ## Onboarding-Demo (Mailpit)
 
 1. Als `COMPANY_ADMIN` unter `https://localhost:8443` anmelden.
-2. Mitarbeitende mit einer Adresse **`…@secureplan.test`** anlegen. Andere Domains lehnt die lokale Umgebung vor jedem Schreibzugriff mit `400 VALIDATION_FAILED` (`#/email`) ab (Issue #129); die UI zeigt den Hinweis am E-Mail-Feld.
+2. Mitarbeitende mit einer Adresse **`…@secureplan.test`** anlegen. Andere Domains lehnt die lokale Umgebung vor jedem Schreibzugriff mit `400 VALIDATION_FAILED` (`#/email`, `INVALID_FORMAT`) ab (Issue #129). Der Vertrag unterscheidet das nicht von einem Syntaxfehler; die UI meldet deshalb neutral „wird vom Server nicht akzeptiert“.
 3. Mail in `http://127.0.0.1:8025` öffnen, Link `https://localhost:8443/activate#token=…` aufrufen, Passwort setzen, anmelden.
 
 Scheitert der Versand trotz gültiger Adresse (z. B. Mailpit gestoppt), bleibt der Mitarbeitende angelegt, der Token wird widerrufen und `ACCOUNT_ACTIVATION_DELIVERY_FAILED` auditiert; die API antwortet weiterhin `201` mit `PENDING_ACTIVATION`. Wiederherstellung über das interne Werkzeug (kein HTTP-Endpunkt):
@@ -100,14 +104,15 @@ Ein Restore ist **nicht verifiziert**. Vor einem echten Restore zuerst in einen 
 | `required variable SECUREPLAN_… is missing` | Variable in `.env` ergänzen (siehe Einrichtung). |
 | Login/Logout `503` | `APP_ORIGIN` ist nicht `https://localhost:8443`. |
 | `frontend` startet nicht, Bind-Fehler `localhost.pem` | Zertifikat fehlt in `infra/tls/`. |
-| `backend` unhealthy | `docker logs docker-backend-1` – Logs enthalten Ereignis + Korrelations-ID, keine Secrets. Readiness `503` = DB nicht erreichbar oder nicht migriert. |
+| `backend` unhealthy | `docker logs docker-backend-1` – Logs enthalten Ereignis + Korrelations-ID, keine Secrets. Readiness `503` = DB nicht erreichbar oder nicht migriert → `npm run db:migrate`, dann `npm run stack:up`. |
+| Mitarbeitenden anlegen → `503` | Kein Aktivierungsversand konfiguriert (`NODE_ENV` ≠ `development`); es wird nichts gespeichert. |
 | Aktivierungsmail fehlt | Adresse muss auf `@secureplan.test` enden; `docker logs docker-backend-1` auf `employee.activation.delivery_failed` prüfen; Reissue s. o. |
 | `429` bei Aktivierung/Login | Drosselung; hinter nginx teilen sich alle Clients einen Zähler (s. u.). `Retry-After` abwarten. |
 
 ## Bekannte Grenzen (Produktionsblocker)
 
 - **Client-IP hinter dem Proxy:** Das Backend vertraut bewusst keinen `X-Forwarded-*`-Headern (kein `trust proxy`). Login-IP-Limit (60/15 min, `login_abuse_counters`) und Aktivierungs-Drosselung (5/min, `ThrottlerGuard`) sehen daher nur die nginx-Adresse: **alle Clients teilen sich einen Zähler**. Lokal unkritisch, für jede gemeinsam genutzte Umgebung ein Verfügbarkeitsrisiko. Lösung (eng begrenzte Proxy-Vertrauensgrenze) erfordert eine eigene Sicherheitsentscheidung.
-- Kein Mailversand außerhalb `NODE_ENV=development`; Produktions-Mailpolicy ist ein separates Gate.
+- Kein Mailversand außerhalb `NODE_ENV=development`; Produktions-Mailpolicy ist ein separates Gate. Bis dahin lehnt das Anlegen von Mitarbeitenden dort mit `503 SERVICE_UNAVAILABLE` ab, bevor etwas gespeichert wird (`SERVICE_UNAVAILABLE` ist weiterhin nur provisorisch katalogisiert).
 - Zugangsdaten der lokalen Datenbank stehen in `compose.yaml` (nur synthetische Daten, nur Loopback).
 - Keine Content-Security-Policy im nginx (gleicher Stand wie der Vite-Dev-Server).
 - Image-Builds sind nicht bit-identisch reproduzierbar (gleiche Quelle kann andere Image-IDs ergeben); Basis-Images `node:24-bookworm-slim`, `nginx:stable-alpine`, `postgres:17` sind nicht per Digest fixiert.
