@@ -10,7 +10,7 @@ import nodemailer from 'nodemailer';
  * nodemailer does not retry a failed sendMail (no pool), so a timeout is one attempt.
  */
 export const LOCAL_SMTP_OPTIONS = {
-  host: '127.0.0.1',
+  host: process.env.SECUREPLAN_SMTP_HOST ?? '127.0.0.1',
   port: 1025,
   secure: false,
   connectionTimeout: 5_000,

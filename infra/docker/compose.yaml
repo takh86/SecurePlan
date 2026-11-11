@@ -1,4 +1,51 @@
+
 services:
+  backend:
+    image: secureplan-backend:local
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+      target: runtime
+    environment:
+      NODE_ENV: development
+      BIND_HOST: "0.0.0.0"
+      PORT: "3000"
+      DATABASE_URL: "postgresql://secureplan:secureplan_local@postgres:5432/secureplan"
+      APP_ORIGIN: "https://localhost:8443"
+      SECUREPLAN_SMTP_HOST: "mailpit"
+      SECUREPLAN_LOGIN_HMAC_KEY: ${SECUREPLAN_LOGIN_HMAC_KEY:?Missing HMAC key}
+      SECUREPLAN_PASSWORD_DENYLIST_PATH: "/run/secrets/password-denylist.txt"
+    volumes:
+      - type: bind
+        source: ${SECUREPLAN_PASSWORD_DENYLIST_PATH:?Missing denylist path}
+        target: /run/secrets/password-denylist.txt
+        read_only: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  frontend:
+    image: secureplan-frontend:local
+    build:
+      context: ../..
+      dockerfile: apps/frontend/Dockerfile
+      target: runtime
+    ports:
+      - "127.0.0.1:8443:8443"
+    volumes:
+      - type: bind
+        source: ../tls/localhost.pem
+        target: /etc/nginx/tls/localhost.pem
+        read_only: true
+      - type: bind
+        source: ../tls/localhost-key.pem
+        target: /etc/nginx/tls/localhost-key.pem
+        read_only: true
+    depends_on:
+      - backend
+
   postgres:
     image: postgres:17
     environment:
