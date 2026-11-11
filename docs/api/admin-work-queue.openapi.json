@@ -671,6 +671,7 @@
           "project",
           "timeZone",
           "concurrencyVersion",
+          "dutyConcurrencyVersion",
           "selectedOfferId"
         ],
         "properties": {
@@ -713,6 +714,12 @@
             "type": "integer",
             "minimum": 1,
             "description": "SP-20 Expected-Version for the selection command. Monotonic; starts at 1."
+          },
+          "dutyConcurrencyVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "description": "SP-21 S5-READ-01: current concurrency version of the duty, read in the same statement as concurrencyVersion. The expectedDutyVersion of a cancellation APPROVE decision; it is never the need version. Read metadata only: the decision command revalidates it under locks."
           },
           "selectedOfferId": {
             "type": "string",

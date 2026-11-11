@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import { PageFrame } from '../../../app/PageFrame';
 import type { AppRoute } from '../../../app/routes';
@@ -56,8 +56,9 @@ function isPendingCase(context: CaseContext): boolean {
 
 /**
  * Case view `/arbeitsuebersicht/:needId`. One offers request returns the case
- * context and the offer page from one server snapshot. Read-only: no action here
- * changes a cancellation, a need or an offer.
+ * context and the offer page from one server snapshot. Writes start only from an
+ * explicit, confirmed action (SP-20 selection, SP-21 REJECT / APPROVE without
+ * replacement) and never change the displayed data optimistically.
  */
 export function WorkQueueCasePage({ route, queue, needId }: Props) {
   const location = useLocation();
@@ -83,7 +84,7 @@ export function WorkQueueCasePage({ route, queue, needId }: Props) {
   }
 
   return (
-    <PageFrame title="Vorgang prüfen" lead="Offene Vorgänge prüfen. Ein geeignetes Angebot kann hier ausgewählt werden; die Auswahl wird serverseitig geprüft.">
+    <PageFrame title="Vorgang prüfen" lead="Offene Vorgänge prüfen. Eine Absage kann abgelehnt oder ohne Ersatz genehmigt werden, oder ein geeignetes Angebot wird ausgewählt; jede Entscheidung wird serverseitig geprüft.">
       <div className="work-queue work-queue--case">
         <p className="work-queue__back">
           <Link to={back}>Zur Arbeitsübersicht</Link>
@@ -295,6 +296,15 @@ function CaseDetails({
         />
       </section>
 
+      <DecisionPanel
+        queue={queue}
+        needId={needId}
+        context={context}
+        decision={decision}
+        onDecision={onDecision}
+        onRefresh={onRefresh}
+      />
+
       <SelectionPanel
         queue={queue}
         needId={needId}
@@ -432,14 +442,27 @@ function OfferPager({ pagination, onPage }: { pagination: Pagination; onPage: (p
   );
 }
 
-/** SP-20: what the administrator may do next. Every rule is re-checked by the server under its locks. */
+/**
+ * Administrative actions on one case: SP-20 offer selection and SP-21 REJECT / APPROVE without replacement.
+ * One state for both, so at most one write is in flight per case and an uncertain write blocks every other action.
+ * Versions and the Idempotency-Key are captured when the administrator opens the confirmation and are sent
+ * unchanged, also on an explicit retry. The server re-checks every precondition under its locks.
+ */
+type Intent =
+  | { kind: 'select'; offer: AdminOffer; needVersion: number }
+  | { kind: 'reject'; requestId: string }
+  | { kind: 'approve'; requestId: string; needVersion: number; dutyVersion: number };
+type IntentKind = Intent['kind'];
+
 type Decision =
   | { phase: 'idle' }
-  | { phase: 'confirm'; offer: AdminOffer; key: string }
-  | { phase: 'pending'; offer: AdminOffer; key: string }
-  | { phase: 'done' }
-  | { phase: 'retry'; offer: AdminOffer; key: string }
-  | { phase: 'refused'; message: string };
+  | { phase: 'confirm' | 'pending' | 'retry'; intent: Intent; key: string }
+  | { phase: 'done' | 'refused'; kind: IntentKind; message: string };
+
+/** A write is in flight or its outcome is unknown: no other action may start. */
+function isLocked(decision: Decision): boolean {
+  return decision.phase === 'pending' || decision.phase === 'retry';
+}
 
 /** German text per refusal code (the closed catalogue; anything else gets the generic text). */
 const REFUSAL_TEXT: Readonly<Record<string, string>> = {
@@ -450,18 +473,90 @@ const REFUSAL_TEXT: Readonly<Record<string, string>> = {
   REPLACEMENT_CANDIDATE_INELIGIBLE: 'Die Person ist für diesen Dienst nicht mehr geeignet.',
   REPLACEMENT_CANDIDATE_UNAVAILABLE: 'Die Person ist in diesem Zeitraum nicht verfügbar.',
   CANCELLATION_PLAN_CHANGED: 'Der Dienst oder der Plan wurde inzwischen geändert.',
+  CANCELLATION_ASSIGNMENT_NOT_ACTIVE: 'Die ursprüngliche Zuordnung ist nicht mehr aktiv.',
   RESOURCE_EDIT_LOCKED: 'Der Dienst wird gerade im Plan bearbeitet. Versuchen Sie es in einer Minute erneut.',
-  IDEMPOTENCY_REQUEST_IN_PROGRESS: 'Diese Auswahl wird bereits verarbeitet.',
+  ACTION_FORBIDDEN: 'Für diese Aktion fehlt die Berechtigung.',
 };
 
-function refusalText(error: ApiError): string {
-  return REFUSAL_TEXT[error.code ?? ''] ?? 'Die Auswahl wurde nicht angenommen.';
+function refusalText(error: ApiError, kind: IntentKind): string {
+  return REFUSAL_TEXT[error.code ?? ''] ?? (kind === 'select' ? 'Die Auswahl wurde nicht angenommen.' : 'Die Entscheidung wurde nicht angenommen.');
+}
+
+const DONE_TEXT: Record<'select' | 'REJECT' | 'APPROVE', string> = {
+  select: 'Ersatz ausgewählt. Der Vorgang ist abgeschlossen.',
+  REJECT: 'Absage abgelehnt. Die ursprüngliche Zuordnung bleibt aktiv; der Ersatzbedarf ist geschlossen.',
+  APPROVE: 'Absage ohne Ersatz genehmigt. Die ursprüngliche Zuordnung wurde entfernt; der Ersatzbedarf bleibt unbesetzt sichtbar.',
+};
+
+/** Runs one confirmed intent with its captured key and versions, and maps the answer to the next state. */
+function caseAction(queue: WorkQueueApi, needId: string, onDecision: (next: Decision) => void, onRefresh: () => void) {
+  return async function run(intent: Intent, key: string) {
+    onDecision({ phase: 'pending', intent, key });
+    try {
+      let message: string;
+      if (intent.kind === 'select') {
+        await queue.select(needId, { offerId: intent.offer.id, expectedVersion: intent.needVersion, idempotencyKey: key });
+        message = DONE_TEXT.select;
+      } else {
+        // Only a strictly validated receipt for exactly this command counts as success.
+        const receipt = await queue.decide(
+          { requestId: intent.requestId, needId },
+          intent.kind === 'reject'
+            ? { decision: 'REJECT', idempotencyKey: key }
+            : { decision: 'APPROVE', expectedNeedVersion: intent.needVersion, expectedDutyVersion: intent.dutyVersion, idempotencyKey: key },
+        );
+        message = DONE_TEXT[receipt.decision];
+      }
+      onDecision({ phase: 'done', kind: intent.kind, message });
+      onRefresh();
+    } catch (error) {
+      const http = error instanceof ApiError && error.kind === 'http' && error.code !== 'IDEMPOTENCY_REQUEST_IN_PROGRESS' ? error : null;
+      if (http && (http.status === 409 || http.status === 404)) {
+        // Terminal for this intent: the stale confirmation closes and the server state is reloaded.
+        const reason = http.status === 404 ? 'Dieser Vorgang ist nicht mehr sichtbar.' : refusalText(http, intent.kind);
+        onDecision({ phase: 'refused', kind: intent.kind, message: `${reason} Die Daten wurden neu geladen.` });
+        onRefresh();
+      } else if (http && http.status !== null && http.status >= 400 && http.status < 500) {
+        // Refused before any business write (400/401/403/...). No reload loop; 401 is handled by the session.
+        onDecision({
+          phase: 'refused',
+          kind: intent.kind,
+          message: `${refusalText(http, intent.kind)} Laden Sie den Vorgang neu, bevor Sie es erneut versuchen.`,
+        });
+      } else {
+        // Unknown outcome (network, 5xx, still in progress or an unreadable answer): keep intent, key and versions,
+        // so that only an explicit retry of the very same command is possible.
+        onDecision({ phase: 'retry', intent, key });
+      }
+    }
+  };
+}
+
+function Messages({ decision, kinds }: { decision: Decision; kinds: readonly IntentKind[] }) {
+  if ((decision.phase === 'done' || decision.phase === 'refused') && kinds.includes(decision.kind))
+    return decision.phase === 'done' ? (
+      <p className="work-queue__notice" role="status">
+        {decision.message}
+      </p>
+    ) : (
+      <p className="work-queue__error-text" role="alert">
+        {decision.message}
+      </p>
+    );
+  if (decision.phase === 'retry' && kinds.includes(decision.intent.kind))
+    return (
+      <p className="work-queue__error-text" role="alert">
+        Das Ergebnis ist nicht bestätigt. Senden Sie denselben Auftrag erneut; er wird nicht doppelt ausgeführt. Andere Aktionen
+        sind bis dahin gesperrt.
+      </p>
+    );
+  return null;
 }
 
 /**
- * SP-20 administrative decision: choose one eligible offer, confirm, then submit. A disabled button is only a
+ * SP-20 administrative selection: choose one eligible offer, confirm, then submit. A disabled button is only a
  * presentation; the server enforces concurrency. A refused answer reloads the case; an unknown outcome keeps
- * the same Idempotency-Key, so a retry replays the decision instead of making a second one.
+ * the same Idempotency-Key and need version, so a retry replays the decision instead of making a second one.
  */
 function SelectionPanel({
   queue,
@@ -479,72 +574,44 @@ function SelectionPanel({
   onRefresh: () => void;
 }) {
   const headingId = useId();
+  const run = caseAction(queue, needId, onDecision, onRefresh);
   const { context, items, pagination } = page;
   const open = context.cancellation.status === 'OPEN' && context.need.status === 'OPEN';
   const eligible = items.filter((offer) => offer.status === 'OPEN' && offer.reviewEligibility === 'ELIGIBLE');
+  const locked = isLocked(decision);
   const busy = decision.phase === 'pending';
+  const active = 'intent' in decision && decision.intent.kind === 'select' ? { ...decision, intent: decision.intent } : null;
+  const uncertain = active !== null && active.phase === 'retry';
 
-  async function submit(offer: AdminOffer, key: string) {
-    onDecision({ phase: 'pending', offer, key });
-    try {
-      await queue.select(needId, { offerId: offer.id, expectedVersion: context.need.concurrencyVersion, idempotencyKey: key });
-      onDecision({ phase: 'done' });
-      onRefresh();
-    } catch (error) {
-      if (error instanceof ApiError && (error.status === 409 || error.status === 404)) {
-        onDecision({ phase: 'refused', message: `${error.status === 404 ? 'Dieser Vorgang ist nicht mehr sichtbar.' : refusalText(error)} Die Daten wurden neu geladen.` });
-        onRefresh();
-      } else if (error instanceof ApiError && error.status !== null && error.status >= 400 && error.status < 500) {
-        onDecision({ phase: 'refused', message: `${refusalText(error)} Laden Sie den Vorgang neu, bevor Sie erneut auswählen.` });
-      } else {
-        // Unknown outcome (lost answer or server error): keep the key so that a retry replays the same decision.
-        onDecision({ phase: 'retry', offer, key });
-      }
-    }
-  }
-
-  const messages = (
-    <>
-      {decision.phase === 'done' && (
-        <p className="work-queue__notice" role="status">
-          Ersatz ausgewählt. Der Vorgang ist abgeschlossen.
-        </p>
-      )}
-      {decision.phase === 'refused' && (
-        <p className="work-queue__error-text" role="alert">
-          {decision.message}
-        </p>
-      )}
-    </>
-  );
-
-  if (!open) {
-    // A case that is no longer open shows only the outcome of this session's decision, if any.
-    const outcome = decision.phase === 'done' || decision.phase === 'refused';
-    return outcome ? (
+  if (!open || (uncertain && !eligible.some((offer) => offer.id === active.intent.offer.id))) {
+    // Not open any more, or the uncertain offer is not listed: show this session's outcome and, for an uncertain
+    // write, only the retry of that same command.
+    const outcome = (decision.phase === 'done' || decision.phase === 'refused') && decision.kind === 'select';
+    if (!outcome && !uncertain) return null;
+    return (
       <section className="work-queue__section" aria-labelledby={headingId}>
         <h2 id={headingId}>Ersatz auswählen</h2>
-        {messages}
+        <Messages decision={decision} kinds={['select']} />
+        {uncertain && (
+          <button type="button" className="work-queue__button" onClick={() => run(active.intent, active.key)}>
+            Erneut bestätigen
+          </button>
+        )}
       </section>
-    ) : null;
+    );
   }
 
   return (
     <section className="work-queue__section" aria-labelledby={headingId} aria-busy={busy || undefined}>
       <h2 id={headingId}>Ersatz auswählen</h2>
-      {messages}
-      {decision.phase === 'retry' && (
-        <p className="work-queue__error-text" role="alert">
-          Die Antwort des Servers fehlt. Die Auswahl kann gefahrlos erneut bestätigt werden; sie wird nicht doppelt angelegt.
-        </p>
-      )}
+      <Messages decision={decision} kinds={['select']} />
       {eligible.length === 0 ? (
         <p className="work-queue__sub">Auf dieser Seite gibt es kein aktuell geeignetes Angebot.</p>
       ) : (
         <ul className="work-queue__choices">
           {eligible.map((offer) => {
             const name = `${offer.employee.firstName} ${offer.employee.lastName}`;
-            const chosen = (decision.phase === 'confirm' || decision.phase === 'pending' || decision.phase === 'retry') && decision.offer.id === offer.id;
+            const chosen = active !== null && active.intent.offer.id === offer.id ? active : null;
             return (
               <li key={offer.id}>
                 <p>
@@ -556,36 +623,32 @@ function SelectionPanel({
                       Der Dienst wird auf {name} übertragen. Dieses Angebot wird angenommen; alle anderen offenen Angebote werden
                       abgelehnt.
                     </p>
-                    {decision.phase === 'retry' ? (
-                      <button type="button" className="work-queue__button" onClick={() => submit(offer, decision.key)}>
+                    {chosen.phase === 'retry' ? (
+                      <button type="button" className="work-queue__button" onClick={() => run(chosen.intent, chosen.key)}>
                         Erneut bestätigen
                       </button>
                     ) : (
-                      <button
-                        type="button"
-                        className="work-queue__button"
-                        disabled={busy}
-                        onClick={() => submit(offer, decision.key)}
-                      >
+                      <button type="button" className="work-queue__button" disabled={busy} onClick={() => run(chosen.intent, chosen.key)}>
                         Ersatz bestätigen
                       </button>
                     )}{' '}
-                    <button
-                      type="button"
-                      className="work-queue__button"
-                      disabled={busy}
-                      onClick={() => onDecision({ phase: 'idle' })}
-                    >
+                    <button type="button" className="work-queue__button" disabled={locked} onClick={() => onDecision({ phase: 'idle' })}>
                       Abbrechen
                     </button>
-                    {decision.phase === 'pending' && <p role="status">Auswahl wird gespeichert …</p>}
+                    {chosen.phase === 'pending' && <p role="status">Auswahl wird gespeichert …</p>}
                   </div>
                 ) : (
                   <button
                     type="button"
                     className="work-queue__button"
-                    disabled={busy}
-                    onClick={() => onDecision({ phase: 'confirm', offer, key: globalThis.crypto.randomUUID() })}
+                    disabled={locked}
+                    onClick={() =>
+                      onDecision({
+                        phase: 'confirm',
+                        intent: { kind: 'select', offer, needVersion: context.need.concurrencyVersion },
+                        key: globalThis.crypto.randomUUID(),
+                      })
+                    }
                   >
                     Ersatz auswählen
                   </button>
@@ -597,6 +660,172 @@ function SelectionPanel({
       )}
       {pagination.totalPages > 1 && (
         <p className="work-queue__sub">Angebote auf anderen Seiten werden hier nicht zur Auswahl angeboten.</p>
+      )}
+    </section>
+  );
+}
+
+/** Whether a REJECT or an APPROVE without replacement may be offered: an open, consistent, current case only. */
+function isDecidable(context: CaseContext): boolean {
+  return (
+    context.cancellation.status === 'OPEN' &&
+    context.need.status === 'OPEN' &&
+    context.consistency === 'CONSISTENT' &&
+    context.originalAssignmentActive &&
+    !context.dutyRemoved
+  );
+}
+
+const DECISION_COPY = {
+  reject: {
+    open: 'Ablehnen',
+    title: 'Absage ablehnen?',
+    confirm: 'Ablehnung bestätigen',
+    pending: 'Ablehnung wird gespeichert …',
+    effect:
+      'Die Absage wird abgelehnt. Die ursprüngliche Zuordnung bleibt aktiv; die Person bleibt im Dienst eingetragen. Der Ersatzbedarf wird geschlossen.',
+  },
+  approve: {
+    open: 'Ohne Ersatz genehmigen',
+    title: 'Absage ohne Ersatz genehmigen?',
+    confirm: 'Genehmigung ohne Ersatz bestätigen',
+    pending: 'Genehmigung wird gespeichert …',
+    effect:
+      'Die Absage wird genehmigt, ohne einen Ersatz auszuwählen. Die ursprüngliche Zuordnung wird entfernt. Der Dienst bleibt veröffentlicht, und der Ersatzbedarf bleibt als „Unbesetzt“ in der Arbeitsübersicht sichtbar.',
+  },
+} as const;
+
+type DecisionKind = keyof typeof DECISION_COPY;
+
+/**
+ * SP-21: REJECT or APPROVE without replacement for an open case. Both finalize every open offer as
+ * „Nicht ausgewählt“; neither selects a replacement. Confirmation is required; Escape or „Abbrechen“ closes it
+ * without any request and returns focus to the button that opened it.
+ */
+function DecisionPanel({
+  queue,
+  needId,
+  context,
+  decision,
+  onDecision,
+  onRefresh,
+}: {
+  queue: WorkQueueApi;
+  needId: string;
+  context: CaseContext;
+  decision: Decision;
+  onDecision: (next: Decision) => void;
+  onRefresh: () => void;
+}) {
+  const headingId = useId();
+  const confirmHeadingId = useId();
+  const run = caseAction(queue, needId, onDecision, onRefresh);
+  const openers = useRef<Partial<Record<DecisionKind, HTMLButtonElement | null>>>({});
+  const confirmHeading = useRef<HTMLHeadingElement | null>(null);
+  const returnFocus = useRef<DecisionKind | null>(null);
+  const active =
+    'intent' in decision && decision.intent.kind !== 'select' ? { phase: decision.phase, key: decision.key, intent: decision.intent } : null;
+  const locked = isLocked(decision);
+  const busy = decision.phase === 'pending';
+  const decidable = isDecidable(context);
+  const confirmingKind = active?.phase === 'confirm' ? active.intent.kind : null;
+
+  useEffect(() => {
+    if (confirmingKind) confirmHeading.current?.focus();
+  }, [confirmingKind]);
+  const hasActive = active !== null;
+  useEffect(() => {
+    // After Cancel, the opener is rendered again: give it the focus back.
+    if (!hasActive && returnFocus.current) {
+      openers.current[returnFocus.current]?.focus();
+      returnFocus.current = null;
+    }
+  }, [hasActive]);
+
+  function start(kind: DecisionKind) {
+    const requestId = context.cancellation.id;
+    onDecision({
+      phase: 'confirm',
+      // Captured now from the server read; never reused across intents and never guessed.
+      intent:
+        kind === 'reject'
+          ? { kind, requestId }
+          : { kind, requestId, needVersion: context.need.concurrencyVersion, dutyVersion: context.need.dutyConcurrencyVersion },
+      key: globalThis.crypto.randomUUID(),
+    });
+  }
+
+  function cancel(kind: DecisionKind) {
+    returnFocus.current = kind;
+    onDecision({ phase: 'idle' });
+  }
+
+  const outcome = (decision.phase === 'done' || decision.phase === 'refused') && decision.kind !== 'select';
+  const uncertain = active?.phase === 'retry';
+  if (!decidable && !outcome && !uncertain) return null;
+
+  return (
+    <section className="work-queue__section" aria-labelledby={headingId} aria-busy={busy || undefined}>
+      <h2 id={headingId}>Absage ohne Ersatz entscheiden</h2>
+      <Messages decision={decision} kinds={['reject', 'approve']} />
+      {decidable && (
+        <p className="work-queue__legend">
+          Beide Entscheidungen setzen alle offenen Ersatzangebote auf „Nicht ausgewählt“, auch wenn geeignete Angebote vorliegen. Um
+          einen Ersatz zu übernehmen, wählen Sie stattdessen ein Angebot unter „Ersatz auswählen“.
+        </p>
+      )}
+      {decidable && !active && (
+        <div className="work-queue__controls">
+          {(['reject', 'approve'] as const).map((kind) => (
+            <button
+              key={kind}
+              ref={(element) => {
+                openers.current[kind] = element;
+              }}
+              type="button"
+              className="work-queue__button"
+              disabled={locked}
+              onClick={() => start(kind)}
+            >
+              {DECISION_COPY[kind].open}
+            </button>
+          ))}
+        </div>
+      )}
+      {active && (decidable || uncertain) && (
+        <div
+          role="group"
+          aria-labelledby={confirmHeadingId}
+          className="work-queue__confirm"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && active.phase === 'confirm') {
+              event.preventDefault();
+              cancel(active.intent.kind);
+            }
+          }}
+        >
+          <h3 id={confirmHeadingId} ref={confirmHeading} tabIndex={-1}>
+            {DECISION_COPY[active.intent.kind].title}
+          </h3>
+          <p>{DECISION_COPY[active.intent.kind].effect}</p>
+          <p>
+            Offene Angebote, die auf „Nicht ausgewählt“ gesetzt werden: {context.need.openOfferCount}
+            {context.eligibleOpenOfferCount > 0 && ` (davon aktuell geeignet: ${context.eligibleOpenOfferCount})`}
+          </p>
+          {active.phase === 'retry' ? (
+            <button type="button" className="work-queue__button" onClick={() => run(active.intent, active.key)}>
+              Erneut bestätigen
+            </button>
+          ) : (
+            <button type="button" className="work-queue__button" disabled={busy} onClick={() => run(active.intent, active.key)}>
+              {DECISION_COPY[active.intent.kind].confirm}
+            </button>
+          )}{' '}
+          <button type="button" className="work-queue__button" disabled={locked} onClick={() => cancel(active.intent.kind)}>
+            Abbrechen
+          </button>
+          {busy && <p role="status">{DECISION_COPY[active.intent.kind].pending}</p>}
+        </div>
       )}
     </section>
   );

@@ -14,6 +14,7 @@ import {
   type CaseCancellation,
   type CaseContext,
   type CaseNeed,
+  type DecisionReceipt,
   type DutyRef,
   type EmployeeRef,
   type NeedStatus,
@@ -30,6 +31,9 @@ import {
   type SortOrder,
 } from './work-queue-types';
 
+/** Idempotency-Key as the API accepts it (8–128 visible ASCII characters, no spaces). */
+const KEY = /^[!-~]{8,128}$/;
+const isVersion = (value: number) => Number.isSafeInteger(value) && value >= 1;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MILLIS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 /** Largest page the UI accepts from the URL; the API accepts more, the UI does not need it. */
@@ -94,6 +98,12 @@ function civilDate(value: unknown): string {
 function zone(value: unknown): string {
   if (!isNamedTimeZone(value)) invalid();
   return value;
+}
+
+/** A concurrency version: a positive safe integer. */
+function version(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) invalid();
+  return value as number;
 }
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T {
@@ -258,13 +268,15 @@ function cancellation(value: unknown): CaseCancellation {
 }
 
 function need(value: unknown): CaseNeed {
-  const n = record(value, ['id', 'cancellationRequestId', 'duty', 'status', 'resolvedAt', 'openOfferCount', 'project', 'timeZone', 'concurrencyVersion', 'selectedOfferId']);
+  const n = record(value, ['id', 'cancellationRequestId', 'duty', 'status', 'resolvedAt', 'openOfferCount', 'project', 'timeZone', 'concurrencyVersion', 'dutyConcurrencyVersion', 'selectedOfferId']);
   const status = oneOf(n.status, NEED_STATUSES);
   const resolvedAt = nullableMillis(n.resolvedAt);
   const selectedOfferId = n.selectedOfferId === null ? null : uuid(n.selectedOfferId);
   const concurrencyVersion = n.concurrencyVersion;
   if ((status === 'RESOLVED') !== (resolvedAt !== null) || (status === 'RESOLVED') !== (selectedOfferId !== null)) invalid();
   if (!Number.isSafeInteger(concurrencyVersion) || (concurrencyVersion as number) < 1) invalid();
+  // S5-READ-01: the duty version is its own server value; a missing or invalid one is never replaced by a guess.
+  const dutyConcurrencyVersion = version(n.dutyConcurrencyVersion);
   return {
     id: uuid(n.id),
     cancellationRequestId: uuid(n.cancellationRequestId),
@@ -275,6 +287,7 @@ function need(value: unknown): CaseNeed {
     project: project(n.project),
     timeZone: zone(n.timeZone),
     concurrencyVersion: concurrencyVersion as number,
+    dutyConcurrencyVersion,
     selectedOfferId,
   };
 }
@@ -330,6 +343,48 @@ export function parseSelectionResult(value: unknown, needId: string): SelectionR
     needVersion: r.needVersion as number,
     selectedOfferId: uuid(selected.id),
   };
+}
+
+/** What the client sent; the receipt must answer exactly this command. */
+export type DecisionInput =
+  | { decision: 'REJECT'; idempotencyKey: string }
+  | { decision: 'APPROVE'; expectedNeedVersion: number; expectedDutyVersion: number; idempotencyKey: string };
+
+/**
+ * SP-21 decision receipt (docs/api/cancellation-decision.openapi.json): exact keys, the requested case and need,
+ * and only the two allowed outcome shapes. Anything else is an invalid response and is never shown as a success.
+ */
+export function parseDecisionReceipt(value: unknown, expected: { requestId: string; needId: string; input: DecisionInput }): DecisionReceipt {
+  const r = record(value, ['cancellation', 'selectedOffer', 'updatedDuty']);
+  if (r.selectedOffer !== null) invalid();
+  const c = cancellation(r.cancellation);
+  if (
+    !sameId(c.id, expected.requestId) ||
+    !sameId(c.replacementNeed.id, expected.needId) ||
+    c.decidedAt === null ||
+    c.decidedAt < c.createdAt ||
+    c.replacementNeed.resolvedAt !== null
+  )
+    invalid();
+  if (expected.input.decision === 'REJECT') {
+    if (c.status !== 'REJECTED' || c.replacementNeed.status !== 'CLOSED' || r.updatedDuty !== null) invalid();
+    return { decision: 'REJECT', cancellation: { ...c, status: 'REJECTED' }, selectedOffer: null, updatedDuty: null };
+  }
+  if (c.status !== 'APPROVED' || c.replacementNeed.status !== 'OPEN_UNFILLED') invalid();
+  const u = record(r.updatedDuty, ['id', 'dutyDate', 'shiftKind', 'startsAt', 'endsAt', 'concurrencyVersion']);
+  const updated = duty({ id: u.id, dutyDate: u.dutyDate, shiftKind: u.shiftKind, startsAt: u.startsAt, endsAt: u.endsAt });
+  // The decision changes the duty version exactly once, from the version the command carried.
+  const concurrencyVersion = version(u.concurrencyVersion);
+  if (
+    concurrencyVersion !== expected.input.expectedDutyVersion + 1 ||
+    !sameId(updated.id, c.duty.id) ||
+    updated.dutyDate !== c.duty.dutyDate ||
+    updated.shiftKind !== c.duty.shiftKind ||
+    updated.startsAt !== c.duty.startsAt ||
+    updated.endsAt !== c.duty.endsAt
+  )
+    invalid();
+  return { decision: 'APPROVE', cancellation: { ...c, status: 'APPROVED' }, selectedOffer: null, updatedDuty: { ...updated, concurrencyVersion } };
 }
 
 /** Parses one offers response; `status` is the requested filter, if any. */
@@ -417,6 +472,11 @@ export interface WorkQueueApi {
   offers(needId: string, query: OffersQuery, signal?: AbortSignal): Promise<OffersPage>;
   /** SP-20: selects one eligible offer. `expectedVersion` is the need version the administrator saw. */
   select(needId: string, input: SelectionInput, signal?: AbortSignal): Promise<SelectionResult>;
+  /**
+   * SP-21: REJECT, or APPROVE without replacement. APPROVE sends the need version as Expected-Version and the duty
+   * version as `expectedDutyVersion`; REJECT sends no version. The server revalidates both under its locks.
+   */
+  decide(target: { requestId: string; needId: string }, input: DecisionInput, signal?: AbortSignal): Promise<DecisionReceipt>;
 }
 
 export type SelectionInput = { offerId: string; expectedVersion: number; idempotencyKey: string };
@@ -458,6 +518,24 @@ export function createWorkQueueApi(api: SessionApi): WorkQueueApi {
         }),
         needId,
       );
+    },
+    async decide(target, input, signal) {
+      if (!isCaseId(target.requestId) || !isCaseId(target.needId) || !KEY.test(input.idempotencyKey)) invalid();
+      if (input.decision === 'APPROVE' && !(isVersion(input.expectedNeedVersion) && isVersion(input.expectedDutyVersion))) invalid();
+      const path = `/api/v1/cancellation-requests/${encodeURIComponent(target.requestId)}/decision`;
+      const raw = await api.request<unknown>(
+        path,
+        input.decision === 'REJECT'
+          ? { method: 'POST', body: { decision: 'REJECT' }, idempotencyKey: input.idempotencyKey, signal }
+          : {
+              method: 'POST',
+              body: { decision: 'APPROVE', expectedDutyVersion: input.expectedDutyVersion },
+              expectedVersion: input.expectedNeedVersion,
+              idempotencyKey: input.idempotencyKey,
+              signal,
+            },
+      );
+      return parseDecisionReceipt(raw, { ...target, input });
     },
   };
 }

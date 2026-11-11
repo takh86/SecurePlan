@@ -110,6 +110,8 @@ export function caseContext(overrides: Partial<CaseContext> = {}): CaseContext {
       project: { id: PROJECT_ID, name: 'Testprojekt Nord' },
       timeZone: 'Europe/Berlin',
       concurrencyVersion: 1,
+      // Deliberately different from the need version, so a swapped or reused version is caught.
+      dutyConcurrencyVersion: 4,
       selectedOfferId: null,
     },
     monthStart: '2026-12-01',
@@ -165,4 +167,48 @@ export function recordingApi(handler: (path: string, options: SessionRequest) =>
     },
   };
   return { api, requests };
+}
+
+export const DECIDED_AT = '2026-12-15T11:00:00.000Z';
+
+/**
+ * SP-21 decision receipt as the server stores and replays it. APPROVE carries the duty once advanced from
+ * `fromDutyVersion` (the fixture's dutyConcurrencyVersion is 4).
+ */
+export function decisionReceipt(decision: 'REJECT' | 'APPROVE', fromDutyVersion = 4) {
+  const c = caseContext().cancellation;
+  return decision === 'REJECT'
+    ? {
+        cancellation: { ...c, status: 'REJECTED', decidedAt: DECIDED_AT, replacementNeed: { id: NEED_ID, status: 'CLOSED', resolvedAt: null } },
+        selectedOffer: null,
+        updatedDuty: null,
+      }
+    : {
+        cancellation: { ...c, status: 'APPROVED', decidedAt: DECIDED_AT, replacementNeed: { id: NEED_ID, status: 'OPEN_UNFILLED', resolvedAt: null } },
+        selectedOffer: null,
+        updatedDuty: { ...c.duty, concurrencyVersion: fromDutyVersion + 1 },
+      };
+}
+
+/** The case as the server reads it after a committed decision. */
+export function decidedContext(decision: 'REJECT' | 'APPROVE'): CaseContext {
+  const open = caseContext();
+  const needStatus = decision === 'REJECT' ? 'CLOSED' : 'OPEN_UNFILLED';
+  return caseContext({
+    cancellation: {
+      ...open.cancellation,
+      status: decision === 'REJECT' ? 'REJECTED' : 'APPROVED',
+      decidedAt: DECIDED_AT,
+      replacementNeed: { id: NEED_ID, status: needStatus, resolvedAt: null },
+    },
+    need: {
+      ...open.need,
+      status: needStatus,
+      openOfferCount: 0,
+      concurrencyVersion: 2,
+      dutyConcurrencyVersion: decision === 'REJECT' ? 4 : 5,
+    },
+    originalAssignmentActive: decision === 'REJECT',
+    eligibleOpenOfferCount: 0,
+  });
 }

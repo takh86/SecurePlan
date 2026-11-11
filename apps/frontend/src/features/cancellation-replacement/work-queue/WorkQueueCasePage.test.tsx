@@ -189,9 +189,12 @@ describe('SP-19 — administrative case view (read-only)', () => {
     const { requests } = renderCase(CASE_PATH, () => offersPage(threeOffers()));
     await screen.findByRole('table', { name: 'Eingereichte Ersatzangebote' });
     expect(requests.every((request) => request.method === 'GET')).toBe(true);
-    for (const button of screen.getAllByRole('button')) {
-      expect(button.textContent ?? '').not.toMatch(/Genehmig|Ablehn|Zuweis|Speicher/i);
-    }
+    // SP-20/SP-21: the only write entries are the explicit openers; each needs a separate confirmation.
+    const writeOpeners = screen
+      .getAllByRole('button')
+      .map((button) => button.textContent ?? '')
+      .filter((label) => /Genehmig|Ablehn|Zuweis|Speicher|auswählen/i.test(label));
+    expect(writeOpeners.sort()).toEqual(['Ablehnen', 'Ersatz auswählen', 'Ohne Ersatz genehmigen']);
   });
 });
 

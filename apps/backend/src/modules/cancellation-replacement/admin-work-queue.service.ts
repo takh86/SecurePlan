@@ -25,6 +25,10 @@ function assertProjection(duty: AdminQueueItem['duty'], month: string, timeZone:
       !Number.isSafeInteger(eligible) || eligible < 0 || eligible > raw)
     throw new Error('Invalid administrative workflow projection');
 }
+/** Concurrency versions are positive safe integers; anything else is a server defect and fails closed. */
+function assertVersion(version: unknown) {
+  if (!Number.isSafeInteger(version) || (version as number) < 1) throw new Error('Invalid administrative workflow projection');
+}
 @Injectable()
 export class AdminWorkQueueService {
   constructor(private readonly database: DatabaseService) {}
@@ -61,6 +65,8 @@ export class AdminWorkQueueService {
       if (row.invalid || !row.context || row.found !== 1) throw new Error('Inconsistent administrative workflow state');
       assertProjection(row.context.need.duty, row.context.monthStart, row.context.need.timeZone,
         row.context.need.openOfferCount, row.context.eligibleOpenOfferCount);
+      assertVersion(row.context.need.concurrencyVersion);
+      assertVersion(row.context.need.dutyConcurrencyVersion);
       return { items: row.items, pagination: page(row.total, query.page, query.pageSize), context: row.context };
     });
   }

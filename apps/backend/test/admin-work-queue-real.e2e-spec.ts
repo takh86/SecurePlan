@@ -95,6 +95,39 @@ it('changes the new-offer indicator at duty start without hiding the case', asyn
   expect(response.body.context.eligibleOpenOfferCount).toBe(0);
   expect((await queue()).body.pagination.totalItems).toBe(1);
 });
+it('S5-READ-01: exposes the duty version independently of the need version, and both drive a real APPROVE', async () => {
+  // Diverge the two versions so that a swapped or reused value would be caught.
+  await pool.query('UPDATE duties SET concurrency_version=concurrency_version+3 WHERE id=$1', [f.dutyId]);
+  const dutyVersion = Number((await pool.query('SELECT concurrency_version FROM duties WHERE id=$1', [f.dutyId])).rows[0].concurrency_version);
+  expect(dutyVersion).toBeGreaterThan(1);
+  const context = await offers();
+  const need = await request(app.getHttpServer()).get(`/api/v1/replacement-needs/${needId}`).set('Cookie', f.admin.cookie);
+  expect(context.status).toBe(200);
+  expect(need.status).toBe(200);
+  expect(context.body.context.need).toMatchObject({ concurrencyVersion: 1, dutyConcurrencyVersion: dutyVersion });
+  expect(need.body).toMatchObject({ concurrencyVersion: 1, dutyConcurrencyVersion: dutyVersion });
+  // The employee view of the same need does not carry the administrative field.
+  const own = await request(app.getHttpServer()).get(`/api/v1/replacement-needs/${needId}`).set('Cookie', candidate.cookie);
+  expect(own.status).toBe(200);
+  expect(JSON.stringify(own.body)).not.toContain('dutyConcurrencyVersion');
+  // Swapped versions are refused by the decision command; the values as read are accepted.
+  const decide = (version: number, duty: number) => request(app.getHttpServer())
+    .post(`/api/v1/cancellation-requests/${requestId}/decision`)
+    .set('Origin', ORIGIN).set('Cookie', f.admin.cookie).set('X-CSRF-Token', f.admin.csrf)
+    .set('Idempotency-Key', randomUUID()).set('Expected-Version', String(version))
+    .send({ decision: 'APPROVE', expectedDutyVersion: duty });
+  const read = context.body.context.need as { concurrencyVersion: number; dutyConcurrencyVersion: number };
+  const swapped = await decide(read.dutyConcurrencyVersion, read.concurrencyVersion);
+  expect([swapped.status, swapped.body.code]).toEqual([409, 'PLAN_CONCURRENT_MODIFICATION']);
+  const approved = await decide(read.concurrencyVersion, read.dutyConcurrencyVersion);
+  expect(approved.status).toBe(200);
+  expect(approved.body.updatedDuty.concurrencyVersion).toBe(dutyVersion + 1);
+  const after = await offers();
+  expect(after.body.context.need).toMatchObject({ status: 'OPEN_UNFILLED', concurrencyVersion: 2, dutyConcurrencyVersion: dutyVersion + 1 });
+  // Foreign tenant: still concealed.
+  expect((await offers('', f.foreignAdmin.cookie)).status).toBe(404);
+});
+
 it('keeps approved unfilled work after removal and does not reinterpret retained offers', async () => {
   expect((await createOffer()).status).toBe(201);
   await pool.query("UPDATE plan_assignments SET state='REMOVED',removed_at=clock_timestamp() WHERE id=$1", [f.membership]);
