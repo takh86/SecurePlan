@@ -64,9 +64,16 @@ describe('SP-07 — employee form model', () => {
       { pointer: '#/lastName', code: 'TOO_SHORT' },
       { pointer: '#/companyId', code: 'REQUIRED' },
     ]))).toEqual({ lastName: 'Der Wert ist zu kurz.' });
-    // Issue #129: an e-mail the server's mail transport refuses names the local rule.
-    expect(serverFieldErrors(httpError(400, 'VALIDATION_FAILED', [{ pointer: '#/email', code: 'INVALID_FORMAT' }])))
-      .toEqual({ email: expect.stringContaining('@secureplan.test') });
+    // Issue #129: server #/email INVALID_FORMAT covers syntax and transport-refused
+    // recipients alike, so the text claims neither a syntax error nor a local domain rule.
+    const emailError = serverFieldErrors(httpError(400, 'VALIDATION_FAILED', [{ pointer: '#/email', code: 'INVALID_FORMAT' }]));
+    expect(emailError).toEqual({ email: 'Diese E-Mail-Adresse wird vom Server nicht akzeptiert. Bitte prüfen Sie die Adresse oder verwenden Sie eine andere.' });
+    expect(emailError?.email).not.toMatch(/secureplan.test|Format/);
+    // Other fields keep the generic subcode text.
+    expect(serverFieldErrors(httpError(400, 'VALIDATION_FAILED', [{ pointer: '#/employeeCode', code: 'INVALID_FORMAT' }])))
+      .toEqual({ employeeCode: 'Das Format ist ungültig.' });
+    // No transport (503) is not a field error; the page shows it as an alert.
+    expect(serverFieldErrors(httpError(503, 'SERVICE_UNAVAILABLE'))).toBeNull();
     expect(serverFieldErrors(httpError(500, 'INTERNAL_ERROR'))).toBeNull();
     expect(serverFieldErrors(new Error('x'))).toBeNull();
   });
