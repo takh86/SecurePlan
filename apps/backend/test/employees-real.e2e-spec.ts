@@ -453,6 +453,29 @@ describe('SP-07 — create and activation', () => {
       delivery.recipientPolicy = null;
     }
   });
+  it('issue #129: without an activation transport provisioning fails closed with 503 before any write', async () => {
+    delivery.available = false;
+    try {
+      const employee = await createSyntheticSession(sessions, tenantA.employee);
+      const beforeA = await tenantState(tenantA.companyId);
+      const email = `i129-${randomUUID()}@secureplan.test`;
+
+      const forbidden = await write('post', BASE, employee, createBody({ employeeCode: 'I129-3', email })).expect(403);
+      expect(forbidden.body.code).toBe('ACTION_FORBIDDEN');
+
+      const unavailable = await write('post', BASE, adminA, createBody({ employeeCode: 'I129-3', email })).expect(503);
+      expect(unavailable.body.code).toBe('SERVICE_UNAVAILABLE');
+      expect(unavailable.body).not.toHaveProperty('errors');
+      expect(JSON.stringify(unavailable.body)).not.toContain(email);
+
+      expect(await tenantState(tenantA.companyId)).toEqual(beforeA);
+      const leaked = await db().query('SELECT count(*)::int AS n FROM accounts WHERE lower(email) = lower($1)', [email]);
+      expect(leaked.rows[0].n).toBe(0);
+      expect(delivery.sent).toEqual([]);
+    } finally {
+      delivery.available = true;
+    }
+  });
 });
 
 describe('SP-07 — update', () => {

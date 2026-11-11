@@ -16,6 +16,7 @@
  */
 import {
   BadRequestException,
+  ServiceUnavailableException,
   ConflictException,
   Inject,
   Injectable,
@@ -64,6 +65,12 @@ function unsupportedRecipient(): never {
     code: 'VALIDATION_FAILED',
     errors: [{ pointer: '#/email', code: 'INVALID_FORMAT', detail: validationSubcodeDetails.INVALID_FORMAT }],
   });
+}
+
+function deliveryUnavailable(): never {
+  // Provisioning without a way to deliver the activation would commit an
+  // account nobody can activate; the operational 503 code is reused as is.
+  throw new ServiceUnavailableException({ code: 'SERVICE_UNAVAILABLE' });
 }
 
 /** Escapes LIKE metacharacters so `q` is matched literally (ESCAPE '\'). */
@@ -176,8 +183,10 @@ export class EmployeesService {
   ): Promise<EmployeeResponse> {
     const created = await this.database.withTransaction(async (client) => {
       await assertActorInTransaction(client, tenant, ADMIN_ONLY);
-      // Issue #129: reject a recipient the active transport is known to refuse
-      // before any write (after authorization, so 401/403 keep precedence).
+      // Issue #129: refuse before any write (after authorization, so 401/403
+      // keep precedence): no transport at all -> 503; a recipient the active
+      // transport is known to refuse -> 400 #/email.
+      if (!this.delivery.available) deliveryUnavailable();
       if (!this.delivery.acceptsRecipient(dto.email)) unsupportedRecipient();
       // Deterministic 409 for the common case; the UNIQUE constraint remains
       // the authority for concurrent creates (mapped below).

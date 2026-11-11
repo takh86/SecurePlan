@@ -15,6 +15,12 @@ export const ACTIVATION_DELIVERY = Symbol('ACTIVATION_DELIVERY');
 
 export interface ActivationDelivery {
   /**
+   * false when no approved transport exists in this environment. The caller
+   * must then refuse to provision an account (503) before persisting anything,
+   * instead of committing an account whose activation can never be delivered.
+   */
+  readonly available: boolean;
+  /**
    * Pre-commit recipient policy of the active transport. false means delivery
    * is known to be refused for this address, so the caller must reject the
    * request before persisting anything. true does NOT guarantee delivery.
@@ -57,16 +63,18 @@ export class ActivationDeliveryUnavailableError extends Error {
 
 export function createActivationDelivery(): ActivationDelivery {
   if (process.env.NODE_ENV !== 'development') {
-    // Production recipient policy is a separate gate; the development-only
-    // allowlist is deliberately not applied here.
+    // No transport: fail closed. Production delivery and recipient policy are a
+    // separate gate; the development-only allowlist is not applied here.
     return {
-      acceptsRecipient: () => true,
+      available: false,
+      acceptsRecipient: () => false,
       deliver: () => Promise.reject(new ActivationDeliveryUnavailableError()),
     };
   }
   // Lazy: a misconfigured local mail adapter must not prevent application start.
   let mailer: ActivationMailService | undefined;
   return {
+    available: true,
     acceptsRecipient: isSyntheticTestRecipient,
     async deliver(email, rawToken) {
       mailer ??= new ActivationMailService();

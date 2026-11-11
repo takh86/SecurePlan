@@ -28,6 +28,8 @@ export const ORIGIN = 'https://localhost:8443';
 export class RecordingDelivery implements ActivationDelivery {
   readonly sent: { email: string; rawToken: string }[] = [];
   fail = false;
+  /** false simulates an environment without any activation transport. */
+  available = true;
   /** Simulates a transport recipient policy (issue #129); null accepts every address. */
   recipientPolicy: ((email: string) => boolean) | null = null;
 

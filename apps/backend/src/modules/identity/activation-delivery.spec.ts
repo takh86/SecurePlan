@@ -38,8 +38,19 @@ describe('SP-07 — activation delivery port', () => {
     }
   });
 
-  it('issue #129: the development-only allowlist is not applied outside development', () => {
-    process.env.NODE_ENV = 'production';
-    expect(createActivationDelivery().acceptsRecipient('mira@example.com')).toBe(true);
+  it('development reports an available transport', () => {
+    process.env.NODE_ENV = 'development';
+    expect(createActivationDelivery().available).toBe(true);
+  });
+
+  it('outside development the delivery reports no transport and accepts no recipient (fail closed)', () => {
+    for (const environment of ['production', 'test', 'staging']) {
+      process.env.NODE_ENV = environment;
+      const delivery = createActivationDelivery();
+      expect(delivery.available).toBe(false);
+      for (const email of ['mira@example.com', 'mira@secureplan.test']) {
+        expect(delivery.acceptsRecipient(email)).toBe(false);
+      }
+    }
   });
 });
