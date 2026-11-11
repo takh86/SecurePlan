@@ -1,5 +1,13 @@
 # API Design – öffentliche Übersicht
 
+SP-21 S3 [cancellation decision HTTP API](cancellation-decision.openapi.json) implements
+`REJECT` and `APPROVE` without replacement through the merged S2 service.
+The OpenAPI 3.1 contract includes strict variants, immutable replay, current
+authorization and actual HTTP validation precedence. S3 implementation approval
+is recorded in [issue #38](https://github.com/takh86/SecurePlan/issues/38#issuecomment-6767336016);
+independent acceptance, merge and later slices remain pending. Issue #125
+blocks staging/production involving real personal data.
+
 SP19-P1 [administrative read API](admin-work-queue.openapi.json) is implemented
 in the merged backend PR #112 (tenant-scoped work queue, cancellation/need
 context and offers). SP19-P2 React read-only integration is in [PR #113](https://github.com/takh86/SecurePlan/pull/113)

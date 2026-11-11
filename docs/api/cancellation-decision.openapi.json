@@ -1,0 +1,1154 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SecurePlan cancellation decisions",
+    "version": "SP21-S3",
+    "license": {
+      "name": "UNLICENSED",
+      "url": "https://github.com/takh86/SecurePlan"
+    },
+    "description": "S3 HTTP contract authorized in issue #38 (2026-11-10). Covers REJECT and APPROVE without replacement only. Independent acceptance, merge, later slices and deployment remain separate. Issue #125 blocks staging/production involving real personal data."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same-origin HTTPS gateway; deployment host configured separately"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Cancellation decisions",
+      "description": "Company administrator decision boundary."
+    }
+  ],
+  "security": [
+    {
+      "session": []
+    }
+  ],
+  "paths": {
+    "/api/v1/cancellation-requests/{requestId}/decision": {
+      "post": {
+        "operationId": "decideCancellationRequest",
+        "tags": [
+          "Cancellation decisions"
+        ],
+        "summary": "Reject or approve a cancellation without a replacement",
+        "description": "COMPANY_ADMIN only, verified from live session/account state. The single global AccessControlGuard enforces Origin -> Session -> CSRF -> Role. Express JSON parsing precedes guards: malformed/oversized/unsupported-charset JSON can fail first. Next PlanningJsonGuard requires JSON, and a route-local validation guard rejects reserved unknown keys that Nest would sanitize. ResourceIdPipe/global DTO validation then run. The handler parses Expected-Version (when required or supplied), Idempotency-Key and query shape before S2 resource discovery. For owned, foreign and unknown syntactically valid UUIDs, the same malformed body/header yields the same HTTP validation error (400); valid foreign/unknown input yields 404. Service discovery-before-idempotency does not precede HTTP parsing. No query parameters are supported. Unknown properties and client company/actor/request identities are forbidden. Non-null replacementOfferId is forbidden; SP-20 selection stays separate. Responses use private/no-store without ETag or Last-Modified. HTTPS, Secure/HttpOnly/SameSite session cookie, trusted Origin and session-bound CSRF are required. Retries repeat current authorization. REJECT fingerprints omit Expected-Version entirely; omitted/explicit-null replacementOfferId normalize identically. APPROVE fingerprints include both need and duty versions. The retained receipt remains unchanged when live names or duty data change.",
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Path UUID only; case-insensitive input is normalized. Malformed IDs and unknown/foreign resources are concealed as RESOURCE_NOT_FOUND after applicable earlier HTTP checks."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Must match the configured trusted HTTPS origin."
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Session-bound token from the authenticated session flow."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128,
+              "pattern": "^[!-~]{8,128}$"
+            },
+            "description": "Exactly one header field line; 8-128 printable ASCII characters, without spaces. Duplicate field lines fail even with identical values. Scope is current company, actor and operation. A retained key with a different normalized command returns 409."
+          },
+          {
+            "name": "Expected-Version",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]{0,15}$",
+              "maxLength": 16
+            },
+            "description": "REQUIRED for APPROVE: replacement need version, not duty version. Value must be <= 9007199254740991. For REJECT optional, but validated whenever supplied; its value is discarded and never forwarded or fingerprinted. Duplicate values, signs, leading zeros, decimals, exponents and unsafe integers fail."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Strict closed JSON variant without numeric-string coercion. expectedDutyVersion is required for APPROVE and forbidden for REJECT. replacementOfferId may be omitted or null only.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionRequest"
+              },
+              "examples": {
+                "reject": {
+                  "value": {
+                    "decision": "REJECT"
+                  }
+                },
+                "rejectExplicitNull": {
+                  "value": {
+                    "decision": "REJECT",
+                    "replacementOfferId": null
+                  }
+                },
+                "approve": {
+                  "value": {
+                    "decision": "APPROVE",
+                    "expectedDutyVersion": 1
+                  }
+                },
+                "approveExplicitNull": {
+                  "value": {
+                    "decision": "APPROVE",
+                    "expectedDutyVersion": 1,
+                    "replacementOfferId": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Original immutable decision-time receipt from S2, for first success and retained same-key replay. No live reconstruction. REJECT preserves the original assignment and duty version; APPROVE removes the original assignment, advances the duty version and leaves the need OPEN_UNFILLED without selecting an offer.",
+            "headers": {
+              "Cache-Control": {
+                "description": "All responses, including parser and guard failures.",
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              },
+              "Vary": {
+                "description": "Includes Cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-ID": {
+                "description": "Generated by the server; client values are ignored.",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "Present only for a successful replay; absent on first success and errors.",
+                "schema": {
+                  "type": "string",
+                  "const": "true"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionReceipt"
+                },
+                "examples": {
+                  "rejected": {
+                    "value": {
+                      "cancellation": {
+                        "id": "11111111-1111-4111-8111-111111111111",
+                        "assignmentId": "22222222-2222-4222-8222-222222222222",
+                        "employee": {
+                          "id": "33333333-3333-4333-8333-333333333333",
+                          "employeeCode": "SYN-S3",
+                          "firstName": "Synthetic",
+                          "lastName": "Employee"
+                        },
+                        "duty": {
+                          "id": "44444444-4444-4444-8444-444444444444",
+                          "dutyDate": "2027-01-20",
+                          "shiftKind": "DAY",
+                          "startsAt": "2027-01-20T05:00:00Z",
+                          "endsAt": "2027-01-20T17:00:00Z"
+                        },
+                        "status": "REJECTED",
+                        "createdAt": "2026-11-11T09:00:00.000Z",
+                        "decidedAt": "2026-11-11T09:01:00.000Z",
+                        "replacementNeed": {
+                          "id": "55555555-5555-4555-8555-555555555555",
+                          "status": "CLOSED",
+                          "resolvedAt": null
+                        }
+                      },
+                      "selectedOffer": null,
+                      "updatedDuty": null
+                    }
+                  },
+                  "approvedWithoutReplacement": {
+                    "value": {
+                      "cancellation": {
+                        "id": "11111111-1111-4111-8111-111111111111",
+                        "assignmentId": "22222222-2222-4222-8222-222222222222",
+                        "employee": {
+                          "id": "33333333-3333-4333-8333-333333333333",
+                          "employeeCode": "SYN-S3",
+                          "firstName": "Synthetic",
+                          "lastName": "Employee"
+                        },
+                        "duty": {
+                          "id": "44444444-4444-4444-8444-444444444444",
+                          "dutyDate": "2027-01-20",
+                          "shiftKind": "DAY",
+                          "startsAt": "2027-01-20T05:00:00Z",
+                          "endsAt": "2027-01-20T17:00:00Z"
+                        },
+                        "status": "APPROVED",
+                        "createdAt": "2026-11-11T09:00:00.000Z",
+                        "decidedAt": "2026-11-11T09:01:00.000Z",
+                        "replacementNeed": {
+                          "id": "55555555-5555-4555-8555-555555555555",
+                          "status": "OPEN_UNFILLED",
+                          "resolvedAt": null
+                        }
+                      },
+                      "selectedOffer": null,
+                      "updatedDuty": {
+                        "id": "44444444-4444-4444-8444-444444444444",
+                        "dutyDate": "2027-01-20",
+                        "shiftKind": "DAY",
+                        "startsAt": "2027-01-20T05:00:00Z",
+                        "endsAt": "2027-01-20T17:00:00Z",
+                        "concurrencyVersion": 2
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON/body/variant, unknown property or query parameter, or missing/invalid/duplicate command header. No business, audit or idempotency writes. Codes: VALIDATION_FAILED, UNKNOWN_FIELD, INVALID_REQUEST_BODY, EXPECTED_VERSION_REQUIRED, INVALID_EXPECTED_VERSION, IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_INVALID.",
+            "headers": {
+              "Cache-Control": {
+                "description": "All responses, including parser and guard failures.",
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              },
+              "Vary": {
+                "description": "Includes Cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-ID": {
+                "description": "Generated by the server; client values are ignored.",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": 400
+                        },
+                        "code": {
+                          "enum": [
+                            "VALIDATION_FAILED",
+                            "UNKNOWN_FIELD",
+                            "INVALID_REQUEST_BODY",
+                            "EXPECTED_VERSION_REQUIRED",
+                            "INVALID_EXPECTED_VERSION",
+                            "IDEMPOTENCY_KEY_REQUIRED",
+                            "IDEMPOTENCY_KEY_INVALID"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired or revoked session; checked again on replay. Codes: SESSION_REQUIRED, SESSION_EXPIRED, SESSION_REVOKED.",
+            "headers": {
+              "Cache-Control": {
+                "description": "All responses, including parser and guard failures.",
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              },
+              "Vary": {
+                "description": "Includes Cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-ID": {
+                "description": "Generated by the server; client values are ignored.",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": 401
+                        },
+                        "code": {
+                          "enum": [
+                            "SESSION_REQUIRED",
+                            "SESSION_EXPIRED",
+                            "SESSION_REVOKED"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Untrusted/missing Origin or missing/invalid CSRF yields CSRF_VALIDATION_FAILED. A live non-admin role yields ACTION_FORBIDDEN. Codes: CSRF_VALIDATION_FAILED, ACTION_FORBIDDEN.",
+            "headers": {
+              "Cache-Control": {
+                "description": "All responses, including parser and guard failures.",
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              },
+              "Vary": {
+                "description": "Includes Cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-ID": {
+                "description": "Generated by the server; client values are ignored.",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": 403
+                        },
+                        "code": {
+                          "enum": [
+                            "CSRF_VALIDATION_FAILED",
+                            "ACTION_FORBIDDEN"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed path ID, or unknown/foreign request after valid HTTP input. No existence disclosure or idempotency claim. Codes: RESOURCE_NOT_FOUND.",
+            "headers": {
+              "Cache-Control": {
+                "description": "All responses, including parser and guard failures.",
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              },
+              "Vary": {
+                "description": "Includes Cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-ID": {
+                "description": "Generated by the server; client values are ignored.",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": 404
+                        },
+                        "code": {
+                          "enum": [
+                            "RESOURCE_NOT_FOUND"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Existing S2 conflict. PLAN_CONCURRENT_MODIFICATION covers stale need or duty version. A resolved case, changed plan, inactive membership or live edit lease also refuses the decision. Idempotency conflicts include in-progress attempts and different commands under a retained key. Business and audit writes roll back; an admitted failed attempt may leave a FAILED idempotency row. Codes: PLAN_CONCURRENT_MODIFICATION, CANCELLATION_ALREADY_RESOLVED, REPLACEMENT_NEED_NOT_OPEN, CANCELLATION_PLAN_CHANGED, CANCELLATION_ASSIGNMENT_NOT_ACTIVE, RESOURCE_EDIT_LOCKED, IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST, IDEMPOTENCY_REQUEST_IN_PROGRESS.",
+            "headers": {
+              "Cache-Control": {
+                "description": "All responses, including parser and guard failures.",
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              },
+              "Vary": {
+                "description": "Includes Cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-ID": {
+                "description": "Generated by the server; client values are ignored.",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": 409
+                        },
+                        "code": {
+                          "enum": [
+                            "PLAN_CONCURRENT_MODIFICATION",
+                            "CANCELLATION_ALREADY_RESOLVED",
+                            "REPLACEMENT_NEED_NOT_OPEN",
+                            "CANCELLATION_PLAN_CHANGED",
+                            "CANCELLATION_ASSIGNMENT_NOT_ACTIVE",
+                            "RESOURCE_EDIT_LOCKED",
+                            "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST",
+                            "IDEMPOTENCY_REQUEST_IN_PROGRESS"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON exceeds the existing 100 KiB input bound, before guards. Codes: REQUEST_BODY_TOO_LARGE.",
+            "headers": {
+              "Cache-Control": {
+                "description": "All responses, including parser and guard failures.",
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              },
+              "Vary": {
+                "description": "Includes Cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-ID": {
+                "description": "Generated by the server; client values are ignored.",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": 413
+                        },
+                        "code": {
+                          "enum": [
+                            "REQUEST_BODY_TOO_LARGE"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported nonempty body media type, charset or content encoding. Codes: UNSUPPORTED_MEDIA_TYPE.",
+            "headers": {
+              "Cache-Control": {
+                "description": "All responses, including parser and guard failures.",
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              },
+              "Vary": {
+                "description": "Includes Cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-ID": {
+                "description": "Generated by the server; client values are ignored.",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": 415
+                        },
+                        "code": {
+                          "enum": [
+                            "UNSUPPORTED_MEDIA_TYPE"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Sanitized internal failure, including corrupt persisted receipt or schema; no raw exception or SQL returned. Codes: INTERNAL_ERROR.",
+            "headers": {
+              "Cache-Control": {
+                "description": "All responses, including parser and guard failures.",
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              },
+              "Vary": {
+                "description": "Includes Cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-ID": {
+                "description": "Generated by the server; client values are ignored.",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": 500
+                        },
+                        "code": {
+                          "enum": [
+                            "INTERNAL_ERROR"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Origin protection configuration unavailable; fail closed. Existing operational error contract. Codes: SERVICE_UNAVAILABLE.",
+            "headers": {
+              "Cache-Control": {
+                "description": "All responses, including parser and guard failures.",
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              },
+              "Pragma": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache"
+                }
+              },
+              "Vary": {
+                "description": "Includes Cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-ID": {
+                "description": "Generated by the server; client values are ignored.",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "status": {
+                          "const": 503
+                        },
+                        "code": {
+                          "enum": [
+                            "SERVICE_UNAVAILABLE"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-secureplan_session",
+        "description": "Opaque server-side session; company and actor identities are established by the server, never by the request body."
+      }
+    },
+    "schemas": {
+      "RejectDecision": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "decision"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "const": "REJECT"
+          },
+          "replacementOfferId": {
+            "type": "null"
+          }
+        }
+      },
+      "ApproveDecision": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "decision",
+          "expectedDutyVersion"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string",
+            "const": "APPROVE"
+          },
+          "expectedDutyVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "replacementOfferId": {
+            "type": "null"
+          }
+        }
+      },
+      "DecisionRequest": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/RejectDecision"
+          },
+          {
+            "$ref": "#/components/schemas/ApproveDecision"
+          }
+        ]
+      },
+      "Employee": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "employeeCode",
+          "firstName",
+          "lastName"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "employeeCode": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          }
+        }
+      },
+      "Duty": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "dutyDate",
+          "shiftKind",
+          "startsAt",
+          "endsAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dutyDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "shiftKind": {
+            "type": "string",
+            "enum": [
+              "DAY",
+              "NIGHT"
+            ]
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UpdatedDuty": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "dutyDate",
+          "shiftKind",
+          "startsAt",
+          "endsAt",
+          "concurrencyVersion"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dutyDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "shiftKind": {
+            "type": "string",
+            "enum": [
+              "DAY",
+              "NIGHT"
+            ]
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "concurrencyVersion": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "RejectedCancellation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "assignmentId",
+          "employee",
+          "duty",
+          "status",
+          "createdAt",
+          "decidedAt",
+          "replacementNeed"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "employee": {
+            "$ref": "#/components/schemas/Employee"
+          },
+          "duty": {
+            "$ref": "#/components/schemas/Duty"
+          },
+          "status": {
+            "type": "string",
+            "const": "REJECTED"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "replacementNeed": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "status",
+              "resolvedAt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "const": "CLOSED"
+              },
+              "resolvedAt": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      },
+      "ApprovedCancellation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "assignmentId",
+          "employee",
+          "duty",
+          "status",
+          "createdAt",
+          "decidedAt",
+          "replacementNeed"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "employee": {
+            "$ref": "#/components/schemas/Employee"
+          },
+          "duty": {
+            "$ref": "#/components/schemas/Duty"
+          },
+          "status": {
+            "type": "string",
+            "const": "APPROVED"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "replacementNeed": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "status",
+              "resolvedAt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "const": "OPEN_UNFILLED"
+              },
+              "resolvedAt": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      },
+      "RejectedReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cancellation",
+          "selectedOffer",
+          "updatedDuty"
+        ],
+        "properties": {
+          "cancellation": {
+            "$ref": "#/components/schemas/RejectedCancellation"
+          },
+          "selectedOffer": {
+            "type": "null"
+          },
+          "updatedDuty": {
+            "type": "null"
+          }
+        }
+      },
+      "ApprovedReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cancellation",
+          "selectedOffer",
+          "updatedDuty"
+        ],
+        "properties": {
+          "cancellation": {
+            "$ref": "#/components/schemas/ApprovedCancellation"
+          },
+          "selectedOffer": {
+            "type": "null"
+          },
+          "updatedDuty": {
+            "$ref": "#/components/schemas/UpdatedDuty"
+          }
+        }
+      },
+      "DecisionReceipt": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/RejectedReceipt"
+          },
+          {
+            "$ref": "#/components/schemas/ApprovedReceipt"
+          }
+        ]
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "instance",
+          "code",
+          "correlationId"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "pointer",
+                "code",
+                "detail"
+              ],
+              "properties": {
+                "pointer": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
