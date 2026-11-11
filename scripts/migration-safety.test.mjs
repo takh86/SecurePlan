@@ -49,6 +49,19 @@ test('runner refuses a modified copy of an applied migration without touching th
   const copy = join(root, 'apps/backend/migrations/0010_employee_availability.sql');
   writeFileSync(copy, `${readFileSync(copy, 'utf8')}\n-- synthetic checksum mismatch\n`);
   const result = run(runner); assert.equal(result.status, 1); assert.match(result.stderr, /Migration failed/);
+  assert.match(result.stderr, /0010_employee_availability\.sql does not match its recorded checksum/);
+  assert.doesNotMatch(result.stderr, /line endings/);
+  assert.deepEqual(await ledger(), beforeRows);
+});
+test('a line-ending-only change to an applied migration is still refused, but named as such', async () => {
+  const beforeRows = await ledger(); const { root, runner } = runnerCopy();
+  const copy = join(root, 'apps/backend/migrations/0010_employee_availability.sql');
+  const text = readFileSync(copy, 'utf8');
+  const flipped = text.includes('\r\n') ? text.replace(/\r\n/g, '\n') : text.replace(/\n/g, '\r\n');
+  writeFileSync(copy, flipped);
+  const result = run(runner); assert.equal(result.status, 1);
+  assert.match(result.stderr, /0010_employee_availability\.sql differs from the ledger only in line endings/);
+  assert.match(result.stderr, /Migration failed/);
   assert.deepEqual(await ledger(), beforeRows);
 });
 test('a failing forward migration rolls back DDL, data and its ledger entry', async () => {
