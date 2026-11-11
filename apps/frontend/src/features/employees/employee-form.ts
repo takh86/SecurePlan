@@ -129,6 +129,9 @@ export function toUpdateInput(values: EmployeeFormValues, original: Employee): U
   return changes;
 }
 
+const EMAIL_NOT_ACCEPTED =
+  'Diese E-Mail-Adresse ist ungültig oder in dieser Umgebung nicht zulässig (lokal nur @secureplan.test).';
+
 const SUBCODE_TEXT: Record<FieldErrorCode, string> = {
   REQUIRED: 'Dieses Feld ist erforderlich.',
   INVALID_TYPE: 'Der Wert ist ungültig.',
@@ -160,7 +163,11 @@ export function serverFieldErrors(error: unknown): FieldErrors | null {
       for (const item of error.fieldErrors) {
         const field = item.pointer.slice(2) as FieldName;
         if ((FIELD_ORDER as readonly string[]).includes(field) && !errors[field]) {
-          errors[field] = SUBCODE_TEXT[item.code];
+          // Issue #129: the server also rejects addresses its mail transport refuses
+          // (locally only @secureplan.test); a syntax-only hint would mislead.
+          errors[field] = field === 'email' && item.code === 'INVALID_FORMAT'
+            ? EMAIL_NOT_ACCEPTED
+            : SUBCODE_TEXT[item.code];
         }
       }
       return Object.keys(errors).length > 0 ? errors : null;

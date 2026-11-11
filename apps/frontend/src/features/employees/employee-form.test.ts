@@ -64,6 +64,9 @@ describe('SP-07 — employee form model', () => {
       { pointer: '#/lastName', code: 'TOO_SHORT' },
       { pointer: '#/companyId', code: 'REQUIRED' },
     ]))).toEqual({ lastName: 'Der Wert ist zu kurz.' });
+    // Issue #129: an e-mail the server's mail transport refuses names the local rule.
+    expect(serverFieldErrors(httpError(400, 'VALIDATION_FAILED', [{ pointer: '#/email', code: 'INVALID_FORMAT' }])))
+      .toEqual({ email: expect.stringContaining('@secureplan.test') });
     expect(serverFieldErrors(httpError(500, 'INTERNAL_ERROR'))).toBeNull();
     expect(serverFieldErrors(new Error('x'))).toBeNull();
   });

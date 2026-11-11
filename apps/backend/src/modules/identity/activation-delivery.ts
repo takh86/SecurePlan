@@ -9,11 +9,17 @@
  * other environment yet, so delivery there fails explicitly instead of
  * pretending success.
  */
-import { ActivationMailService } from '../../auth/activation-mail.service.js';
+import { ActivationMailService, isSyntheticTestRecipient } from '../../auth/activation-mail.service.js';
 
 export const ACTIVATION_DELIVERY = Symbol('ACTIVATION_DELIVERY');
 
 export interface ActivationDelivery {
+  /**
+   * Pre-commit recipient policy of the active transport. false means delivery
+   * is known to be refused for this address, so the caller must reject the
+   * request before persisting anything. true does NOT guarantee delivery.
+   */
+  acceptsRecipient(email: string): boolean;
   deliver(email: string, rawToken: string): Promise<void>;
 }
 
@@ -51,11 +57,17 @@ export class ActivationDeliveryUnavailableError extends Error {
 
 export function createActivationDelivery(): ActivationDelivery {
   if (process.env.NODE_ENV !== 'development') {
-    return { deliver: () => Promise.reject(new ActivationDeliveryUnavailableError()) };
+    // Production recipient policy is a separate gate; the development-only
+    // allowlist is deliberately not applied here.
+    return {
+      acceptsRecipient: () => true,
+      deliver: () => Promise.reject(new ActivationDeliveryUnavailableError()),
+    };
   }
   // Lazy: a misconfigured local mail adapter must not prevent application start.
   let mailer: ActivationMailService | undefined;
   return {
+    acceptsRecipient: isSyntheticTestRecipient,
     async deliver(email, rawToken) {
       mailer ??= new ActivationMailService();
       await withDeadline(mailer.sendActivationEmail(email, rawToken), ACTIVATION_DELIVERY_DEADLINE_MS);

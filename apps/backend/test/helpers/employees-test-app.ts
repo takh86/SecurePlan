@@ -28,6 +28,12 @@ export const ORIGIN = 'https://localhost:8443';
 export class RecordingDelivery implements ActivationDelivery {
   readonly sent: { email: string; rawToken: string }[] = [];
   fail = false;
+  /** Simulates a transport recipient policy (issue #129); null accepts every address. */
+  recipientPolicy: ((email: string) => boolean) | null = null;
+
+  acceptsRecipient(email: string): boolean {
+    return this.recipientPolicy ? this.recipientPolicy(email) : true;
+  }
 
   async deliver(email: string, rawToken: string): Promise<void> {
     if (this.fail) throw new Error('synthetic delivery failure');

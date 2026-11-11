@@ -18,6 +18,15 @@ export const LOCAL_SMTP_OPTIONS = {
   socketTimeout: 10_000,
 } as const;
 
+/**
+ * Development-only recipient policy: the local adapter never sends to real
+ * addresses. Shared with the pre-commit check in employee creation (issue #129)
+ * so an unsupported recipient is rejected before anything is persisted.
+ */
+export function isSyntheticTestRecipient(email: string): boolean {
+  return /^[^@\s]+@secureplan\.test$/i.test(email);
+}
+
 @Injectable()
 export class ActivationMailService {
   private readonly transport;
@@ -57,7 +66,7 @@ export class ActivationMailService {
 
   async sendActivationEmail(email: string, rawToken: string): Promise<void> {
     // Never send demo emails to real addresses.
-    if (!/^[^@\s]+@secureplan\.test$/i.test(email)) {
+    if (!isSyntheticTestRecipient(email)) {
       throw new Error('Only synthetic test addresses are allowed');
     }
 

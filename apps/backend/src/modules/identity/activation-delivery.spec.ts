@@ -27,4 +27,19 @@ describe('SP-07 — activation delivery port', () => {
     // The adapter's own guard fails on first use and surfaces as a delivery failure.
     await expect(delivery.deliver('a@secureplan.test', 'x'.repeat(43))).rejects.toThrow('APP_ORIGIN is required');
   });
+
+  it('issue #129: development accepts only synthetic @secureplan.test recipients up front', () => {
+    process.env.NODE_ENV = 'development';
+    const delivery = createActivationDelivery();
+    expect(delivery.acceptsRecipient('mira@secureplan.test')).toBe(true);
+    expect(delivery.acceptsRecipient('MIRA@SECUREPLAN.TEST')).toBe(true);
+    for (const email of ['mira@gmail.com', 'mira@secureplan.test.example.com', 'mira@sub.secureplan.testx']) {
+      expect(delivery.acceptsRecipient(email)).toBe(false);
+    }
+  });
+
+  it('issue #129: the development-only allowlist is not applied outside development', () => {
+    process.env.NODE_ENV = 'production';
+    expect(createActivationDelivery().acceptsRecipient('mira@example.com')).toBe(true);
+  });
 });
