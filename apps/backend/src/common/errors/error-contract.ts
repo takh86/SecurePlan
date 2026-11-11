@@ -6,8 +6,9 @@
  * (D5) and DUTY_TIME_RANGE_INVALID (a well-formed duty request that the currently
  * saved configuration cannot resolve to a valid interval; structural input stays 400).
  *
- * Operational 503/SERVICE_UNAVAILABLE is a PROVISIONAL exception for readiness;
- * it is NOT listed in the approved Phase 8.5 application-code catalogue.
+ * Operational 503/SERVICE_UNAVAILABLE is a narrowly scoped, PO-approved
+ * exception for readiness and employee creation without an activation mail
+ * transport (ADR-0001, ADR-0007), not in the original Phase 8.5 catalogue.
  */
 const codesByStatus = {
   400: [

@@ -129,6 +129,16 @@ export function toUpdateInput(values: EmployeeFormValues, original: Employee): U
   return changes;
 }
 
+/**
+ * Issue #129: the server answers #/email INVALID_FORMAT both for syntax it
+ * rejects and for a recipient its mail transport refuses; the contract does
+ * not tell the two apart. Client-side syntax errors never reach the server
+ * (validateEmployeeForm), so this text names neither cause nor any
+ * environment-specific domain.
+ */
+const EMAIL_NOT_ACCEPTED =
+  'Diese E-Mail-Adresse wird vom Server nicht akzeptiert. Bitte prüfen Sie die Adresse oder verwenden Sie eine andere.';
+
 const SUBCODE_TEXT: Record<FieldErrorCode, string> = {
   REQUIRED: 'Dieses Feld ist erforderlich.',
   INVALID_TYPE: 'Der Wert ist ungültig.',
@@ -160,7 +170,9 @@ export function serverFieldErrors(error: unknown): FieldErrors | null {
       for (const item of error.fieldErrors) {
         const field = item.pointer.slice(2) as FieldName;
         if ((FIELD_ORDER as readonly string[]).includes(field) && !errors[field]) {
-          errors[field] = SUBCODE_TEXT[item.code];
+          errors[field] = field === 'email' && item.code === 'INVALID_FORMAT'
+            ? EMAIL_NOT_ACCEPTED
+            : SUBCODE_TEXT[item.code];
         }
       }
       return Object.keys(errors).length > 0 ? errors : null;

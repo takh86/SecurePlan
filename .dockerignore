@@ -1,0 +1,13 @@
+.git
+.github
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+.env
+.env.*
+infra/tls/
+**/*.pem
+**/*.key
+**/*.dump
+AGENTS.md
