@@ -315,3 +315,23 @@
     padding: 4px 12px;
   }
 }
+
+/* SP-21: confirmation of REJECT / APPROVE without replacement. Wraps on narrow screens; the heading takes focus. */
+.work-queue__confirm {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--sp-color-border-strong);
+  border-radius: var(--sp-radius-small);
+  overflow-wrap: anywhere;
+}
+
+.work-queue__confirm h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.work-queue__confirm h3:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}

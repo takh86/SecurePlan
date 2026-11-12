@@ -82,8 +82,10 @@ export type CaseNeed = {
   openOfferCount: number;
   project: ProjectRef;
   timeZone: string;
-  /** SP-20: Expected-Version for the selection command. */
+  /** Need version: Expected-Version for the SP-20 selection and the SP-21 APPROVE header. */
   concurrencyVersion: number;
+  /** SP-21 S5-READ-01: duty version, the `expectedDutyVersion` of an APPROVE. Never derived from the need version. */
+  dutyConcurrencyVersion: number;
   /** SP-20: the selected offer of a RESOLVED need; null otherwise. */
   selectedOfferId: string | null;
 };
@@ -115,6 +117,19 @@ export type SelectionResult = {
   needVersion: number;
   selectedOfferId: string;
 };
+
+/**
+ * SP-21: the immutable decision receipt of REJECT or APPROVE without replacement, as stored at decision time
+ * (a same-key replay returns the identical receipt). It is shown as the outcome; it is never rebuilt from reads.
+ */
+export type DecisionReceipt =
+  | { decision: 'REJECT'; cancellation: CaseCancellation & { status: 'REJECTED' }; selectedOffer: null; updatedDuty: null }
+  | {
+      decision: 'APPROVE';
+      cancellation: CaseCancellation & { status: 'APPROVED' };
+      selectedOffer: null;
+      updatedDuty: DutyRef & { concurrencyVersion: number };
+    };
 
 export type OffersPage = { items: AdminOffer[]; pagination: Pagination; context: CaseContext };
 

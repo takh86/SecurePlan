@@ -12,6 +12,7 @@ cases AS MATERIALIZED (
  SELECT r.id AS request_id,r.assignment_id,r.employee_id AS requester_id,r.duty_id,
  r.status AS request_status,r.created_at AS request_created,r.decided_at,
  n.id AS need_id,n.status AS need_status,n.created_at AS need_created,n.resolved_at,n.concurrency_version AS need_version,n.selected_offer_id,
+ d.concurrency_version AS duty_version,
  a.id IS NOT NULL AND a.state='ACTIVE' AND a.removed_at IS NULL AS original_active,
  d.removed_at IS NOT NULL AS duty_removed,d.duty_date,d.shift_kind,d.starts_at,d.ends_at,d.time_zone,
  d.planning_month,d.project_id,pr.name AS project_name,
@@ -96,7 +97,7 @@ const cancellation = `jsonb_build_object('id',c.request_id,'assignmentId',c.assi
 const need = `jsonb_build_object('id',c.need_id,'cancellationRequestId',c.request_id,'duty',c.duty,'status',c.need_status,
  'resolvedAt',to_char(c.resolved_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
  'openOfferCount',c.open_count,'project',c.project,'timeZone',c.time_zone,
- 'concurrencyVersion',c.need_version,'selectedOfferId',c.selected_offer_id)`;
+ 'concurrencyVersion',c.need_version,'dutyConcurrencyVersion',c.duty_version,'selectedOfferId',c.selected_offer_id)`;
 
 /** Sort fragments are fixed literals selected by validated values. */
 export function queueSql(sortBy: 'createdAt' | 'dutyDate', sortOrder: 'asc' | 'desc'): string {

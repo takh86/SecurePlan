@@ -32,6 +32,11 @@ export type AdminNeed = {
   timeZone: string;
   /** SP-20: the Expected-Version for the selection command; monotonic, starts at 1. */
   concurrencyVersion: number;
+  /**
+   * SP-21 S5-READ-01: the duty's concurrency version, read in the same statement as the need version.
+   * The `expectedDutyVersion` of a cancellation APPROVE; never the need version. Read metadata, not a lock.
+   */
+  dutyConcurrencyVersion: number;
   /** SP-20: the selected offer of a RESOLVED need; null otherwise. */
   selectedOfferId: string | null;
 };
