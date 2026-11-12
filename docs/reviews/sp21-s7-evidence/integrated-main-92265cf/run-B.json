@@ -1,0 +1,1668 @@
+{
+    "startedAt":  "2026-11-12T16:48:55.456Z",
+    "source":  {
+                   "commit":  "9f7f69ed814d39c425c54fb0851864bea6616347",
+                   "trackedTreeClean":  true
+               },
+    "target":  {
+                   "runId":  "sp21-s7i-2126306f2e68"
+               },
+    "origin":  "https://localhost:8444",
+    "browser":  {
+                    "name":  "Google Chrome (Playwright channel chrome, headless)",
+                    "version":  "157.0.8103.51",
+                    "playwright":  "1.64.1"
+                },
+    "http":  [
+                 {
+                     "stage":  "setup",
+                     "actor":  "admin-a1",
+                     "method":  "GET",
+                     "path":  "/projects/:id/operating-calendar?effectiveForMonth=2026-12-01",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "admin-a1",
+                     "method":  "PATCH",
+                     "path":  "/projects/:id/operating-calendar",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "admin-b1",
+                     "method":  "GET",
+                     "path":  "/projects/:id/operating-calendar?effectiveForMonth=2026-12-01",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "admin-b1",
+                     "method":  "PATCH",
+                     "path":  "/projects/:id/operating-calendar",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "admin-a1",
+                     "method":  "POST",
+                     "path":  "/monthly-plans",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "admin-b1",
+                     "method":  "POST",
+                     "path":  "/monthly-plans",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "admin-a1",
+                     "method":  "GET",
+                     "path":  "/monthly-plans/:id/employee-months/:id",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "admin-a1",
+                     "method":  "POST",
+                     "path":  "/monthly-plans/:id/employee-months/:id/save",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "admin-b1",
+                     "method":  "GET",
+                     "path":  "/monthly-plans/:id/employee-months/:id",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "admin-b1",
+                     "method":  "POST",
+                     "path":  "/monthly-plans/:id/employee-months/:id/save",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "admin-a1",
+                     "method":  "POST",
+                     "path":  "/monthly-plans/:id/publish",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "admin-b1",
+                     "method":  "POST",
+                     "path":  "/monthly-plans/:id/publish",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "GET",
+                     "path":  "/me/monthly-plans?monthStart=2026-12-01",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-b1",
+                     "method":  "GET",
+                     "path":  "/me/monthly-plans?monthStart=2026-12-01",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-b1",
+                     "method":  "POST",
+                     "path":  "/cancellation-requests",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a2",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a2",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a3",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a4",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a2",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a3",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a4",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a2",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a3",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a2",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a3",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a2",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a3",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a2",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a2",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a3",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a2",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a2",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "setup",
+                     "actor":  "emp-a3",
+                     "method":  "POST",
+                     "path":  "/replacement-needs/:id/offers",
+                     "status":  201,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "B-15",
+                     "actor":  "admin-a1",
+                     "method":  "GET",
+                     "path":  "/monthly-plans/:id/entries/:id",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "B-15",
+                     "actor":  "admin-a1",
+                     "method":  "POST",
+                     "path":  "/monthly-plans/:id/entries/:id/edit-lease",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "B-15",
+                     "actor":  "admin-a1",
+                     "method":  "PATCH",
+                     "path":  "/monthly-plans/:id/entries/:id",
+                     "status":  200,
+                     "code":  null
+                 },
+                 {
+                     "stage":  "B-15",
+                     "actor":  "admin-a1",
+                     "method":  "DELETE",
+                     "path":  "/monthly-plans/:id/entries/:id/edit-lease",
+                     "status":  204,
+                     "code":  null
+                 }
+             ],
+    "cases":  {
+                  "B-01":  {
+                               "ui":  {
+                                          "rejectButton":  true,
+                                          "approveButton":  true,
+                                          "sp20OfferButton":  true,
+                                          "offersListed":  1
+                                      }
+                           },
+                  "B-02":  {
+                               "ui":  {
+                                          "queueRoute":  "Kein Zugriff",
+                                          "caseRoute":  "Kein Zugriff",
+                                          "decisionRequests":  0,
+                                          "navHasArbeitsuebersicht":  false
+                                      }
+                           },
+                  "B-03":  {
+                               "http":  [
+                                            {
+                                                "decision":  "REJECT",
+                                                "status":  403,
+                                                "code":  "ACTION_FORBIDDEN"
+                                            },
+                                            {
+                                                "decision":  "APPROVE",
+                                                "status":  403,
+                                                "code":  "ACTION_FORBIDDEN"
+                                            }
+                                        ],
+                               "pg":  {
+                                          "unchanged":  true,
+                                          "idempotencyRowsDelta":  0
+                                      }
+                           },
+                  "B-04":  {
+                               "ui":  {
+                                          "absage":  "Abgelehnt",
+                                          "ersatzbedarf":  "Geschlossen",
+                                          "zuordnung":  "Aktiv",
+                                          "offers":  [
+                                                         "Nicht ausgewÃ¤hlt",
+                                                         "Nicht ausgewÃ¤hlt",
+                                                         "Nicht ausgewÃ¤hlt"
+                                                     ]
+                                      },
+                               "pg":  {
+                                          "request":  "REJECTED",
+                                          "decided":  true,
+                                          "need":  "CLOSED",
+                                          "need_v":  2,
+                                          "selected_offer":  false,
+                                          "resolved":  false,
+                                          "duty_v":  1,
+                                          "duty_present":  true,
+                                          "plan":  "PUBLISHED",
+                                          "membership":  "ACTIVE",
+                                          "replacement_memberships":  0,
+                                          "active_members":  1,
+                                          "offers":  {
+                                                         "NOT_SELECTED":  3
+                                                     },
+                                          "decision_events":  1,
+                                          "decision_audits":  5,
+                                          "selection_events":  0
+                                      }
+                           },
+                  "B-05":  {
+                               "ui":  {
+                                          "absage":  "Genehmigt",
+                                          "ersatzbedarf":  "Unbesetzt",
+                                          "zuordnung":  "Nicht mehr aktiv",
+                                          "inQueue":  true,
+                                          "queueShowsUnbesetzt":  true
+                                      },
+                               "pg":  {
+                                          "request":  "APPROVED",
+                                          "decided":  true,
+                                          "need":  "OPEN_UNFILLED",
+                                          "need_v":  2,
+                                          "selected_offer":  false,
+                                          "resolved":  false,
+                                          "duty_v":  2,
+                                          "duty_present":  true,
+                                          "plan":  "PUBLISHED",
+                                          "membership":  "REMOVED",
+                                          "replacement_memberships":  0,
+                                          "active_members":  0,
+                                          "offers":  {
+
+                                                     },
+                                          "decision_events":  1,
+                                          "decision_audits":  4,
+                                          "selection_events":  0,
+                                          "needVersionDelta":  1,
+                                          "dutyVersionDelta":  1
+                                      }
+                           },
+                  "B-06":  {
+                               "pg":  {
+                                          "request":  "APPROVED",
+                                          "decided":  true,
+                                          "need":  "OPEN_UNFILLED",
+                                          "need_v":  2,
+                                          "selected_offer":  false,
+                                          "resolved":  false,
+                                          "duty_v":  2,
+                                          "duty_present":  true,
+                                          "plan":  "PUBLISHED",
+                                          "membership":  "REMOVED",
+                                          "replacement_memberships":  0,
+                                          "active_members":  0,
+                                          "offers":  {
+                                                         "NOT_SELECTED":  1
+                                                     },
+                                          "decision_events":  1,
+                                          "decision_audits":  5,
+                                          "selection_events":  0
+                                      }
+                           },
+                  "B-07":  {
+                               "pg":  {
+                                          "request":  "APPROVED",
+                                          "decided":  true,
+                                          "need":  "OPEN_UNFILLED",
+                                          "need_v":  2,
+                                          "selected_offer":  false,
+                                          "resolved":  false,
+                                          "duty_v":  2,
+                                          "duty_present":  true,
+                                          "plan":  "PUBLISHED",
+                                          "membership":  "REMOVED",
+                                          "replacement_memberships":  0,
+                                          "active_members":  0,
+                                          "offers":  {
+                                                         "NOT_SELECTED":  2,
+                                                         "WITHDRAWN":  1
+                                                     },
+                                          "decision_events":  1,
+                                          "decision_audits":  6,
+                                          "selection_events":  0,
+                                          "terminalRowIdentical":  true
+                                      },
+                               "ui":  {
+                                          "offers":  [
+                                                         "Nicht ausgewÃ¤hlt",
+                                                         "Nicht ausgewÃ¤hlt",
+                                                         "ZurÃ¼ckgezogen"
+                                                     ]
+                                      }
+                           },
+                  "B-08":  {
+                               "ui":  [
+                                          {
+                                              "kind":  "reject",
+                                              "how":  "Abbrechen",
+                                              "focusReturnedToOpener":  true
+                                          },
+                                          {
+                                              "kind":  "reject",
+                                              "how":  "Escape",
+                                              "focusReturnedToOpener":  true
+                                          },
+                                          {
+                                              "kind":  "approve",
+                                              "how":  "Abbrechen",
+                                              "focusReturnedToOpener":  true
+                                          },
+                                          {
+                                              "kind":  "approve",
+                                              "how":  "Escape",
+                                              "focusReturnedToOpener":  true
+                                          }
+                                      ]
+                           },
+                  "B-09":  {
+                               "ui":  {
+                                          "tabPressesToOpener":  9,
+                                          "focusVisible":  true,
+                                          "outline":  "solid 3px",
+                                          "headingFocusedOnOpen":  true,
+                                          "tabOrderInConfirm":  [
+                                                                    "Ablehnung bestÃ¤tigen",
+                                                                    "Abbrechen"
+                                                                ],
+                                          "escapeReturnsFocus":  true,
+                                          "statusRole":  "status",
+                                          "ariaSnapshotConfirm":  [
+                                                                      "- region \"Absage ohne Ersatz entscheiden\":",
+                                                                      "  - heading \"Absage ohne Ersatz entscheiden\" [level=2]",
+                                                                      "  - paragraph: Beide Entscheidungen setzen alle offenen Ersatzangebote auf â€žNicht ausgewÃ¤hltâ€œ, auch wenn geeignete Angebote vorliegen. Um einen Ersatz zu Ã¼bernehmen, wÃ¤hlen Sie stattdessen ein Angebot unter â€žErsatz auswÃ¤hlenâ€œ.",
+                                                                      "  - group \"Absage ablehnen?\":",
+                                                                      "    - heading \"Absage ablehnen?\" [level=3]",
+                                                                      "    - paragraph: Die Absage wird abgelehnt. Die ursprÃ¼ngliche Zuordnung bleibt aktiv; die Person bleibt im Dienst eingetragen. Der Ersatzbedarf wird geschlossen.",
+                                                                      "    - paragraph: \"Offene Angebote, die auf â€žNicht ausgewÃ¤hltâ€œ gesetzt werden: 1 (davon aktuell geeignet: 1)\"",
+                                                                      "    - button \"Ablehnung bestÃ¤tigen\"",
+                                                                      "    - button \"Abbrechen\""
+                                                                  ]
+                                      }
+                           },
+                  "B-10":  {
+                               "layout":  {
+                                              "reject":  {
+                                                             "overflowBefore":  0,
+                                                             "overflowConfirm":  0,
+                                                             "overflowDone":  0,
+                                                             "openerInside":  true,
+                                                             "confirmInside":  true,
+                                                             "confirmBoxOverflowX":  0,
+                                                             "confirmBoxRight":  353,
+                                                             "textClipped":  false,
+                                                             "minTargetHeight":  42
+                                                         },
+                                              "approve":  {
+                                                              "overflowBefore":  0,
+                                                              "overflowConfirm":  0,
+                                                              "overflowDone":  0,
+                                                              "openerInside":  true,
+                                                              "confirmInside":  true,
+                                                              "confirmBoxOverflowX":  0,
+                                                              "confirmBoxRight":  353,
+                                                              "textClipped":  false,
+                                                              "minTargetHeight":  42
+                                                          },
+                                              "desktopOverflow":  0
+                                          }
+                           },
+                  "B-11":  {
+                               "result":  {
+                                              "dblclick":  {
+                                                               "posts":  1,
+                                                               "pending":  {
+                                                                               "confirmDisabled":  true,
+                                                                               "cancelDisabled":  true,
+                                                                               "selectDisabled":  true
+                                                                           }
+                                                           },
+                                              "enterTwice":  {
+                                                                 "posts":  1
+                                                             },
+                                              "completedReceiptsForBoth":  2
+                                          }
+                           },
+                  "B-12":  {
+                               "result":  {
+                                              "selectThenReject":  {
+                                                                       "selectionConfirmOpen":  0,
+                                                                       "rejectConfirmOpen":  1
+                                                                   },
+                                              "approveThenSelect":  {
+                                                                        "approveConfirmOpen":  0,
+                                                                        "selectionConfirmOpen":  1
+                                                                    },
+                                              "whilePending":  {
+                                                                   "selectButtons":  2,
+                                                                   "allDisabled":  true
+                                                               },
+                                              "selectionRequests":  0,
+                                              "pg":  {
+                                                         "request":  "REJECTED",
+                                                         "need":  "CLOSED",
+                                                         "selectedOffer":  false,
+                                                         "decisionEvents":  1,
+                                                         "selectionEvents":  0
+                                                     }
+                                          }
+                           },
+                  "B-13":  {
+                               "result":  {
+                                              "selection":  200,
+                                              "decision":  {
+                                                               "status":  409,
+                                                               "code":  "CANCELLATION_ALREADY_RESOLVED"
+                                                           },
+                                              "loserAlert":  true,
+                                              "loserConfirmClosed":  true,
+                                              "loserView":  {
+                                                                "absage":  "Genehmigt",
+                                                                "ersatzbedarf":  "Besetzt"
+                                                            },
+                                              "pg":  {
+                                                         "request":  "APPROVED",
+                                                         "need":  "RESOLVED",
+                                                         "selectedOffer":  true,
+                                                         "approvalEventsOnRequest":  1,
+                                                         "selectionAudit":  {
+                                                                                "selected":  1,
+                                                                                "approved":  1,
+                                                                                "sp21_only":  0
+                                                                            },
+                                                         "replacementMemberships":  1,
+                                                         "sp21AttemptDeltas":  {
+                                                                                   "idempotencyRowsDelta":  1,
+                                                                                   "allAuditsDelta":  0
+                                                                               }
+                                                     }
+                                          }
+                           },
+                  "B-14":  {
+                               "result":  {
+                                              "a2":  {
+                                                         "status":  409,
+                                                         "code":  "REPLACEMENT_NEED_NOT_OPEN"
+                                                     },
+                                              "alertText":  "Dieser Ersatzbedarf ist nicht mehr offen. Die Daten wurden neu geladen.",
+                                              "confirmClosed":  true,
+                                              "pg":  {
+                                                         "request":  "REJECTED",
+                                                         "need":  "CLOSED",
+                                                         "decisionEvents":  1,
+                                                         "membership":  "ACTIVE"
+                                                     }
+                                          }
+                           },
+                  "B-15":  {
+                               "result":  {
+                                              "planningEdit":  {
+                                                                   "status":  200,
+                                                                   "code":  null
+                                                               },
+                                              "dutyVersion":  {
+                                                                  "captured":  1,
+                                                                  "afterEdit":  2
+                                                              },
+                                              "decision":  {
+                                                               "status":  409,
+                                                               "code":  "PLAN_CONCURRENT_MODIFICATION"
+                                                           },
+                                              "alertText":  "Der Vorgang wurde inzwischen geÃ¤ndert. Die Daten wurden neu geladen.",
+                                              "successShown":  0,
+                                              "reloadedWithActions":  true,
+                                              "pg":  {
+                                                         "request":  "OPEN",
+                                                         "need":  "OPEN",
+                                                         "needV":  1,
+                                                         "decisionEvents":  0
+                                                     }
+                                          }
+                           },
+                  "B-16":  {
+                               "result":  {
+                                              "uiAlert":  "Vorgang nicht verfÃ¼gbar",
+                                              "leakedTexts":  [
+
+                                                              ],
+                                              "reject":  {
+                                                             "status":  404,
+                                                             "code":  "RESOURCE_NOT_FOUND",
+                                                             "meStatus":  200
+                                                         },
+                                              "approve":  {
+                                                              "status":  404,
+                                                              "code":  "RESOURCE_NOT_FOUND",
+                                                              "meStatus":  200
+                                                          },
+                                              "offersRead":  {
+                                                                 "status":  404,
+                                                                 "code":  "RESOURCE_NOT_FOUND",
+                                                                 "meStatus":  200
+                                                             },
+                                              "tenantBUnchanged":  true
+                                          }
+                           },
+                  "B-17":  {
+                               "expiry":  {
+                                              "apiCalls":  [
+                                                               "POST /api/v1/cancellation-requests/:id/decision 401"
+                                                           ],
+                                              "landedOnLogin":  true,
+                                              "successShown":  false
+                                          },
+                               "secondTabSignOut":  {
+                                                        "confirmationStillVisibleAfterOtherTabSignOut":  false,
+                                                        "decisionPostsSent":  0,
+                                                        "landedOnLogin":  true
+                                                    }
+                           },
+                  "B-18":  {
+                               "result":  {
+                                              "fixture":  "UPDATE accounts SET role=EMPLOYEE (1 row, disposable target)",
+                                              "decision":  {
+                                                               "status":  403,
+                                                               "code":  "ACTION_FORBIDDEN"
+                                                           },
+                                              "alertText":  "FÃ¼r diese Aktion fehlt die Berechtigung. Laden Sie den Vorgang neu, bevor Sie es erneut versuchen.",
+                                              "requestsAfterConfirm":  [
+                                                                           "POST /api/v1/cancellation-requests/:id/decision"
+                                                                       ],
+                                              "successShown":  0,
+                                              "pg":  {
+                                                         "unchanged":  true,
+                                                         "decisionAuditsDelta":  0,
+                                                         "allAuditsDelta":  0
+                                                     }
+                                          }
+                           },
+                  "B-19":  {
+                               "result":  {
+                                              "ui":  {
+                                                         "retryVisible":  true,
+                                                         "confirmVisible":  0,
+                                                         "cancelDisabled":  true,
+                                                         "selectButtons":  0
+                                                     },
+                                              "browserAttempts":  2,
+                                              "sameKey":  true,
+                                              "sameBody":  true,
+                                              "beforeRetry":  {
+                                                                  "unchanged":  true,
+                                                                  "idempotencyRowsDelta":  0,
+                                                                  "decisionAuditsDelta":  0
+                                                              },
+                                              "afterRetry":  {
+                                                                 "request":  "REJECTED",
+                                                                 "decisionEvents":  1,
+                                                                 "idempotencyRowsDelta":  1
+                                                             }
+                                          }
+                           },
+                  "B-20":  {
+                               "result":  {
+                                              "proxy":  {
+                                                            "forwarded":  1,
+                                                            "upstreamStatus":  200
+                                                        },
+                                              "retry":  {
+                                                            "status":  200,
+                                                            "replayed":  "true"
+                                                        },
+                                              "sameKey":  true,
+                                              "sameBody":  true,
+                                              "sameNeedVersion":  true,
+                                              "beforeRetry":  {
+                                                                  "request":  "APPROVED",
+                                                                  "decisionEvents":  1,
+                                                                  "decisionAudits":  5,
+                                                                  "completedReceipts":  13
+                                                              },
+                                              "afterRetry":  {
+                                                                 "unchangedSinceCommit":  true,
+                                                                 "completedReceipts":  13,
+                                                                 "allAuditsDelta":  0
+                                                             }
+                                          }
+                           },
+                  "B-21":  {
+                               "result":  {
+                                              "synthesizedResponses":  1,
+                                              "beforeRetry":  {
+                                                                  "unchanged":  true,
+                                                                  "idempotencyRowsDelta":  0
+                                                              },
+                                              "retry":  {
+                                                            "status":  200,
+                                                            "replayed":  null
+                                                        },
+                                              "sameKey":  true,
+                                              "sameBody":  true,
+                                              "after":  {
+                                                            "request":  "REJECTED",
+                                                            "decisionEvents":  1
+                                                        }
+                                          }
+                           },
+                  "B-22":  {
+                               "a":  {
+                                         "committedBeforeReload":  "APPROVED",
+                                         "uiAfterReload":  {
+                                                               "absage":  "Genehmigt",
+                                                               "ersatzbedarf":  "Unbesetzt",
+                                                               "decisionButtons":  0,
+                                                               "successShown":  0,
+                                                               "uncertainShown":  0
+                                                           },
+                                         "staleRequest":  {
+                                                              "status":  409,
+                                                              "code":  "CANCELLATION_ALREADY_RESOLVED",
+                                                              "meStatus":  200
+                                                          },
+                                         "decisionEvents":  1,
+                                         "unchangedByStale":  true
+                                     },
+                               "b":  {
+                                         "beforeReload":  {
+                                                              "request":  "OPEN",
+                                                              "decisionEvents":  0
+                                                          },
+                                         "uiAfterReload":  {
+                                                               "openerVisible":  true,
+                                                               "uncertainShown":  0
+                                                           },
+                                         "browserAttempts":  2,
+                                         "newKeyAfterReload":  true,
+                                         "after":  {
+                                                       "request":  "REJECTED",
+                                                       "decisionEvents":  1
+                                                   }
+                                     }
+                           },
+                  "B-23":  {
+                               "a":  {
+                                         "ui":  {
+                                                    "url":  true,
+                                                    "lateMessage":  0,
+                                                    "uncertain":  0,
+                                                    "spareOpenersEnabled":  true
+                                                },
+                                         "original":  {
+                                                          "request":  "REJECTED",
+                                                          "decisionEvents":  1
+                                                      },
+                                         "spareCase":  {
+                                                           "request":  "OPEN",
+                                                           "decisionEvents":  0
+                                                       }
+                                     },
+                               "b":  {
+                                         "ui":  {
+                                                    "lateMessage":  0,
+                                                    "uncertain":  0
+                                                },
+                                         "original":  {
+                                                          "request":  "APPROVED",
+                                                          "decisionEvents":  1
+                                                      }
+                                     }
+                           },
+                  "B-24":  {
+                               "result":  {
+                                              "caseChecks":  [
+                                                                 {
+                                                                     "case":  "C3",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Abgelehnt",
+                                                                                "ersatzbedarf":  "Geschlossen",
+                                                                                "zuordnung":  "Aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "REJECTED",
+                                                                                "need":  "CLOSED",
+                                                                                "membership":  "ACTIVE",
+                                                                                "offers":  {
+                                                                                               "NOT_SELECTED":  3
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "C0",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Genehmigt",
+                                                                                "ersatzbedarf":  "Unbesetzt",
+                                                                                "zuordnung":  "Nicht mehr aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "APPROVED",
+                                                                                "need":  "OPEN_UNFILLED",
+                                                                                "membership":  "REMOVED",
+                                                                                "offers":  {
+
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "C1",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Genehmigt",
+                                                                                "ersatzbedarf":  "Unbesetzt",
+                                                                                "zuordnung":  "Nicht mehr aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "APPROVED",
+                                                                                "need":  "OPEN_UNFILLED",
+                                                                                "membership":  "REMOVED",
+                                                                                "offers":  {
+                                                                                               "NOT_SELECTED":  1
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "C3T",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Genehmigt",
+                                                                                "ersatzbedarf":  "Unbesetzt",
+                                                                                "zuordnung":  "Nicht mehr aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "APPROVED",
+                                                                                "need":  "OPEN_UNFILLED",
+                                                                                "membership":  "REMOVED",
+                                                                                "offers":  {
+                                                                                               "NOT_SELECTED":  2,
+                                                                                               "WITHDRAWN":  1
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "K09",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Abgelehnt",
+                                                                                "ersatzbedarf":  "Geschlossen",
+                                                                                "zuordnung":  "Aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "REJECTED",
+                                                                                "need":  "CLOSED",
+                                                                                "membership":  "ACTIVE",
+                                                                                "offers":  {
+                                                                                               "NOT_SELECTED":  1
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "D11a",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Abgelehnt",
+                                                                                "ersatzbedarf":  "Geschlossen",
+                                                                                "zuordnung":  "Aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "REJECTED",
+                                                                                "need":  "CLOSED",
+                                                                                "membership":  "ACTIVE",
+                                                                                "offers":  {
+                                                                                               "NOT_SELECTED":  1
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "D11b",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Genehmigt",
+                                                                                "ersatzbedarf":  "Unbesetzt",
+                                                                                "zuordnung":  "Nicht mehr aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "APPROVED",
+                                                                                "need":  "OPEN_UNFILLED",
+                                                                                "membership":  "REMOVED",
+                                                                                "offers":  {
+                                                                                               "NOT_SELECTED":  1
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "S12",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Abgelehnt",
+                                                                                "ersatzbedarf":  "Geschlossen",
+                                                                                "zuordnung":  "Aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "REJECTED",
+                                                                                "need":  "CLOSED",
+                                                                                "membership":  "ACTIVE",
+                                                                                "offers":  {
+                                                                                               "NOT_SELECTED":  2
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "F19",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Abgelehnt",
+                                                                                "ersatzbedarf":  "Geschlossen",
+                                                                                "zuordnung":  "Aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "REJECTED",
+                                                                                "need":  "CLOSED",
+                                                                                "membership":  "ACTIVE",
+                                                                                "offers":  {
+
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "F20",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Genehmigt",
+                                                                                "ersatzbedarf":  "Unbesetzt",
+                                                                                "zuordnung":  "Nicht mehr aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "APPROVED",
+                                                                                "need":  "OPEN_UNFILLED",
+                                                                                "membership":  "REMOVED",
+                                                                                "offers":  {
+                                                                                               "NOT_SELECTED":  1
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "F21",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Abgelehnt",
+                                                                                "ersatzbedarf":  "Geschlossen",
+                                                                                "zuordnung":  "Aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "REJECTED",
+                                                                                "need":  "CLOSED",
+                                                                                "membership":  "ACTIVE",
+                                                                                "offers":  {
+
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "F22a",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Genehmigt",
+                                                                                "ersatzbedarf":  "Unbesetzt",
+                                                                                "zuordnung":  "Nicht mehr aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "APPROVED",
+                                                                                "need":  "OPEN_UNFILLED",
+                                                                                "membership":  "REMOVED",
+                                                                                "offers":  {
+                                                                                               "NOT_SELECTED":  1
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "F22b",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Abgelehnt",
+                                                                                "ersatzbedarf":  "Geschlossen",
+                                                                                "zuordnung":  "Aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "REJECTED",
+                                                                                "need":  "CLOSED",
+                                                                                "membership":  "ACTIVE",
+                                                                                "offers":  {
+
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "F23a",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Abgelehnt",
+                                                                                "ersatzbedarf":  "Geschlossen",
+                                                                                "zuordnung":  "Aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "REJECTED",
+                                                                                "need":  "CLOSED",
+                                                                                "membership":  "ACTIVE",
+                                                                                "offers":  {
+
+                                                                                           }
+                                                                            }
+                                                                 },
+                                                                 {
+                                                                     "case":  "F23b",
+                                                                     "ok":  true,
+                                                                     "ui":  {
+                                                                                "absage":  "Genehmigt",
+                                                                                "ersatzbedarf":  "Unbesetzt",
+                                                                                "zuordnung":  "Nicht mehr aktiv",
+                                                                                "offeneAngebote":  "0"
+                                                                            },
+                                                                     "pg":  {
+                                                                                "request":  "APPROVED",
+                                                                                "need":  "OPEN_UNFILLED",
+                                                                                "membership":  "REMOVED",
+                                                                                "offers":  {
+
+                                                                                           }
+                                                                            }
+                                                                 }
+                                                             ],
+                                              "queue":  {
+                                                            "pgPending":  15,
+                                                            "uiListed":  15,
+                                                            "matches":  true
+                                                        },
+                                              "backNavigationKeepsFilters":  true,
+                                              "backParams":  [
+                                                                 "month=2026-12",
+                                                                 "sortBy=dutyDate",
+                                                                 "sortOrder=desc"
+                                                             ]
+                                          }
+                           },
+                  "UX01-320":  {
+                                   "result":  {
+                                                  "populated":  {
+                                                                    "document":  320,
+                                                                    "layersInside":  true,
+                                                                    "selectRight":  [
+                                                                                        283,
+                                                                                        283,
+                                                                                        283,
+                                                                                        283
+                                                                                    ]
+                                                                },
+                                                  "longProjectSelected":  {
+                                                                              "document":  320,
+                                                                              "layersInside":  true,
+                                                                              "fullNameRetained":  true,
+                                                                              "focusRetained":  true,
+                                                                              "realEmptyResult":  true
+                                                                          }
+                                              }
+                               },
+                  "B-26":  {
+                               "result":  {
+                                              "rejectedDutyStillListed":  true,
+                                              "approvedDutyListed":  false,
+                                              "newCancellationAfterReject":  {
+                                                                                 "status":  201,
+                                                                                 "code":  null,
+                                                                                 "meStatus":  200
+                                                                             },
+                                              "retryAfterApprove":  {
+                                                                        "status":  409,
+                                                                        "code":  "CANCELLATION_ASSIGNMENT_NOT_ACTIVE",
+                                                                        "meStatus":  200
+                                                                    },
+                                              "pg":  [
+                                                         {
+                                                             "rejected_assignment":  false,
+                                                             "status":  "APPROVED",
+                                                             "c":  1
+                                                         },
+                                                         {
+                                                             "rejected_assignment":  true,
+                                                             "status":  "OPEN",
+                                                             "c":  1
+                                                         },
+                                                         {
+                                                             "rejected_assignment":  true,
+                                                             "status":  "REJECTED",
+                                                             "c":  1
+                                                         }
+                                                     ]
+                                          }
+                           }
+              },
+    "results":  [
+                    {
+                        "id":  "B-01",
+                        "description":  "COMPANY_ADMIN opens /arbeitsuebersicht then C1: decision panel with both buttons and SP-20 offers",
+                        "result":  "PASS",
+                        "ms":  758
+                    },
+                    {
+                        "id":  "B-02",
+                        "description":  "EMPLOYEE: no work queue or decision UI by navigation or URL; no decision request",
+                        "result":  "PASS",
+                        "ms":  1340
+                    },
+                    {
+                        "id":  "B-03",
+                        "description":  "EMPLOYEE sends the decision POST from the signed-in browser page with valid CSRF: 403 ACTION_FORBIDDEN",
+                        "result":  "PASS",
+                        "ms":  107
+                    },
+                    {
+                        "id":  "B-04",
+                        "description":  "REJECT confirm on C3 (2 eligible + 1 ineligible offer): copy, success, case reloads decided, no actions",
+                        "result":  "PASS",
+                        "ms":  889
+                    },
+                    {
+                        "id":  "B-05",
+                        "description":  "APPROVE without replacement on C0 (0 offers): success, Unbesetzt, stays in work queue",
+                        "result":  "PASS",
+                        "ms":  1354
+                    },
+                    {
+                        "id":  "B-06",
+                        "description":  "APPROVE without replacement on C1 (1 offer): offer Nicht ausgewÃ¤hlt, no replacement assigned",
+                        "result":  "PASS",
+                        "ms":  810
+                    },
+                    {
+                        "id":  "B-07",
+                        "description":  "APPROVE on C3T (2 OPEN + 1 terminal): 2 NOT_SELECTED, terminal row identical, 6 audits",
+                        "result":  "PASS",
+                        "ms":  759
+                    },
+                    {
+                        "id":  "B-08",
+                        "description":  "Abbrechen and Escape for both confirmations: nothing sent, focus returns to opener",
+                        "result":  "PASS",
+                        "ms":  692
+                    },
+                    {
+                        "id":  "B-09",
+                        "description":  "Keyboard only: Tab to buttons, Enter opens, focus on heading, Tab order, Escape cancels, Enter confirms; ARIA",
+                        "result":  "PASS",
+                        "ms":  959
+                    },
+                    {
+                        "id":  "B-10",
+                        "description":  "390x844 emulation: REJECT (R10a) and APPROVE (R10b) without horizontal scroll, reachable buttons, wrapped confirmation",
+                        "result":  "PASS",
+                        "ms":  3389
+                    },
+                    {
+                        "id":  "B-11",
+                        "description":  "Double submit: double-click (D11a) and Enter twice (D11b) send exactly one POST; pending disables buttons",
+                        "result":  "PASS",
+                        "ms":  4938
+                    },
+                    {
+                        "id":  "B-12",
+                        "description":  "SP-20 vs SP-21 in one case (S12): only one confirmation open; pending decision disables selection; one mutation",
+                        "result":  "PASS",
+                        "ms":  3284
+                    },
+                    {
+                        "id":  "B-13",
+                        "description":  "Cross-tab race: tab 1 selects (SP-20) on S13, tab 2 APPROVEs with the earlier read: one winner, loser 409 + reload",
+                        "result":  "PASS",
+                        "ms":  5135
+                    },
+                    {
+                        "id":  "B-14",
+                        "description":  "Two admins on T14: A1 REJECTs, then A2 confirms its earlier APPROVE: 409, confirmation closes, reload",
+                        "result":  "PASS",
+                        "ms":  1892
+                    },
+                    {
+                        "id":  "B-15",
+                        "description":  "Stale duty version (V15): APPROVE confirmation open, duty changed in planning, confirm: 409, no success, reload",
+                        "result":  "PASS",
+                        "ms":  946
+                    },
+                    {
+                        "id":  "B-16",
+                        "description":  "Tenant isolation: A1 opens tenant B case URL and POSTs to tenant B request: 404, no B data, B unchanged",
+                        "result":  "PASS",
+                        "ms":  697
+                    },
+                    {
+                        "id":  "B-17",
+                        "description":  "Session expiry (X17, dedicated admin): confirm after expiry -\u003e 401 -\u003e central sign-out, no loop, no success",
+                        "result":  "PASS",
+                        "ms":  7544
+                    },
+                    {
+                        "id":  "B-18",
+                        "description":  "Role downgrade of ADMIN-A2 by scoped fixture SQL with confirmation open (X18): 403, fail closed, no loop, zero writes",
+                        "result":  "PASS",
+                        "ms":  3197
+                    },
+                    {
+                        "id":  "B-19",
+                        "description":  "Offline before delivery (F19): uncertain state, only Erneut bestÃ¤tigen; 0 rows; then same-key retry succeeds once",
+                        "result":  "PASS",
+                        "ms":  755
+                    },
+                    {
+                        "id":  "B-20",
+                        "description":  "Lost response after commit (F20): uncertain; DB shows one decision; same-key retry -\u003e 200 Idempotency-Replayed, no new rows",
+                        "result":  "PASS",
+                        "ms":  958
+                    },
+                    {
+                        "id":  "B-21",
+                        "description":  "Synthetic 5xx without forwarding (F21): uncertain, 0 writes; same-key retry decides exactly once (UI handling only)",
+                        "result":  "PASS",
+                        "ms":  721
+                    },
+                    {
+                        "id":  "B-22",
+                        "description":  "Reload with uncertain intent: (a) committed -\u003e decided state, stale request 409; (b) undelivered -\u003e new key decides once",
+                        "result":  "PASS",
+                        "ms":  2387
+                    },
+                    {
+                        "id":  "B-23",
+                        "description":  "In-flight switch: late response not shown after case switch (F23a) or account switch (F23b); one decision each",
+                        "result":  "PASS",
+                        "ms":  11447
+                    },
+                    {
+                        "id":  "B-24",
+                        "description":  "UI vs PostgreSQL after positive decisions; work-queue list; back-navigation keeps filters",
+                        "result":  "PASS",
+                        "ms":  6668
+                    },
+                    {
+                        "id":  "UX01-320",
+                        "description":  "UX-01 regression at 320 px with real data: queue filters with a long project name stay inside the viewport",
+                        "result":  "PASS",
+                        "ms":  1928
+                    },
+                    {
+                        "id":  "B-26",
+                        "description":  "Resubmission: EMP whose case was REJECTED can cancel again; the APPROVED (removed) membership is refused",
+                        "result":  "PASS",
+                        "ms":  1173
+                    },
+                    {
+                        "id":  "B-25",
+                        "description":  "Storage: no keys, tokens, receipts or PII in localStorage, sessionStorage or IndexedDB of any open page",
+                        "result":  "PASS",
+                        "ms":  39
+                    }
+                ],
+    "console":  {
+                    "pageErrors":  0,
+                    "byCategory":  {
+                                       "http-401":  21,
+                                       "http-403":  3,
+                                       "http-409":  5,
+                                       "http-404":  4,
+                                       "net::ERR_INTERNET_DISCONNECTED":  2,
+                                       "net::ERR_CONNECTION_RESET":  2,
+                                       "http-503":  1
+                                   }
+                },
+    "storage":  [
+                    {
+                        "page":  "admin-a1",
+                        "localKeys":  [
+
+                                      ],
+                        "sessionKeys":  [
+
+                                        ],
+                        "indexedDb":  [
+
+                                      ],
+                        "suspicious":  [
+
+                                       ]
+                    },
+                    {
+                        "page":  "admin-a1",
+                        "localKeys":  [
+
+                                      ],
+                        "sessionKeys":  [
+
+                                        ],
+                        "indexedDb":  [
+
+                                      ],
+                        "suspicious":  [
+
+                                       ]
+                    },
+                    {
+                        "page":  "admin-a2",
+                        "localKeys":  [
+
+                                      ],
+                        "sessionKeys":  [
+
+                                        ],
+                        "indexedDb":  [
+
+                                      ],
+                        "suspicious":  [
+
+                                       ]
+                    }
+                ],
+    "seeded":  {
+                   "companies":  2,
+                   "accounts":  9,
+                   "employees":  5,
+                   "casesTenantA":  26,
+                   "casesTenantB":  1,
+                   "offerFixtures":  [
+                                         "C3: E4 SICK on duty day (ineligible)",
+                                         "C3T: E4 offer WITHDRAWN (terminal)"
+                                     ]
+               },
+    "baseline":  {
+                     "tenantA":  {
+                                     "idempotency":  {
+
+                                                     },
+                                     "decisionAudits":  0,
+                                     "allAudits":  100
+                                 },
+                     "tenantB":  {
+                                     "idempotency":  {
+
+                                                     },
+                                     "decisionAudits":  0,
+                                     "allAudits":  6
+                                 }
+                 },
+    "finishedAt":  "2026-11-12T16:50:13.461Z",
+    "end":  {
+                "tenantA":  {
+                                "idempotency":  {
+                                                    "COMPLETED":  18,
+                                                    "FAILED":  4
+                                                },
+                                "decisionAudits":  19,
+                                "allAudits":  176
+                            },
+                "tenantB":  {
+                                "idempotency":  {
+
+                                                },
+                                "decisionAudits":  0,
+                                "allAudits":  6
+                            }
+            }
+}

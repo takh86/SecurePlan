@@ -1,6 +1,70 @@
 # SP-21 S7 — Real-Browser Acceptance (REJECT and APPROVE without replacement)
 
-Status: **EXECUTED — awaiting Tech Lead S7 acceptance review.** Not a merge, closeout or release decision.
+Status: **EXECUTED on integrated main — awaiting fresh Tech Lead S7 decision.** Not a merge, closeout or release decision.
+
+## 0. Integrated run on current main (current-code evidence)
+
+Context: [TL review of #137](https://github.com/takh86/SecurePlan/pull/137#pullrequestreview-5878088602) accepted the
+historical evidence (§1–§6) for the S6 baseline only. It required integration with main `92265cf`, which includes UX-01
+[#136](https://github.com/takh86/SecurePlan/pull/136) (`WorkQueue.css`: queue filter selects `min-width: 0; width: 100%`).
+
+| Item | Value |
+|---|---|
+| Integration | Normal merge of `origin/main` `92265cfceee7481ce7a9cdfb7022e16f4bdeb2f1` into the S7 branch (merge commit `2cc5a62`). No conflicts, no rebase, no force push |
+| PR diff vs main after merge | S7 harness, this report and `sp21-s7-evidence/**` only |
+| Harness commit of the integrated runs | `9f7f69ed814d39c425c54fb0851864bea6616347` (main `92265cf` + S7; adds the UX01-320 check); tracked tree clean (recorded) |
+| Build | `npm ci` + `npm run build` of the integrated tree; backend `dist` and Vite dev server from that tree |
+| New disposable target | Run id `sp21-s7i-2126306f2e68`. New `postgres:17` container: tmpfs, loopback, no mounts, PostgreSQL 17.11, 0 public tables. Receipt recorded and reverified before any write. Migrations 20, then 0. `db:verify` exit 0. The previous S7 database was **not** reused |
+| Browser | Chrome 157.0.8103.51 headless (Playwright 1.64.1); 1280×800, 390×844 emulation, and 320×800 emulation for UX01-320 |
+| Origin | `https://localhost:8444` (8443 still held by the developer Compose stack), `APP_ORIGIN` matched per process |
+| Run A | 2026-11-12 16:47:26–16:48:52 UTC: **27/27 PASS** (B-01..B-26 + UX01-320) |
+| Run B | 2026-11-12 16:48:55–16:50:13 UTC: **27/27 PASS** |
+| Evidence | [`sp21-s7-evidence/integrated-main-92265cf/`](sp21-s7-evidence/integrated-main-92265cf/): `run-A.json`, `run-B.json`, 6 screenshots |
+
+Every B-01..B-26 row had the same outcome and the same observed codes as in §2. In both runs:
+- B-13 → 409 `CANCELLATION_ALREADY_RESOLVED`.
+- B-14 → 409 `REPLACEMENT_NEED_NOT_OPEN`.
+- B-15 → 409 `PLAN_CONCURRENT_MODIFICATION`.
+- B-20 → upstream 200, then a same-key replay with `Idempotency-Replayed: true` and Δ0.
+- B-26 → 201 / 409 `CANCELLATION_ASSIGNMENT_NOT_ACTIVE`.
+
+PostgreSQL totals per run for tenant A:
+- 18 UI decisions → exactly **18 `COMPLETED` receipts**.
+- 4 `FAILED` refused attempts (allowed by TL-4).
+- 19 approval/rejection audits (18 SP-21 + 1 SP-20 winner in B-13).
+
+Tenant B was unchanged. Console: 0 uncaught page errors and 0 "other" errors. The 401 count is 21, 2 more than §2 because of the extra 320 px sign-in session.
+
+**UX01-320 (focused UX-01 regression, real data):**
+- Setup: ADMIN-A1 in 320×800 emulation, with a seeded ACTIVE project named
+  „S7 Synthetischer Sicherheitsdienst Flughafen und Veranstaltungsschutz Nordwest Erweiterung“.
+- Populated queue: document width 320, every filter layer (`.work-queue`, filters, controls, labels, the 4 selects)
+  inside the viewport, select right edge 283 px.
+- After selecting the long project via the native select: URL `projectId` set, the real backend returns an empty
+  result („Keine Vorgänge für diese Auswahl“), document width still 320, all layers inside, the full option name is
+  retained and focus stays on the select.
+- **PASS** in runs A and B.
+
+**Integrated status:**
+
+| Scope | Status |
+|---|---|
+| B-01..B-26 on main `92265cf` + S7 | **PASS ×2** |
+| UX01-320 | **PASS ×2** |
+| Firefox, physical phone, real screen reader, headed Chrome | NOT_RUN |
+| Truly simultaneous browser race | Not executed (B-13 is an ordered race) |
+
+The remaining limitations of §4 apply unchanged.
+
+**Cleanup:**
+- After verifying its exact id `b98b902d1c69`, label, tmpfs, loopback and mounts, the old container
+  `secureplan-sp21-s7-937efe6e3af4` was removed. No other container, volume or Compose resource was touched.
+- The integrated-run backend and frontend were stopped directly after the runs.
+
+Sections §1–§6 below are the **historical** S7 evidence on the S6 baseline `b2b45ce`. They are kept unchanged for
+traceability and are **not** current-code evidence.
+
+## Historical S7 run (S6 baseline `b2b45ce`)
 
 | Item | Value |
 |---|---|
