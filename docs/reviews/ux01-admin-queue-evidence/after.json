@@ -1,0 +1,3237 @@
+{
+  "kind": "UX-01 browser layout regression; network-stubbed API, no backend/DB acceptance",
+  "browser": "157.0.8103.51",
+  "results": [
+    {
+      "state": "empty",
+      "width": 320,
+      "result": "PASS",
+      "beforeSelection": {
+        "viewport": 320,
+        "document": 320,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 320,
+            "left": 0,
+            "right": 320,
+            "scroll": 320,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 288,
+            "left": 16,
+            "right": 304,
+            "scroll": 288,
+            "minWidth": "0px",
+            "columns": "288px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 288,
+            "left": 16,
+            "right": 304,
+            "scroll": 286,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      },
+      "afterSelection": {
+        "viewport": 320,
+        "document": 320,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 320,
+            "left": 0,
+            "right": 320,
+            "scroll": 320,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 288,
+            "left": 16,
+            "right": 304,
+            "scroll": 288,
+            "minWidth": "0px",
+            "columns": "288px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 288,
+            "left": 16,
+            "right": 304,
+            "scroll": 286,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      }
+    },
+    {
+      "state": "empty",
+      "width": 375,
+      "result": "PASS",
+      "beforeSelection": {
+        "viewport": 375,
+        "document": 375,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 375,
+            "left": 0,
+            "right": 375,
+            "scroll": 375,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 343,
+            "left": 16,
+            "right": 359,
+            "scroll": 343,
+            "minWidth": "0px",
+            "columns": "343px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 343,
+            "left": 16,
+            "right": 359,
+            "scroll": 341,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      },
+      "afterSelection": {
+        "viewport": 375,
+        "document": 375,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 375,
+            "left": 0,
+            "right": 375,
+            "scroll": 375,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 343,
+            "left": 16,
+            "right": 359,
+            "scroll": 343,
+            "minWidth": "0px",
+            "columns": "343px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 343,
+            "left": 16,
+            "right": 359,
+            "scroll": 341,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      }
+    },
+    {
+      "state": "empty",
+      "width": 390,
+      "result": "PASS",
+      "beforeSelection": {
+        "viewport": 390,
+        "document": 390,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 390,
+            "left": 0,
+            "right": 390,
+            "scroll": 390,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 358,
+            "left": 16,
+            "right": 374,
+            "scroll": 358,
+            "minWidth": "0px",
+            "columns": "358px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 358,
+            "left": 16,
+            "right": 374,
+            "scroll": 356,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      },
+      "afterSelection": {
+        "viewport": 390,
+        "document": 390,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 390,
+            "left": 0,
+            "right": 390,
+            "scroll": 390,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 358,
+            "left": 16,
+            "right": 374,
+            "scroll": 358,
+            "minWidth": "0px",
+            "columns": "358px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 358,
+            "left": 16,
+            "right": 374,
+            "scroll": 356,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      }
+    },
+    {
+      "state": "empty",
+      "width": 768,
+      "result": "PASS",
+      "beforeSelection": {
+        "viewport": 768,
+        "document": 768,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 768,
+            "left": 0,
+            "right": 768,
+            "scroll": 768,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 736,
+            "left": 16,
+            "right": 752,
+            "scroll": 736,
+            "minWidth": "0px",
+            "columns": "736px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 736,
+            "left": 16,
+            "right": 752,
+            "scroll": 734,
+            "minWidth": "auto",
+            "columns": "694px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 694,
+            "left": 37,
+            "right": 731,
+            "scroll": 694,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 694,
+            "left": 37,
+            "right": 731,
+            "scroll": 694,
+            "minWidth": "auto",
+            "columns": "220.656px 220.672px 220.672px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.656px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.672px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.671875,
+            "left": 510.328125,
+            "right": 731,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.672px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.656px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.672px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      },
+      "afterSelection": {
+        "viewport": 768,
+        "document": 768,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 768,
+            "left": 0,
+            "right": 768,
+            "scroll": 768,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 736,
+            "left": 16,
+            "right": 752,
+            "scroll": 736,
+            "minWidth": "0px",
+            "columns": "736px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 736,
+            "left": 16,
+            "right": 752,
+            "scroll": 734,
+            "minWidth": "auto",
+            "columns": "694px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 694,
+            "left": 37,
+            "right": 731,
+            "scroll": 694,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 694,
+            "left": 37,
+            "right": 731,
+            "scroll": 694,
+            "minWidth": "auto",
+            "columns": "220.656px 220.672px 220.672px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.656px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.672px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.671875,
+            "left": 510.328125,
+            "right": 731,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.672px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.656px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.672px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      }
+    },
+    {
+      "state": "empty",
+      "width": 1024,
+      "result": "PASS",
+      "beforeSelection": {
+        "viewport": 1024,
+        "document": 1024,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 760,
+            "left": 264,
+            "right": 1024,
+            "scroll": 760,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 680,
+            "left": 304,
+            "right": 984,
+            "scroll": 680,
+            "minWidth": "0px",
+            "columns": "680px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 680,
+            "left": 304,
+            "right": 984,
+            "scroll": 678,
+            "minWidth": "auto",
+            "columns": "638px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 638,
+            "left": 325,
+            "right": 963,
+            "scroll": 638,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 638,
+            "left": 325,
+            "right": 963,
+            "scroll": 638,
+            "minWidth": "auto",
+            "columns": "202px 202px 202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 761,
+            "right": 963,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      },
+      "afterSelection": {
+        "viewport": 1024,
+        "document": 1024,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 760,
+            "left": 264,
+            "right": 1024,
+            "scroll": 760,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 680,
+            "left": 304,
+            "right": 984,
+            "scroll": 680,
+            "minWidth": "0px",
+            "columns": "680px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 680,
+            "left": 304,
+            "right": 984,
+            "scroll": 678,
+            "minWidth": "auto",
+            "columns": "638px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 638,
+            "left": 325,
+            "right": 963,
+            "scroll": 638,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 638,
+            "left": 325,
+            "right": 963,
+            "scroll": 638,
+            "minWidth": "auto",
+            "columns": "202px 202px 202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 761,
+            "right": 963,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      }
+    },
+    {
+      "state": "empty",
+      "width": 1440,
+      "result": "PASS",
+      "beforeSelection": {
+        "viewport": 1440,
+        "document": 1440,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 1176,
+            "left": 264,
+            "right": 1440,
+            "scroll": 1176,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 1096,
+            "left": 304,
+            "right": 1400,
+            "scroll": 1096,
+            "minWidth": "0px",
+            "columns": "1096px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 1096,
+            "left": 304,
+            "right": 1400,
+            "scroll": 1094,
+            "minWidth": "auto",
+            "columns": "1054px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 1054,
+            "left": 325,
+            "right": 1379,
+            "scroll": 1054,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 1054,
+            "left": 325,
+            "right": 1379,
+            "scroll": 1054,
+            "minWidth": "auto",
+            "columns": "251.5px 251.5px 251.5px 251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 592.5,
+            "right": 844,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 860,
+            "right": 1111.5,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 1127.5,
+            "right": 1379,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 592.5,
+            "right": 844,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 1127.5,
+            "right": 1379,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      },
+      "afterSelection": {
+        "viewport": 1440,
+        "document": 1440,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 1176,
+            "left": 264,
+            "right": 1440,
+            "scroll": 1176,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 1096,
+            "left": 304,
+            "right": 1400,
+            "scroll": 1096,
+            "minWidth": "0px",
+            "columns": "1096px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 1096,
+            "left": 304,
+            "right": 1400,
+            "scroll": 1094,
+            "minWidth": "auto",
+            "columns": "1054px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 1054,
+            "left": 325,
+            "right": 1379,
+            "scroll": 1054,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 1054,
+            "left": 325,
+            "right": 1379,
+            "scroll": 1054,
+            "minWidth": "auto",
+            "columns": "251.5px 251.5px 251.5px 251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 592.5,
+            "right": 844,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 860,
+            "right": 1111.5,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 1127.5,
+            "right": 1379,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 592.5,
+            "right": 844,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 1127.5,
+            "right": 1379,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      }
+    },
+    {
+      "state": "populated",
+      "width": 320,
+      "result": "PASS",
+      "beforeSelection": {
+        "viewport": 320,
+        "document": 320,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 320,
+            "left": 0,
+            "right": 320,
+            "scroll": 320,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 288,
+            "left": 16,
+            "right": 304,
+            "scroll": 288,
+            "minWidth": "0px",
+            "columns": "288px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 288,
+            "left": 16,
+            "right": 304,
+            "scroll": 286,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      },
+      "afterSelection": {
+        "viewport": 320,
+        "document": 320,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 320,
+            "left": 0,
+            "right": 320,
+            "scroll": 320,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 288,
+            "left": 16,
+            "right": 304,
+            "scroll": 288,
+            "minWidth": "0px",
+            "columns": "288px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 288,
+            "left": 16,
+            "right": 304,
+            "scroll": 286,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 246,
+            "minWidth": "auto",
+            "columns": "246px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 246,
+            "left": 37,
+            "right": 283,
+            "scroll": 244,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      }
+    },
+    {
+      "state": "populated",
+      "width": 375,
+      "result": "PASS",
+      "beforeSelection": {
+        "viewport": 375,
+        "document": 375,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 375,
+            "left": 0,
+            "right": 375,
+            "scroll": 375,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 343,
+            "left": 16,
+            "right": 359,
+            "scroll": 343,
+            "minWidth": "0px",
+            "columns": "343px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 343,
+            "left": 16,
+            "right": 359,
+            "scroll": 341,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      },
+      "afterSelection": {
+        "viewport": 375,
+        "document": 375,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 375,
+            "left": 0,
+            "right": 375,
+            "scroll": 375,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 343,
+            "left": 16,
+            "right": 359,
+            "scroll": 343,
+            "minWidth": "0px",
+            "columns": "343px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 343,
+            "left": 16,
+            "right": 359,
+            "scroll": 341,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 301,
+            "minWidth": "auto",
+            "columns": "301px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 301,
+            "left": 37,
+            "right": 338,
+            "scroll": 299,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      }
+    },
+    {
+      "state": "populated",
+      "width": 390,
+      "result": "PASS",
+      "beforeSelection": {
+        "viewport": 390,
+        "document": 390,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 390,
+            "left": 0,
+            "right": 390,
+            "scroll": 390,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 358,
+            "left": 16,
+            "right": 374,
+            "scroll": 358,
+            "minWidth": "0px",
+            "columns": "358px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 358,
+            "left": 16,
+            "right": 374,
+            "scroll": 356,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      },
+      "afterSelection": {
+        "viewport": 390,
+        "document": 390,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 390,
+            "left": 0,
+            "right": 390,
+            "scroll": 390,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 358,
+            "left": 16,
+            "right": 374,
+            "scroll": 358,
+            "minWidth": "0px",
+            "columns": "358px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 358,
+            "left": 16,
+            "right": 374,
+            "scroll": 356,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 316,
+            "minWidth": "auto",
+            "columns": "316px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 316,
+            "left": 37,
+            "right": 353,
+            "scroll": 314,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      }
+    },
+    {
+      "state": "populated",
+      "width": 768,
+      "result": "PASS",
+      "beforeSelection": {
+        "viewport": 768,
+        "document": 768,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 768,
+            "left": 0,
+            "right": 768,
+            "scroll": 768,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 736,
+            "left": 16,
+            "right": 752,
+            "scroll": 736,
+            "minWidth": "0px",
+            "columns": "736px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 736,
+            "left": 16,
+            "right": 752,
+            "scroll": 734,
+            "minWidth": "auto",
+            "columns": "694px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 694,
+            "left": 37,
+            "right": 731,
+            "scroll": 694,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 694,
+            "left": 37,
+            "right": 731,
+            "scroll": 694,
+            "minWidth": "auto",
+            "columns": "220.656px 220.672px 220.672px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.656px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.672px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.671875,
+            "left": 510.328125,
+            "right": 731,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.672px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.656px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.672px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      },
+      "afterSelection": {
+        "viewport": 768,
+        "document": 768,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 768,
+            "left": 0,
+            "right": 768,
+            "scroll": 768,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 736,
+            "left": 16,
+            "right": 752,
+            "scroll": 736,
+            "minWidth": "0px",
+            "columns": "736px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 736,
+            "left": 16,
+            "right": 752,
+            "scroll": 734,
+            "minWidth": "auto",
+            "columns": "694px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 694,
+            "left": 37,
+            "right": 731,
+            "scroll": 694,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 694,
+            "left": 37,
+            "right": 731,
+            "scroll": 694,
+            "minWidth": "auto",
+            "columns": "220.656px 220.672px 220.672px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.656px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.672px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.671875,
+            "left": 510.328125,
+            "right": 731,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.672px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.656px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 221,
+            "minWidth": "auto",
+            "columns": "220.672px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.65625,
+            "left": 37,
+            "right": 257.65625,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 220.671875,
+            "left": 273.65625,
+            "right": 494.328125,
+            "scroll": 219,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      }
+    },
+    {
+      "state": "populated",
+      "width": 1024,
+      "result": "PASS",
+      "beforeSelection": {
+        "viewport": 1024,
+        "document": 1024,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 760,
+            "left": 264,
+            "right": 1024,
+            "scroll": 760,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 680,
+            "left": 304,
+            "right": 984,
+            "scroll": 680,
+            "minWidth": "0px",
+            "columns": "680px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 680,
+            "left": 304,
+            "right": 984,
+            "scroll": 678,
+            "minWidth": "auto",
+            "columns": "638px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 638,
+            "left": 325,
+            "right": 963,
+            "scroll": 638,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 638,
+            "left": 325,
+            "right": 963,
+            "scroll": 638,
+            "minWidth": "auto",
+            "columns": "202px 202px 202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 761,
+            "right": 963,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      },
+      "afterSelection": {
+        "viewport": 1024,
+        "document": 1024,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 760,
+            "left": 264,
+            "right": 1024,
+            "scroll": 760,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 680,
+            "left": 304,
+            "right": 984,
+            "scroll": 680,
+            "minWidth": "0px",
+            "columns": "680px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 680,
+            "left": 304,
+            "right": 984,
+            "scroll": 678,
+            "minWidth": "auto",
+            "columns": "638px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 638,
+            "left": 325,
+            "right": 963,
+            "scroll": 638,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 638,
+            "left": 325,
+            "right": 963,
+            "scroll": 638,
+            "minWidth": "auto",
+            "columns": "202px 202px 202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 761,
+            "right": 963,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 202,
+            "minWidth": "auto",
+            "columns": "202px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 325,
+            "right": 527,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 202,
+            "left": 543,
+            "right": 745,
+            "scroll": 200,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      }
+    },
+    {
+      "state": "populated",
+      "width": 1440,
+      "result": "PASS",
+      "beforeSelection": {
+        "viewport": 1440,
+        "document": 1440,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 1176,
+            "left": 264,
+            "right": 1440,
+            "scroll": 1176,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 1096,
+            "left": 304,
+            "right": 1400,
+            "scroll": 1096,
+            "minWidth": "0px",
+            "columns": "1096px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 1096,
+            "left": 304,
+            "right": 1400,
+            "scroll": 1094,
+            "minWidth": "auto",
+            "columns": "1054px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 1054,
+            "left": 325,
+            "right": 1379,
+            "scroll": 1054,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 1054,
+            "left": 325,
+            "right": 1379,
+            "scroll": 1054,
+            "minWidth": "auto",
+            "columns": "251.5px 251.5px 251.5px 251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 592.5,
+            "right": 844,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 860,
+            "right": 1111.5,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 1127.5,
+            "right": 1379,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 592.5,
+            "right": 844,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 1127.5,
+            "right": 1379,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      },
+      "afterSelection": {
+        "viewport": 1440,
+        "document": 1440,
+        "layers": [
+          {
+            "selector": ".shell__main",
+            "width": 1176,
+            "left": 264,
+            "right": 1440,
+            "scroll": 1176,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue",
+            "width": 1096,
+            "left": 304,
+            "right": 1400,
+            "scroll": 1096,
+            "minWidth": "0px",
+            "columns": "1096px"
+          },
+          {
+            "selector": ".work-queue__filters",
+            "width": 1096,
+            "left": 304,
+            "right": 1400,
+            "scroll": 1094,
+            "minWidth": "auto",
+            "columns": "1054px"
+          },
+          {
+            "selector": ".work-queue__presence",
+            "width": 1054,
+            "left": 325,
+            "right": 1379,
+            "scroll": 1054,
+            "minWidth": "min-content",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls",
+            "width": 1054,
+            "left": 325,
+            "right": 1379,
+            "scroll": 1054,
+            "minWidth": "auto",
+            "columns": "251.5px 251.5px 251.5px 251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 592.5,
+            "right": 844,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 860,
+            "right": 1111.5,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 1127.5,
+            "right": 1379,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls label",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 252,
+            "minWidth": "auto",
+            "columns": "251.5px"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 592.5,
+            "right": 844,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 1127.5,
+            "right": 1379,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          },
+          {
+            "selector": ".work-queue__controls select",
+            "width": 251.5,
+            "left": 325,
+            "right": 576.5,
+            "scroll": 250,
+            "minWidth": "0px",
+            "columns": "none"
+          }
+        ]
+      }
+    }
+  ],
+  "pageErrors": [],
+  "consoleErrors": [],
+  "unexpectedRequests": []
+}

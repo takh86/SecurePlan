@@ -84,6 +84,12 @@
   color: var(--sp-color-ink);
 }
 
+/* Fit the grid track instead of using the longest option's intrinsic width. */
+.work-queue__controls select {
+  min-width: 0;
+  width: 100%;
+}
+
 .work-queue__actions {
   display: flex;
   flex-wrap: wrap;
