@@ -40,7 +40,7 @@ isolated SP-19 DDL wait, backend runtime readiness. `pages-build-deployment` run
 | S3 | [#131](https://github.com/takh86/SecurePlan/pull/131) | HTTP API + OpenAPI | `37ddb36` → `64329e3` | [PR 43040466284](https://github.com/takh86/SecurePlan/actions/runs/43040466284) | [43066925479](https://github.com/takh86/SecurePlan/actions/runs/43066925479) | [S3 post-merge](https://github.com/takh86/SecurePlan/issues/38#issuecomment-6803295995) |
 | S4 | [#133](https://github.com/takh86/SecurePlan/pull/133) | Acceptance matrix + gap tests | `b76fec8` → `b7422a5` | [PR 43082542845](https://github.com/takh86/SecurePlan/actions/runs/43082542845) | [43087735266](https://github.com/takh86/SecurePlan/actions/runs/43087735266) | [S4 post-merge](https://github.com/takh86/SecurePlan/issues/38#issuecomment-6805611366) |
 | S5 | [#134](https://github.com/takh86/SecurePlan/pull/134) | React admin decision UI + S5-READ-01 | `3987cd2` → `83848a2` | [PR 43197929543](https://github.com/takh86/SecurePlan/actions/runs/43197929543) | [43199720930](https://github.com/takh86/SecurePlan/actions/runs/43199720930) | [S5 review](https://github.com/takh86/SecurePlan/pull/134#pullrequestreview-5872706900), [post-merge → S6](https://github.com/takh86/SecurePlan/issues/38#issuecomment-6821292203) |
-| S6 | this Draft PR | Documentation and closeout | — | pending | — | pending |
+| S6 | [#135](https://github.com/takh86/SecurePlan/pull/135) (Draft) | Documentation and closeout | initial head `d8bef04` | initial head only: [push 43214630782](https://github.com/takh86/SecurePlan/actions/runs/43214630782), [PR 43214726309](https://github.com/takh86/SecurePlan/actions/runs/43214726309); not evidence for later commits, current-head CI is recorded on PR #135 | — | [review: changes required](https://github.com/takh86/SecurePlan/pull/135#pullrequestreview-5874306631) |
 | S7 | — | Real-browser acceptance | — | — | — | **NOT authorized, NOT_RUN** |
 
 Full SHAs: S1 `836f57c63fbab493d17aed327bca8fd89a915325` / `a58325062ae1bc89cc24345a61e9f09d05498900`; S2
@@ -126,8 +126,10 @@ answers stale values with 409. The field appears only in admin projections, not 
 
 Audit vocabulary (PO-2, ADR-0004): new `CANCELLATION_REJECTED`, `REPLACEMENT_NEED_OPEN_UNFILLED`; scoped
 `CANCELLATION_APPROVED`, `REPLACEMENT_NEED_CLOSED`, `REPLACEMENT_OFFER_NOT_SELECTED`; reused SP-12 `DUTY_UPDATED` and
-`DUTY_MEMBERSHIP_REMOVED`. One actor and one correlation id (server-issued) per decision; no names, e-mails, secrets
-or free text; all in the business transaction. Refusals and replays write **zero** business rows and zero success
+`DUTY_MEMBERSHIP_REMOVED`. One actor and one correlation id (server-issued) per decision; all in the business
+transaction. The bounded audit values contain no direct names, e-mails, reasons, free text or secrets, but they **do**
+contain linkable identifiers and times (actor and resource ids, `employeeId` in `DUTY_MEMBERSHIP_REMOVED` values,
+duty date/start/end). They are pseudonymous personal data; access, retention and privacy controls apply (§5). Refusals and replays write **zero** business rows and zero success
 audits; idempotency attempt metadata (`FAILED`) may remain (TL-4).
 
 After APPROVE the need is `OPEN_UNFILLED`: SP-20 selection is refused (409 `CANCELLATION_ALREADY_RESOLVED` /
@@ -139,7 +141,10 @@ reconciliation are #123 (not implemented).
 - **Receipt.** The 200 body is generated once inside the final business transaction and stored in the same fenced
   `IN_PROGRESS → COMPLETED` update (`idempotency_records.result_json`, `result_schema_version = 1`, ≤ 8192 bytes of
   PostgreSQL JSON text, closed key sets checked by DB `CHECK`s and a strict codec). The original response is served
-  from that snapshot.
+  from that snapshot. The receipt **contains identifiable personal data**: `cancellation.employee` with `id`,
+  `employeeCode`, `firstName` and `lastName`, plus assignment/duty ids and times (decoded in
+  `cancellation-decision-receipt.ts`, persisted by `cancellation-decision.service.ts`). It outlives the logical
+  window because rows are not physically deleted (#125).
 - **Replay.** Same key + same fingerprint within the logical window (86 400 s) returns the decision-time JSON content
   with `Idempotency-Replayed: true`, even after later duty or employee changes, without new writes or audits. The
   live role is re-checked on replay (a downgraded admin gets 403).
@@ -171,7 +176,7 @@ Test file abbreviations (backend `apps/backend/test/`): **S1** `cancellation-dec
 | Req. | Requirement (short) | Implemented in | Automated evidence | Evidence class | Browser (S7) |
 |---|---|---|---|---|---|
 | PO-1 | Finalize all OPEN offers `NOT_SELECTED`; never select/fabricate; fail closed | S2 service | S2 (k = 0/1/2, contradictory state ×3), S4 A1/A2 | REVIEWED, AUTHOR, CI | NOT_RUN |
-| PO-2 | Audit vocabulary, 2+k / 4+k, atomic, no PII | S2 service, ADR-0004 | S2 rollback boundaries, S4 A1 (key sets, PII absence, tenant), S4 A7 (REJECT rollback via HTTP), audit unit spec | REVIEWED, AUTHOR, CI | n/a |
+| PO-2 | Audit vocabulary, 2+k / 4+k, atomic, no direct names/e-mails/free text/secrets (linkable ids remain) | S2 service, ADR-0004 | S2 rollback boundaries, S4 A1 (key sets, synthetic names/e-mails absent, tenant), S4 A7 (REJECT rollback via HTTP), audit unit spec | REVIEWED, AUTHOR, CI | n/a |
 | PO-3 | No notifications/outbox | (absence) | S4 A1/A2 delivery double receives nothing | REVIEWED, CI | n/a |
 | PO-4 | Resubmission only under current create rules | existing create rules (CR) | S4 A3 (after REJECTED/APPROVED/WITHDRAWN/OBSOLETE) | AUTHOR, CI | NOT_RUN |
 | PO-5 | Option A: no new time cut-off | S2 (no time guard) | S2 "PO-5 Option A" (database clock); HTTP by inspection | REVIEWED, CI | NOT_RUN |
@@ -203,21 +208,27 @@ passed on each exact head (§1); CI does not report per-test counts in this docu
   refused (S3).
 - **Errors.** RFC 9457 Problem Details from the closed catalogue; lock timeouts are a sanitized 500 `INTERNAL_ERROR`
   without SQL/lock detail (S4 A6). The UI maps codes to a closed German allowlist; no server text passthrough.
-- **Privacy.** Receipt contains only fields of the approved response (no e-mails, secrets, reasons, free text);
-  audit payloads contain no PII. Receipts are logically expiring but physically retained → #125.
+- **Privacy.** Neither the receipt nor the audit is free of personal data:
+  - The **decision receipt** holds exactly the approved response, which includes the employee's id, employee code,
+    first and last name, assignment/duty ids and times. It excludes e-mails, secrets, absence reasons and free text.
+    It is stored in `idempotency_records.result_json` (≤ 8192 bytes) with a logical 86 400 s replay window, but is
+    **not physically deleted** after expiry. This is why #125 is a hard release blocker.
+  - **Audit values** exclude direct names, e-mails, reasons, free text and secrets, but contain employee and other
+    linkable ids and duty times (pseudonymous personal data).
+  - Access control, retention and privacy review apply to both. S6 changes no receipt or audit schema.
 - **Not performed:** automated security review **NOT_RUN**; dependency audit **NOT_RUN**; penetration test NOT_RUN.
 
 ## 6. Known defects, deferred features and release blockers
 
 | Item | Type | Status | Effect on SP-21 | Owner / next gate |
 |---|---|---|---|---|
-| [#125](https://github.com/takh86/SecurePlan/issues/125) Physical retention of idempotency receipts | Security/privacy | OPEN | **HARD release blocker for any environment with real personal data.** `expires_at` ≠ deletion; covers all JSON receipts incl. `EMPLOYEE_MONTH_SAVE` | Tech Lead + privacy review; verified cleanup before staging |
+| [#125](https://github.com/takh86/SecurePlan/issues/125) Physical retention of idempotency receipts | Security/privacy | OPEN | **HARD release blocker for any environment with real personal data.** SP-21 receipts contain employee id, code, first and last name; `expires_at` ≠ deletion; covers all JSON receipts incl. `EMPLOYEE_MONTH_SAVE` | Tech Lead + privacy review; verified cleanup before staging |
 | [#124](https://github.com/takh86/SecurePlan/issues/124) SP-20 replay consistency | Defect | OPEN | SP-20 replay can drift/fail after duty changes; S5 FE retry does not fix it | Separate reviewed slice |
-| [#123](https://github.com/takh86/SecurePlan/issues/123) `OPEN_UNFILLED` operational closure | Missing feature | OPEN | Approved unfilled needs stay open indefinitely; no closure/reconciliation in UI or API; an APPROVE'd duty can still be removed at its current version | Product decision + slice |
+| [#123](https://github.com/takh86/SecurePlan/issues/123) `OPEN_UNFILLED` operational closure | Missing feature | OPEN | `OPEN_UNFILLED` staying visible is the approved PO-6 outcome; #123 may stay open while the S7 decision workflow is accepted. No closure/reconciliation exists; an APPROVE'd duty can still be removed at its current version (removed-duty / invisible-need edge). End-to-end staffing lifecycle and operational closure cannot be claimed | **PO must decide and explicitly accept deferral/residual risk before the final MVP release/demo disposition**; not required for the S6 merge; no S7 writer scope |
 | [#118](https://github.com/takh86/SecurePlan/issues/118) Flaky full-suite E2E 5 s timeouts | Test infra | OPEN | Local full runs intermittently fail; reproduced on unchanged base; CI green does not prove the root cause fixed | Test-infra slice |
 | [#121](https://github.com/takh86/SecurePlan/issues/121) Notifications | Deferred | OPEN | Employees are not notified of decisions (PO-3) | V1 backlog |
 | [#51](https://github.com/takh86/SecurePlan/issues/51) Production hardening / operational gates | Pre-staging | OPEN | Applies to any staging/production | Before staging |
-| In-memory uncertain intent | Limitation | by design | Lost on remount/reload (§3.4) | Document; revisit if S7 shows risk |
+| In-memory uncertain intent | Limitation | by design | Lost on remount/reload (§3.4); acceptable within approved S5 MVP scope if S7 B-22 proves safe reconciliation | Mandatory S7 test B-22 |
 | Real-browser acceptance | Gate | NOT_RUN | No browser, responsive or a11y evidence in a real browser | S7 (separately authorized) |
 | Automated security review, dependency audit | Gate | NOT_RUN | — | Pre-staging |
 
@@ -247,12 +258,20 @@ FE-API) and does **not** count as browser evidence. S7 needs its own Tech Lead a
    - Tenant **B**: `ADMIN-B1`, `EMP-B1`, one OPEN cancellation case.
    - Cases in tenant A (each `OPEN/OPEN`, `CONSISTENT`): **C0** 0 offers, **C1** 1 eligible offer, **C3** 3 offers
      (2 eligible + 1 not eligible), **C3T** 2 OPEN + 1 terminal offer, plus spare cases for conflict tests.
-5. Browsers: current Chrome and Firefox desktop (1920×1080, 1280×800); mobile emulation 390×844 and 360×740; one
-   real mobile device if available. Keyboard-only and a screen reader (NVDA or VoiceOver) for the a11y block.
+5. Browsers (Tech Lead review of #135):
+   - **Required MVP minimum:** Chromium/Chrome desktop at 1280×800 and narrow 390×844 device emulation; keyboard-only
+     and focus checks; basic screen-reader checks (NVDA or VoiceOver) where the harness supports them.
+   - **Optional:** Firefox desktop if readily and safely available; a real mobile device. Not hard gates; any optional
+     platform not executed is logged as NOT_RUN.
 6. Evidence per case: test id, SHA, browser/viewport, screenshots before/after, HAR or network log with **cookies,
    CSRF tokens, idempotency keys and receipt bodies redacted**, console log, and a read-only SQL snapshot of the
    affected rows (statuses, versions, audit action counts, `idempotency_records.state`). No personal data, tokens or
    local paths in published evidence.
+7. Key, body and version comparisons between attempts happen **inside the controlled harness before redaction**.
+   Only equality booleans (or safe salted hashes) are published, never the raw idempotency key, cookies, CSRF token,
+   receipt JSON or PII.
+8. Failure tests prove on which side of the commit boundary they failed: before and after the retry, the harness
+   records read-only counts of decision rows/success audits and the `idempotency_records` state for the key.
 
 ### 7.2 Test matrix
 
@@ -277,18 +296,19 @@ Status of every row: **PLANNED / NOT_RUN**.
 | B-15 | Stale duty version | Open APPROVE confirmation; meanwhile change the duty in planning (other tab); confirm | 409 `PLAN_CONCURRENT_MODIFICATION` (or lease 409); reload shows new versions; no success shown | no decision rows |
 | B-16 | Tenant isolation | ADMIN-A1 opens tenant B case URL; sends POST to tenant B request id | 404 page/state, no data of B; POST 404 `RESOURCE_NOT_FOUND` | B unchanged |
 | B-17 | Session expiry | Let session expire (or revoke via sign-out in second tab), then confirm | 401 → central sign-out to login; no reload loop; no success shown | none changed |
-| B-18 | Role downgrade | Downgrade ADMIN-A2 (synthetic, via approved admin path) while case open; confirm | 403, fails closed, no refetch loop | none changed |
-| B-19 | Network failure | Devtools offline (or block request) at confirm | Uncertain state: alert, only "Erneut bestätigen"; other actions disabled | none or one decision |
-| B-20 | Same-key retry | After B-19 go online, Erneut bestätigen | Request repeats **same** key/body/versions (compare redacted HAR); success; if the first attempt was applied, response has `Idempotency-Replayed: true` | exactly one decision, audits not doubled |
-| B-21 | 5xx retry | Force a 5xx on first attempt (proxy/devtools override), then retry | As B-19/B-20 | exactly one decision |
-| B-22 | Retry after remount | Uncertain state, then reload page | Documented limitation: uncertain state lost; case read shows server truth; new attempt on decided case → 409 | exactly one decision |
+| B-18 | Role downgrade | No role-management API exists in the codebase, and none may be invented. ADMIN-A2 has the case open with the confirmation ready. The harness downgrades ADMIN-A2 to `EMPLOYEE` by **scoped fixture-only SQL**, committed before the confirm, on the **receipt-verified, isolated, disposable** PostgreSQL 17 target only (as S4 A4; never a dev, shared or production DB). ADMIN-A2 confirms. Cleanup: discard the disposable target (or restore the role). If a tested public role-management API exists by S7, prefer it | 403 `ACTION_FORBIDDEN`, fails closed, no refetch loop, no success shown | zero business writes and zero success audits for the case |
+| B-19 | Offline **before delivery** | Browser set offline (DevTools) before pressing confirm; the request never reaches the server | Uncertain state: alert, only "Erneut bestätigen"; other actions disabled | proof of side: **0** decision rows/audits, no `idempotency_records` row for the key |
+| B-20 | Lost response **after commit**, same-key retry | A harness-controlled proxy forwards the request to the real backend, lets it commit, then drops the response. Then "Erneut bestätigen" | First attempt: uncertain state. Retry: same key/body/versions (harness equality booleans); 200 with `Idempotency-Replayed: true`; UI shows the decided state | proof of side: exactly **one** decision and receipt `COMPLETED` before the retry; row and audit counts unchanged by the replay |
+| B-21 | Synthesized 5xx | The harness proxy answers the first attempt with a synthetic 5xx **without forwarding**; then retry | Uncertain state, then a same-key retry succeeds once. This proves only the UI's handling of a 5xx response, **not** a server 5xx or transaction atomicity (that is backend evidence: S2, S4 A6/A7) | 0 writes before the retry, exactly one decision after |
+| B-22 | Reload with uncertain intent (**mandatory**) | Reach the uncertain state in two variants: (a) first command committed (as B-20); (b) first command never delivered (as B-19). Then reload the page | (a) UI shows the server's decided state with no write action; a separately sent stale request gets the normal 409. (b) UI may offer a freshly confirmed action with a **new** key, which succeeds once. Never optimistic success or a duplicate applied decision. No automatic recovery or persistent storage is expected | (a) one decision; (b) one decision after the new confirm; never two |
 | B-23 | Case/account switch in flight | Throttle network, confirm, immediately open another case / sign out and in as other admin | Late response not shown in the new context | one decision on original case |
 | B-24 | UI ↔ DB consistency | After each positive case compare visible status, offer states, unfilled marker with SQL snapshot and work-queue list | Identical; no optimistic state; list back-navigation keeps filters safely | — |
 | B-25 | Storage | After B-04..B-23 inspect `localStorage`, `sessionStorage`, IndexedDB | No keys, tokens, receipts or PII | — |
 | B-26 | Resubmission | EMP whose case was REJECTED creates a new cancellation; EMP whose case was APPROVED tries again | New case allowed; APPROVED membership refused (409) | as PO-4 |
 
-Exit criteria for S7 (proposal for the Tech Lead): all rows executed with evidence, deviations filed as issues, no
-open H-risk deviation; results recorded in a new `docs/reviews/sp21-s7-browser-acceptance.md`.
+Exit criteria for S7 (proposal for the Tech Lead): all rows executed with evidence on the required platforms,
+optional platforms executed or logged NOT_RUN, deviations filed as issues, no open H-risk deviation. A double write or
+a misleading success (including in B-22) is an H-severity S7 blocker; results recorded in a new `docs/reviews/sp21-s7-browser-acceptance.md`.
 
 ## 8. Validation of this slice
 
@@ -299,13 +319,18 @@ open H-risk deviation; results recorded in a new `docs/reviews/sp21-s7-browser-a
 | `npm run check:public` (`node scripts/check-public.mjs`) | PASS |
 | `git diff --check` | PASS |
 | Changed files limited to documentation | PASS (4 Markdown files under `docs/`) |
-| Exact-head CI for this PR | pending (see PR comment) |
+| Exact-head CI | Initial head `d8bef04`: push 43214630782 and PR 43214726309 green (§1). Those runs do not validate later commits; the current head's CI is recorded on PR #135 |
 | Lint, typecheck, build, unit, frontend, E2E, migrations, DB, browser | NOT_RUN locally (docs-only; CI runs the full pipeline on the PR head) |
 
-## 9. Open questions for the Tech Lead
+## 9. Tech Lead decisions on the initial open questions
 
-1. Is the in-memory-only uncertain-intent state (§3.4) acceptable for the MVP, or should S7 treat B-22 as a blocker?
-2. B-18 needs a synthetic role downgrade; is a direct SQL change on the disposable DB acceptable evidence in S7 (as
-   in S4 A4), or must it use an admin UI path?
-3. Should S7 include Firefox and a real mobile device, or is Chrome + emulation sufficient?
-4. Does #123 need a product decision before SP-21 counts as feature-complete, or only before release?
+Resolved by the [review of #135](https://github.com/takh86/SecurePlan/pull/135#pullrequestreview-5874306631):
+
+1. In-memory uncertain intent is acceptable within the approved S5 MVP scope, provided B-22 proves safe server
+   reconciliation. B-22 is mandatory; it blocks S7 only if it finds a double write or a misleading success.
+2. B-18 uses scoped fixture-only SQL on the receipt-verified disposable target, unless a tested public
+   role-management API exists by then.
+3. Required: Chrome desktop 1280×800 and 390×844 emulation, plus keyboard/focus and basic screen-reader checks.
+   Firefox and a real phone are optional; if not executed they are logged NOT_RUN.
+4. #123 may stay open for S6/S7. Before the final MVP release/demo disposition, the PO must decide and explicitly
+   accept the deferral and residual risk.
