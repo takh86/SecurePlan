@@ -40,7 +40,9 @@ const uid = () => randomUUID();
 const runTag = randomBytes(3).toString('hex');
 const email = (label) => `${label}-${runTag}@example.invalid`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const ids = Object.fromEntries(['companyA', 'companyB', 'adminA1', 'adminA2', 'adminA3', 'accE1', 'accE2', 'accE3', 'accE4', 'adminB1', 'accB1', 'e1', 'e2', 'e3', 'e4', 'eB1', 'projA', 'projB'].map((k) => [k, uid()]));
+// UX-01 (#136) regression: a long project name in the work-queue project filter at 320 px.
+const LONG_PROJECT = 'S7 Synthetischer Sicherheitsdienst Flughafen und Veranstaltungsschutz Nordwest Erweiterung';
+const ids = Object.fromEntries(['companyA', 'companyB', 'adminA1', 'adminA2', 'adminA3', 'accE1', 'accE2', 'accE3', 'accE4', 'adminB1', 'accB1', 'e1', 'e2', 'e3', 'e4', 'eB1', 'projA', 'projB', 'projLong'].map((k) => [k, uid()]));
 
 const DESKTOP = { width: 1280, height: 800 };
 const MOBILE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true };
@@ -136,7 +138,7 @@ async function seed() {
   const employees = [[ids.e1, ids.companyA, ids.accE1, 'S7-A1', 'Alpha'], [ids.e2, ids.companyA, ids.accE2, 'S7-A2', 'Bravo'], [ids.e3, ids.companyA, ids.accE3, 'S7-A3', 'Charlie'], [ids.e4, ids.companyA, ids.accE4, 'S7-A4', 'Delta'], [ids.eB1, ids.companyB, ids.accB1, 'S7-B1', 'Foxtrot']];
   for (const [id, company, account, number, last] of employees)
     await pool.query("INSERT INTO employees(id,company_id,account_id,employee_number,first_name,last_name,shift_eligibility,employment_start) VALUES($1,$2,$3,$4,'Synthetic',$5,'BOTH','2020-01-01')", [id, company, account, number, last]);
-  for (const [id, company, name] of [[ids.projA, ids.companyA, 'S7 Objekt A'], [ids.projB, ids.companyB, 'S7 Objekt B']]) {
+  for (const [id, company, name] of [[ids.projA, ids.companyA, 'S7 Objekt A'], [ids.projB, ids.companyB, 'S7 Objekt B'], [ids.projLong, ids.companyA, LONG_PROJECT]]) {
     await pool.query("INSERT INTO projects(id,company_id,name,status) VALUES($1,$2,$3,'ACTIVE')", [id, company, name]);
     for (const [kind, start, end] of [['TAG', '06:00', '18:00'], ['NACHT', '18:00', '06:00']])
       await pool.query("INSERT INTO shift_configurations(company_id,project_id,effective_from_month,shift_kind,start_local,end_local) VALUES($1,$2,'2026-12-01',$3,$4,$5)", [company, id, kind, start, end]);
@@ -1022,7 +1024,38 @@ try {
     assert.ok(keepsFilters, `back navigation params ${params(page.url())}`);
   });
 
-  await check('B-26', 'Resubmission: EMP whose case was REJECTED can cancel again; the APPROVED (removed) membership is refused', async () => {
+  await check('UX01-320', 'UX-01 regression at 320 px with real data: queue filters with a long project name stay inside the viewport', async () => {
+    const narrow = await browser.newContext({ ignoreHTTPSErrors: true, locale: 'de-DE', timezoneId: 'Europe/Berlin', viewport: { width: 320, height: 800 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    const p = watch(await narrow.newPage(), 'admin-a1-320');
+    await uiLogin(p, 'admin-a1');
+    const measure = () => p.evaluate(() => ({
+      viewport: innerWidth, document: document.documentElement.scrollWidth,
+      layers: ['.work-queue', '.work-queue__filters', '.work-queue__controls', '.work-queue__controls label', '.work-queue__controls select'].flatMap((sel) =>
+        [...document.querySelectorAll(sel)].map((el) => { const r = el.getBoundingClientRect(); return { sel, left: Math.round(r.left), right: Math.round(r.right), overflowX: el.scrollWidth - el.clientWidth }; })),
+    }));
+    await p.goto(`${origin}/arbeitsuebersicht?sortBy=dutyDate&sortOrder=asc`);
+    await p.getByRole('table', { name: 'Offene Absagen und Ersatzbedarfe' }).waitFor({ timeout: 20000 });
+    const project = p.getByRole('combobox', { name: 'Projekt', exact: true });
+    await project.getByRole('option', { name: LONG_PROJECT, exact: true }).waitFor({ state: 'attached' });
+    const populated = await measure();
+    await shot(p, 'UX01-320-populated');
+    await project.focus();
+    await project.selectOption({ label: LONG_PROJECT });
+    await p.waitForURL(new RegExp(`projectId=${ids.projLong}`));
+    await p.getByText('Keine Vorgänge für diese Auswahl').waitFor({ timeout: 20000 });
+    const selected = await measure();
+    const keepsName = (await project.locator('option:checked').textContent()) === LONG_PROJECT;
+    const focusKept = await project.evaluate((el) => el === document.activeElement);
+    await shot(p, 'UX01-320-long-project-selected');
+    const inside = (m) => m.document <= 320 && m.layers.every((l) => l.left >= -1 && l.right <= 321);
+    record('UX01-320', 'result', { populated: { document: populated.document, layersInside: inside(populated), selectRight: populated.layers.filter((l) => l.sel.endsWith('select')).map((l) => l.right) }, longProjectSelected: { document: selected.document, layersInside: inside(selected), fullNameRetained: keepsName, focusRetained: focusKept, realEmptyResult: true } });
+    await narrow.close();
+    assert.ok(inside(populated), JSON.stringify(populated));
+    assert.ok(inside(selected), JSON.stringify(selected));
+    assert.ok(keepsName && focusKept);
+  });
+
+  await check('B-26','Resubmission: EMP whose case was REJECTED can cancel again; the APPROVED (removed) membership is refused', async () => {
     const e = await newSession('emp-a1');
     const dutiesNow = await e.page.evaluate(async () => (await (await fetch('/api/v1/me/monthly-plans?monthStart=2026-12-01')).json()).items[0].duties.map((d) => ({ assignmentId: d.assignmentId, version: d.version, dutyDate: d.dutyDate })));
     const rejected = dutiesNow.find((d) => d.assignmentId === C.C3.assignmentId);
