@@ -24,3 +24,7 @@ Stand: 30.10.2026. Geprüfter Remote-main: `5752ca82838a62a54e4bcb4395709d5ff4e3
 [Review](reviews/g0-handoff.md), [SP-01-Evidenz](reviews/setup-evidence.md), [Arbeitsabschnitt](planung/aktuelle-woche.md). Designfreigaben sind keine Supervisorabnahme von Code.
 
 **#64/#73 laut aktueller GitHub-Abfrage geschlossen**, nach [Owner-Abschlussfreigabe](https://github.com/takh86/SecurePlan/issues/64#issuecomment-6505272106). Frühere BLOCKED-Aussagen in datierten Abschlussunterlagen beschreiben den damaligen Reviewstand. Die SP-10-Freigabe autorisiert Implementierung und Draft-PR; menschliche Code-/UX-Abnahme, weitergehende Browserprüfungen, SP-11-Funktionsabnahme und Staging/Produktion bleiben eigenständige Gates. Verantwortlicher Koordinator: [@takh86](https://github.com/takh86); Restarbeit in #24/#25/#26 und #51.
+
+## Nachtrag 12.11.2026 – SP-21 (Absage ablehnen / ohne Ersatz genehmigen)
+
+Die Tabelle oben beschreibt den Stand vom 30.10.2026 und bleibt als datierter Nachweis erhalten. SP-21 S1–S5 sind in `main` gemergt (Post-Merge-`main` `83848a2`, Foundation CI grün): Quittungsmigration 0020, Entscheidungsservice, HTTP-API, Abnahmetests und COMPANY_ADMIN-Oberfläche. Nachweise, Rückverfolgung PO-1..PO-8/TL-1..TL-6 und S7-Browsertestplan: [SP-21 S6-Abschluss](reviews/sp21-s6-closeout.md). Echte Browserabnahme (S7), automatisierter Security-Review und Dependency-Audit sind NOT_RUN. Offen: #125 (harter Release-Blocker für echte personenbezogene Daten), #124, #123, #118, #121 und #51. Keine Staging-/Produktionsfreigabe; #38/#39 bleiben offen.
